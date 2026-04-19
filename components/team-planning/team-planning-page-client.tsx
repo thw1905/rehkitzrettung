@@ -425,7 +425,9 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
     }
 
     alert(data?.message || "Tagesplanung gelöscht.");
-    await loadPlanning();
+    if (selectedDate){
+    await loadPlanning(selectedDate);
+    }
   } catch (error: any) {
     console.error(error);
     alert(error?.message || "Tagesplanung konnte nicht gelöscht werden.");
