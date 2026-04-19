@@ -2,88 +2,39 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdminApi } from "@/lib/admin";
 
-function validateTeamInput(body: {
+type TeamBody = {
   name?: string;
-  pilotId?: string;
-  copilotId?: string;
-  searcherIds?: string[];
-}) {
-  const searcherIds = (body.searcherIds || []).filter(Boolean);
+  sortOrder?: number;
+  isActive?: boolean;
+};
 
-  if (!body.name?.trim()) {
-    return "Teamname fehlt.";
+function parseSortOrder(value: unknown, fallback: number) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
   }
 
-  if (!body.pilotId) {
-    return "Pilot fehlt.";
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) {
+    throw new Error("Ungültige Sortierung.");
   }
 
-  if (searcherIds.length < 1 || searcherIds.length > 6) {
-    return "Ein Team muss 1 bis 6 Sucher haben.";
-  }
-
-  if (body.copilotId && body.copilotId === body.pilotId) {
-    return "Pilot und Copilot dürfen nicht dieselbe Person sein.";
-  }
-
-  if (searcherIds.includes(body.pilotId)) {
-    return "Der Pilot darf nicht gleichzeitig Sucher sein.";
-  }
-
-  if (body.copilotId && searcherIds.includes(body.copilotId)) {
-    return "Der Copilot darf nicht gleichzeitig Sucher sein.";
-  }
-
-  const uniqueSearcherIds = new Set(searcherIds);
-  if (uniqueSearcherIds.size !== searcherIds.length) {
-    return "Ein Sucher wurde mehrfach ausgewählt.";
-  }
-
-  return null;
+  return Math.floor(n);
 }
 
-async function isUserAlreadyAssignedElsewhere(args: {
-  currentTeamId: string;
-  pilotId: string;
-  copilotId?: string;
-  searcherIds: string[];
-}) {
-  const candidateIds = [
-    args.pilotId,
-    ...(args.copilotId ? [args.copilotId] : []),
-    ...args.searcherIds,
-  ];
-
-  const uniqueIds = [...new Set(candidateIds)];
-
-  const teams = await db.team.findMany({
-    where: {
-      id: {
-        not: args.currentTeamId,
-      },
-    },
-    include: {
-      members: true,
-    },
-  });
-
-  for (const team of teams) {
-    const assignedIds = new Set<string>();
-
-    assignedIds.add(team.pilotId);
-    if (team.copilotId) assignedIds.add(team.copilotId);
-    for (const member of team.members) {
-      assignedIds.add(member.userId);
-    }
-
-    for (const userId of uniqueIds) {
-      if (assignedIds.has(userId)) {
-        return true;
-      }
-    }
+function parseIsActive(value: unknown, fallback: boolean) {
+  if (value === undefined) {
+    return fallback;
   }
 
-  return false;
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (value === "true") return true;
+  if (value === "false") return false;
+
+  throw new Error("Ungültiger Aktiv-Status.");
 }
 
 export async function PATCH(
@@ -101,27 +52,7 @@ export async function PATCH(
 
   try {
     const { id } = await context.params;
-    const body = (await req.json()) as any;
-
-    const validationError = validateTeamInput(body);
-    if (validationError) {
-      return NextResponse.json(
-        { error: validationError },
-        { status: 400 }
-      );
-    }
-
-  const rawSearcherIds = Array.isArray((body as any).searcherIds)
-  ? ((body as any).searcherIds as unknown[])
-  : [];
-
-const searcherIds = [
-  ...new Set(
-    rawSearcherIds
-      .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
-      .map((id) => id.trim())
-  ),
-];
+    const body = (await req.json()) as TeamBody;
 
     const existingTeam = await db.team.findUnique({
       where: { id },
@@ -134,42 +65,38 @@ const searcherIds = [
       );
     }
 
-    const alreadyAssigned = await isUserAlreadyAssignedElsewhere({
-      currentTeamId: id,
-      pilotId: body.pilotId,
-      copilotId: body.copilotId || undefined,
-      searcherIds,
-    });
-
-    if (alreadyAssigned) {
+    const name = body.name?.trim();
+    if (!name) {
       return NextResponse.json(
-        { error: "Mindestens eine ausgewählte Person ist bereits einem anderen Team zugeordnet." },
+        { error: "Teamname fehlt." },
         { status: 400 }
       );
     }
 
-    await db.teamMember.deleteMany({
-      where: { teamId: id },
-    });
+    const sortOrder = parseSortOrder(body.sortOrder, existingTeam.sortOrder);
+    const isActive = parseIsActive(body.isActive, existingTeam.isActive);
 
     const team = await db.team.update({
       where: { id },
       data: {
-        name: body.name.trim(),
-        pilotId: body.pilotId,
-        copilotId: body.copilotId || null,
-        members: {
-          create: searcherIds.map((userId) => ({
-            userId,
-          })),
-        },
+        name,
+        sortOrder,
+        isActive,
       },
       include: {
-        pilot: true,
-        copilot: true,
-        members: {
+        operationDayTeams: {
           include: {
-            user: true,
+            operationDay: true,
+            pilot: true,
+            members: {
+              include: {
+                user: true,
+              },
+            },
+            orders: true,
+          },
+          orderBy: {
+            createdAt: "desc",
           },
         },
       },
@@ -181,9 +108,7 @@ const searcherIds = [
 
     return NextResponse.json(
       {
-        error:
-          error?.message ||
-          "Team konnte nicht aktualisiert werden.",
+        error: error?.message || "Team konnte nicht aktualisiert werden.",
       },
       { status: 500 }
     );
@@ -206,9 +131,33 @@ export async function DELETE(
   try {
     const { id } = await context.params;
 
-    await db.teamMember.deleteMany({
-      where: { teamId: id },
+    const existingTeam = await db.team.findUnique({
+      where: { id },
+      include: {
+        operationDayTeams: {
+          select: {
+            id: true,
+          },
+        },
+      },
     });
+
+    if (!existingTeam) {
+      return NextResponse.json(
+        { error: "Team nicht gefunden." },
+        { status: 404 }
+      );
+    }
+
+    if (existingTeam.operationDayTeams.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Team kann nicht gelöscht werden, weil es noch in Einsatztagen verwendet wird.",
+        },
+        { status: 400 }
+      );
+    }
 
     await db.team.delete({
       where: { id },
@@ -220,9 +169,7 @@ export async function DELETE(
 
     return NextResponse.json(
       {
-        error:
-          error?.message ||
-          "Team konnte nicht gelöscht werden.",
+        error: error?.message || "Team konnte nicht gelöscht werden.",
       },
       { status: 500 }
     );
