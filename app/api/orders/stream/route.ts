@@ -8,12 +8,24 @@ export const dynamic = "force-dynamic";
 function getUserTeamIds(currentUser: any) {
   const teamIds = new Set<string>();
 
-  for (const membership of currentUser.teamMemberships || []) {
-    teamIds.add(membership.teamId);
+  for (const membership of (currentUser.teamMemberships || []) as Array<{
+    teamId: string;
+  }>) {
+    if (membership.teamId) {
+      teamIds.add(membership.teamId);
+    }
   }
 
-  for (const team of currentUser.pilotTeams || []) {
-    teamIds.add(team.id);
+  for (const team of (currentUser.pilotTeams || []) as Array<{ id: string }>) {
+    if (team.id) {
+      teamIds.add(team.id);
+    }
+  }
+
+  for (const team of (currentUser.copilotTeams || []) as Array<{ id: string }>) {
+    if (team.id) {
+      teamIds.add(team.id);
+    }
   }
 
   return Array.from(teamIds);
@@ -26,8 +38,12 @@ async function getLatestTeamOrderVersion(teamIds: string[]) {
 
   const latestOrder = await db.order.findFirst({
     where: {
-      teamId: {
-        in: teamIds,
+      operationDayTeam: {
+        is: {
+          teamId: {
+            in: teamIds,
+          },
+        },
       },
     },
     orderBy: { updatedAt: "desc" },
@@ -37,8 +53,12 @@ async function getLatestTeamOrderVersion(teamIds: string[]) {
   const latestPinpoint = await db.orderPinpoint.findFirst({
     where: {
       order: {
-        teamId: {
-          in: teamIds,
+        operationDayTeam: {
+          is: {
+            teamId: {
+              in: teamIds,
+            },
+          },
         },
       },
     },
