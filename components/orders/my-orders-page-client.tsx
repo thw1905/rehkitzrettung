@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import QrScannerModal from "@/components/orders/qr-scanner-modal";
+import type { Pinpoint } from "@/components/orders/order-field-map";
 
 const OrderFieldMap = dynamic(
   () => import("@/components/orders/order-field-map"),
@@ -38,22 +39,7 @@ type Team = {
   name?: string | null;
 };
 
-type Pinpoint = {
-  id: string;
-  rawQrText: string;
-  latitude: number;
-  longitude: number;
-  sequenceNumber: number;
-  status: PinpointStatus;
-  scannedAt?: string | null;
-  reachedAt?: string | null;
-  rehkitzeGesichert?: number;
-  rehkitzeAbgesprungen?: number;
-  sonstigesWildGesichert?: number;
-  sonstigesWildAbgesprungen?: number;
-  maulwurfhuegelFehlstelle?: number;
-  note?: string | null;
-};
+;
 
 type Order = {
   id: string;

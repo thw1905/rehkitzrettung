@@ -16,9 +16,9 @@ export type Pinpoint = {
   id: string;
   latitude: number;
   longitude: number;
-  sequenceNumber?: number;
-  status?: "OFFEN" | "ERREICHT" | "ERLEDIGT";
-  rawQrText?: string;
+  sequenceNumber: number;
+  status: "OFFEN" | "ERREICHT" | "ERLEDIGT";
+  rawQrText?: string |null;
   scannedAt?: string | null;
   reachedAt?: string | null;
   rehkitzeGesichert?: number;
