@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PILOT
+  SUCHER
+}
+
+enum OrderStatus {
+  OFFEN
+  IN_ARBEIT
+  ERLEDIGT
+}
+
+enum PinpointStatus {
+  OFFEN
+  ERREICHT
+  ERLEDIGT
+}
+
+enum AvailabilityStatus {
+  OFFEN
+  ZUGESAGT
+  ABGESAGT
+  VIELLEICHT
+}
+
+enum OperationDayStatus {
+  PLANUNG
+  AKTIV
+  ABGESCHLOSSEN
+}
+
+model Availability {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
+  status    AvailabilityStatus @default(OFFEN)
+  note      String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@unique([userId, date])
+}
+
+model OperationDay {
+  id        String             @id @default(cuid())
+  date      DateTime           @unique
+  status    OperationDayStatus @default(PLANUNG)
+  note      String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  orders    Order[]
+  teams     OperationDayTeam[]
+}
+
+model Owner {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  street    String
+  zip       String
+  city      String
+  phone     String
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fields    Field[]
+  orders    Order[]
+}
+
+model User {
+  id                       String                   @id @default(cuid())
+  firstName                String
+  lastName                 String
+  street                   String
+  zip                      String
+  city                     String
+  phone                    String
+  email                    String                   @unique
+  passwordHash             String
+  role                     Role                     @default(SUCHER)
+  isAdmin                  Boolean                  @default(false)
+  isApproved               Boolean                  @default(false)
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+
+  availabilities           Availability[]
+  operationDayTeamPilots   OperationDayTeam[]       @relation("OperationDayTeamPilot")
+  operationDayTeamMembers  OperationDayTeamMember[]
+
+  homeLatitude   Float?
+homeLongitude  Float?
+autoAssignPriority Int @default(0)
+isPrimaryPilot Boolean @default(false)
+}
+
+model Team {
+  id                String             @id @default(cuid())
+  name              String
+  sortOrder         Int                @default(0)
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  operationDayTeams OperationDayTeam[]
+}
+
+model OperationDayTeam {
+  id             String                   @id @default(cuid())
+  operationDayId String
+  teamId         String
+  pilotId        String?
+  note           String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  operationDay   OperationDay             @relation(fields: [operationDayId], references: [id], onDelete: Cascade)
+  team           Team                     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  pilot          User?                    @relation("OperationDayTeamPilot", fields: [pilotId], references: [id])
+
+  members        OperationDayTeamMember[]
+  orders         Order[]
+
+  @@unique([operationDayId, teamId])
+}
+
+model OperationDayTeamMember {
+  id                 String             @id @default(cuid())
+  operationDayTeamId String
+  userId             String
+  createdAt          DateTime           @default(now())
+
+  operationDayTeam   OperationDayTeam   @relation(fields: [operationDayTeamId], references: [id], onDelete: Cascade)
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([operationDayTeamId, userId])
+}
+
+model Field {
+  id          String   @id @default(cuid())
+  name        String
+  displayName String?
+  ownerId     String?
+  areaGeoJson Json
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       Owner?   @relation(fields: [ownerId], references: [id])
+  orders      Order[]
+
+  locationLatitude   Float?
+locationLongitude  Float?
+locationNote       String?
+}
+
+model Order {
+  id                        String            @id @default(cuid())
+  title                     String
+  status                    OrderStatus       @default(OFFEN)
+  notes                     String?
+  mowingDate                DateTime?
+  startTime                 DateTime?
+  endTime                   DateTime?
+  orderCode                 String?           @unique
+  orderYear                 Int?
+  orderSequence             Int?
+  executionDate             DateTime?
+  executedTeamName          String?
+  executedPilotName         String?
+  executedCopilotName       String?
+  executedSearchersText     String?
+  executedAreaSqm           Float?
+  operationDayId            String?
+  operationDayTeamId        String?
+  rehkitzeGesichert         Int               @default(0)
+  rehkitzeAbgesprungen      Int               @default(0)
+  sonstigesWildGesichert    Int               @default(0)
+  sonstigesWildAbgesprungen Int               @default(0)
+  maulwurfhuegelFehlstelle  Int               @default(0)
+  ownerId                   String
+  fieldId                   String
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+
+  operationDay              OperationDay?     @relation(fields: [operationDayId], references: [id])
+  operationDayTeam          OperationDayTeam? @relation(fields: [operationDayTeamId], references: [id])
+  owner                     Owner             @relation(fields: [ownerId], references: [id])
+  field                     Field             @relation(fields: [fieldId], references: [id])
+  pinpoints                 OrderPinpoint[]
+  isManualTeamAssignment Boolean @default(false)
+}
+
+model OrderPinpoint {
+  id                        String         @id @default(cuid())
+  orderId                   String
+  rawQrText                 String
+  latitude                  Float
+  longitude                 Float
+  sequenceNumber            Int
+  status                    PinpointStatus @default(OFFEN)
+  scannedAt                 DateTime       @default(now())
+  reachedAt                 DateTime?
+  rehkitzeGesichert         Int            @default(0)
+  rehkitzeAbgesprungen      Int            @default(0)
+  sonstigesWildGesichert    Int            @default(0)
+  sonstigesWildAbgesprungen Int            @default(0)
+  maulwurfhuegelFehlstelle  Int            @default(0)
+  note                      String?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  order                     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
