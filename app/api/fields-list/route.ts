@@ -6,61 +6,74 @@ export async function GET() {
   const currentUser = await getCurrentUserWithTeams();
 
   if (!currentUser) {
-    return NextResponse.json(
-      { error: "Nicht angemeldet" },
-      { status: 401 }
-    );
+    return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
 
-  if (currentUser.isAdmin) {
+  try {
+    if (currentUser.isAdmin) {
+      const fields = await db.field.findMany({
+        orderBy: [
+          { displayName: "asc" },
+          { name: "asc" },
+        ],
+      });
+
+      return NextResponse.json(fields);
+    }
+
+    const teamIds = new Set<string>();
+
+    for (const membership of (currentUser.teamMemberships ?? []) as Array<{
+      teamId: string;
+    }>) {
+      if (membership.teamId) {
+        teamIds.add(membership.teamId);
+      }
+    }
+
+    for (const team of (currentUser.pilotTeams ?? []) as Array<{ id: string }>) {
+      if (team.id) {
+        teamIds.add(team.id);
+      }
+    }
+
+    for (const team of (currentUser.copilotTeams ?? []) as Array<{ id: string }>) {
+      if (team.id) {
+        teamIds.add(team.id);
+      }
+    }
+
+    if (teamIds.size === 0) {
+      return NextResponse.json([]);
+    }
+
     const fields = await db.field.findMany({
-      select: {
-        id: true,
-        name: true,
-        ownerId: true,
-      },
-      orderBy: {
-        name: "asc",
-      },
-    });
-
-    return NextResponse.json(fields);
-  }
-
-  const teamIds = new Set<string>();
-
-  for (const membership of currentUser.teamMemberships) {
-    teamIds.add(membership.teamId);
-  }
-
-  for (const team of currentUser.pilotTeams) {
-    teamIds.add(team.id);
-  }
-
-  for (const team of currentUser.copilotTeams) {
-    teamIds.add(team.id);
-  }
-
-  const fields = await db.field.findMany({
-    where: {
-      orders: {
-        some: {
-          teamId: {
-            in: Array.from(teamIds),
+      where: {
+        orders: {
+          some: {
+            operationDayTeam:{
+              is:{
+            teamId: {
+              in: Array.from(teamIds),
+            },
+          },
+            },
           },
         },
       },
-    },
-    select: {
-  id: true,
-  name: true,
-  displayName: true,
-  ownerId: true,
-},
-    orderBy: {
-      name: "asc",
-    },
-  });
+      orderBy: [
+        { displayName: "asc" },
+        { name: "asc" },
+      ],
+    });
 
-  return NextResponse.json(fields);
+    return NextResponse.json(fields);
+  } catch (error: any) {
+    console.error("Fehler beim Laden der Felder:", error);
+
+    return NextResponse.json(
+      { error: error?.message || "Felder konnten nicht geladen werden." },
+      { status: 500 }
+    );
+  }
 }
