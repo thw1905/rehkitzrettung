@@ -281,6 +281,7 @@ export default function MyOrdersPageClient({
   const [scanSuccessMessage, setScanSuccessMessage] = useState<string | null>(null);
 
   const canControlOrder = isAdmin || role === "PILOT";
+  const canScanQr = isAdmin || role === "PILOT" || role === "SUCHER";
 
   async function loadOrders() {
     setLoading(true);
@@ -1105,7 +1106,7 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
       PinPoints
     </div>
 
-    {canControlOrder && (
+    {canScanQr && (
       <div className="mb-4 space-y-2">
         <textarea
           value={newPinpointText[order.id] || ""}
