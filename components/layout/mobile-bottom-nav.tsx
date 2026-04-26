@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import SupportContactButton from "./support-contact-button";
+import { icon } from "leaflet";
 
 type MobileBottomNavProps = {
   user: {
@@ -41,7 +42,7 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
   const baseItems = [
     { href: "/dashboard", label: "Dashboard", icon: "🏠" },
     { href: "/my-orders", label: "Meine Aufträge", icon: "📋" },
-    { href: "/team-members", label: "Mein Team"},
+    { href: "/team-members", label: "Mein Team", icon: "🧑‍🤝‍🧑"},
     { href: "/availability", label: "Meine Verfügbarkeit", icon: "📅" },
     
   ];

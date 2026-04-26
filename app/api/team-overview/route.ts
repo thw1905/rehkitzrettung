@@ -57,14 +57,24 @@ export async function GET() {
       return team.members.some((member) => member.userId === currentUser.id);
     });
 
-    return NextResponse.json({
-      operationDay: {
-        id: operationDay.id,
-        date: operationDay.date,
-        status: operationDay.status,
-      },
-      ownTeamId: ownTeam?.id || null,
-      teams: operationDay.teams.map((operationDayTeam) => ({
+    const operationDayResponse = {
+  id: operationDay.id,
+  date: operationDay.date,
+  status: operationDay.status,
+};
+
+if (!ownTeam) {
+  return NextResponse.json({
+    operationDay: operationDayResponse,
+    ownTeamId: null,
+    teams: [],
+  });
+}
+
+return NextResponse.json({
+  operationDay: operationDayResponse,
+  ownTeamId: ownTeam.id,
+  teams: operationDay.teams.map((operationDayTeam) => ({
         id: operationDayTeam.id,
         teamName: operationDayTeam.team.name,
         pilot: operationDayTeam.pilot

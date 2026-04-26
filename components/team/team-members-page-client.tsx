@@ -255,12 +255,30 @@ export default function TeamMembersPageClient() {
         </section>
 
         {ownTeam ? (
-          <TeamBlock team={ownTeam} isOwnTeam />
-        ) : (
-          <section className="rounded-2xl border border-orange-300 bg-orange-50 p-5 text-sm text-orange-900">
-            Du bist heute noch keinem Team zugeordnet.
-          </section>
-        )}
+  <>
+    <TeamBlock team={ownTeam} isOwnTeam />
+
+    <section className="space-y-3">
+      <h2 className="text-lg font-bold text-gray-900">Andere Teams</h2>
+
+      {otherTeams.length === 0 ? (
+        <div className="rounded-2xl bg-white p-5 text-sm text-gray-700 shadow">
+          Keine weiteren Teams vorhanden.
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {otherTeams.map((team) => (
+            <TeamBlock key={team.id} team={team} isOwnTeam={false} />
+          ))}
+        </div>
+      )}
+    </section>
+  </>
+) : (
+  <section className="rounded-2xl border border-orange-300 bg-orange-50 p-5 text-sm text-orange-900">
+    Du bist heute noch keinem Team zugeordnet.
+  </section>
+)}
 
         <section className="space-y-3">
           <h2 className="text-lg font-bold text-gray-900">Andere Teams</h2>
