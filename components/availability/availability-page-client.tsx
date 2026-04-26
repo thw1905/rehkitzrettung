@@ -66,21 +66,23 @@ function getStatusLabel(status: AvailabilityStatus) {
   return "Offen";
 }
 
-function buildEmptyDays(days: number) {
+function buildSeasonDays() {
   const result: { date: string; status: AvailabilityStatus; note: string | null }[] = [];
 
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
+  const year = new Date().getFullYear();
+  const start = new Date(year, 4, 1); // 01.05.
+  const end = new Date(year, 5, 30); // 30.06.
 
-  for (let i = 0; i < days; i++) {
-    const current = new Date(start);
-    current.setDate(start.getDate() + i);
+  const current = new Date(start);
 
+  while (current <= end) {
     result.push({
       date: toDateKey(current),
       status: "OFFEN",
       note: null,
     });
+
+    current.setDate(current.getDate() + 1);
   }
 
   return result;
@@ -134,7 +136,7 @@ export default function AvailabilityPageClient({ days = 21 }: Props) {
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/availability?days=${days}`, {
+      const res = await fetch("/api/availability", {
         cache: "no-store",
       });
       const data = await res.json();
@@ -146,7 +148,7 @@ export default function AvailabilityPageClient({ days = 21 }: Props) {
       const loaded = Array.isArray(data) ? data : [];
       setItems(loaded);
 
-      const fullDays = buildEmptyDays(days);
+      const fullDays = buildSeasonDays();
       const byDate = new Map<string, AvailabilityItem>();
 
       for (const item of loaded) {
@@ -231,7 +233,7 @@ export default function AvailabilityPageClient({ days = 21 }: Props) {
   }
 
   const displayDays = useMemo(() => {
-    const defaults = buildEmptyDays(days);
+    const defaults = buildSeasonDays();
     return defaults.map((day) => ({
       date: day.date,
       draft: drafts[day.date] || {
@@ -249,7 +251,7 @@ export default function AvailabilityPageClient({ days = 21 }: Props) {
             Meine Verfügbarkeit
           </h1>
           <p className="mt-2 text-sm leading-6 text-gray-600 md:text-base">
-            Trage hier für die nächsten Tage ein, ob du helfen kannst. Das hilft
+            Trage hier deine Verfügbarkeit für die Saison vom 01.05. bis 30.06. ein. Das hilft
             bei der Teamplanung. Auch Admins tragen sich hier ganz normal ein.
           </p>
         </section>

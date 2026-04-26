@@ -49,11 +49,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
     }
 
-    const { searchParams } = new URL(req.url);
-    const daysParam = Number(searchParams.get("days") || "21");
-    const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 21;
+    const year = new Date().getFullYear();
 
-    const { start, end } = getUtcRange(days);
+const start = new Date(Date.UTC(year, 4, 1, 0, 0, 0, 0)); // 01.05.
+const end = new Date(Date.UTC(year, 6, 1, 0, 0, 0, 0)); // bis 30.06. inklusive
 
     const rawAvailabilities = await db.availability.findMany({
       where: {

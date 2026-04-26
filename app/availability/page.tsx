@@ -13,5 +13,5 @@ export default async function AvailabilityPage() {
     redirect("/dashboard");
   }
 
-  return <AvailabilityPageClient days={21} />;
+  return <AvailabilityPageClient />;
 }
