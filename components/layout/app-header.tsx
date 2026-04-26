@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
+import SupportContactButton from "@/components/layout/support-contact-button";
 
 type AppHeaderProps = {
   user: {
@@ -14,19 +15,33 @@ type AppHeaderProps = {
   } | null;
 };
 
-function navClass(isActive: boolean) {
+function navClass(isActive: boolean, variant: "default" | "personal" = "default") {
+  const base =
+    "rounded-xl px-3 py-2 text-sm font-medium transition border";
+
+  if (variant === "personal") {
+    return [
+      base,
+      isActive
+        ? "border-blue-700 bg-blue-700 text-white"
+        : "border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100",
+    ].join(" ");
+  }
+
   return [
-    "rounded-xl px-3 py-2 text-sm font-medium transition",
+    base,
     isActive
-      ? "bg-black text-white"
-      : "text-gray-800 hover:bg-gray-100 hover:text-black",
+      ? "border-black bg-black text-white"
+      : "border-transparent text-gray-800 hover:bg-gray-100 hover:text-black",
   ].join(" ");
 }
 
 export default function AppHeader({ user }: AppHeaderProps) {
   const pathname = usePathname();
   const isAdmin = Boolean(user?.isAdmin);
+
   const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [onlineCount, setOnlineCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -64,26 +79,60 @@ export default function AppHeader({ user }: AppHeaderProps) {
     };
   }, [isAdmin]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOnlineCount() {
+      try {
+        const res = await fetch("/api/users/online-count", {
+          cache: "no-store",
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+
+        if (isMounted) {
+          setOnlineCount(typeof data.count === "number" ? data.count : 0);
+        }
+      } catch {
+        // ignorieren
+      }
+    }
+
+    loadOnlineCount();
+
+    const interval = setInterval(loadOnlineCount, 30000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   const fullName =
     `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Unbekannt";
 
-  const desktopNavItems = [
-    { href: "/dashboard", label: "Dashboard", show: true },
-    { href: "/my-orders", label: "Meine Aufträge", show: true },
-    { href: "/availability", label: "Verfügbarkeit", show: true },
-    { href: "/fields", label: "Flächen", show: true },
-    { href: "/profile", label: "Mein Profil", show: true },
+  const personalNavItems = [
+    { href: "/my-orders", label: "Meine Aufträge" },
+    { href: "/team-members", label: "Mein Team"},
+    { href: "/availability", label: "Meine Verfügbarkeit" },
+    { href: "/profile", label: "Mein Profil" },
+  ];
 
-    { href: "/orders", label: "Aufträge", show: isAdmin },
-    { href: "/orders-map", label: "Karte", show: isAdmin },
-    { href: "/owners", label: "Ansprechpartner", show: isAdmin },
-    { href: "/team-slots", label: "Team-Slots", show: isAdmin },
-    { href: "/team-planning", label: "Teamplanung", show: isAdmin },
-    { href: "/day-assignments", label: "Auftragszuordnung", show: isAdmin },
-    { href: "/helpers", label: "Helfer", show: isAdmin },
-    { href: "/statistics", label: "Statistik", show: isAdmin },
-    { href: "/availability/admin", label: "Verfügbarkeit Admin", show: isAdmin },
-  ].filter((item) => item.show);
+  const adminNavItems = [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/orders", label: "Aufträge" },
+    { href: "/team-planning", label: "Teamplanung" },
+    { href: "/day-assignments", label: "Auftragszuordnung" },
+    { href: "/helpers", label: "Helfer" },
+    { href: "/availability/admin", label: "Verfügbarkeit Admin" },
+    { href: "/team-slots", label: "Team-Slots" },
+    { href: "/fields", label: "Flächen" },
+    { href: "/owners", label: "Ansprechpartner" },
+    { href: "/statistics", label: "Statistik" },
+    { href: "/admin/field-import", label: "KML-Import" },
+  ];
 
   const helpersActive =
     pathname === "/helpers" || pathname.startsWith("/helpers/");
@@ -112,7 +161,7 @@ export default function AppHeader({ user }: AppHeaderProps) {
       `}</style>
 
       <header className="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 py-3">
+        <div className="mx-auto max-w-7xl px-4 py-1">
           <div className="flex items-center justify-between md:hidden">
             <div className="min-w-0">
               <div className="text-base font-bold text-gray-900">
@@ -122,6 +171,11 @@ export default function AppHeader({ user }: AppHeaderProps) {
                 {fullName} · {user?.role || "-"}
                 {isAdmin ? " · Admin" : ""}
               </div>
+              {onlineCount !== null && (
+                <div className="mt-1 text-xs font-medium text-green-700">
+                  🟢 {onlineCount} online
+                </div>
+              )}
             </div>
 
             <button
@@ -141,6 +195,14 @@ export default function AppHeader({ user }: AppHeaderProps) {
             </div>
 
             <div className="flex items-center gap-3">
+              {onlineCount !== null && (
+                <div className="rounded-full border border-green-300 bg-green-50 px-3 py-2 text-sm font-semibold text-green-800">
+                  🟢 {onlineCount} online
+                </div>
+              )}
+
+              <SupportContactButton/>
+
               <div className="text-right">
                 <div className="text-sm font-semibold text-gray-900">
                   {fullName}
@@ -162,32 +224,72 @@ export default function AppHeader({ user }: AppHeaderProps) {
           </div>
 
           <nav className="mt-3 hidden flex-wrap gap-2 md:flex">
-            {desktopNavItems.map((item) => {
-              const isActive =
-                pathname === item.href || pathname.startsWith(item.href + "/");
+  {personalNavItems.map((item) => {
+    const isActive =
+      pathname === item.href || pathname.startsWith(item.href + "/");
 
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={navClass(isActive)}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={navClass(isActive, "personal")}
+      >
+        {item.label}
+      </Link>
+    );
+  })}
 
-            {isAdmin && pendingCount !== null && pendingCount > 0 && (
-              <Link href="/helpers" className={navClass(helpersActive)}>
-                <span className="inline-flex items-center">
-                  Freigaben
-                  <span className="pending-badge-pulse ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
-                    {pendingCount}
-                  </span>
-                </span>
-              </Link>
-            )}
-          </nav>
+  {isAdmin &&
+    adminNavItems.map((item) => {
+      const isActive =
+        pathname === item.href || pathname.startsWith(item.href + "/");
+
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          className={navClass(isActive)}
+        >
+          {item.label}
+        </Link>
+      );
+    })}
+
+  {!isAdmin && (
+    <>
+      <Link
+        href="/dashboard"
+        className={navClass(
+          pathname === "/dashboard" ||
+            pathname.startsWith("/dashboard/")
+        )}
+      >
+        Dashboard
+      </Link>
+
+      <Link
+        href="/fields"
+        className={navClass(
+          pathname === "/fields" ||
+            pathname.startsWith("/fields/")
+        )}
+      >
+        Flächen
+      </Link>
+    </>
+  )}
+
+  {isAdmin && pendingCount !== null && pendingCount > 0 && (
+    <Link href="/helpers" className={navClass(helpersActive)}>
+      <span className="inline-flex items-center">
+        Freigaben
+        <span className="pending-badge-pulse ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
+          {pendingCount}
+        </span>
+      </span>
+    </Link>
+  )}
+</nav>
         </div>
       </header>
     </>

@@ -464,13 +464,24 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
         }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type") || "";
 
-      if (!res.ok) {
-        throw new Error(
-          data?.error || "Automatische Teamverteilung fehlgeschlagen."
-        );
-      }
+let data: any = null;
+
+if (contentType.includes("application/json")) {
+  data = await res.json();
+} else {
+  const text = await res.text();
+  throw new Error(
+    text || "Server liefert keine gültige JSON-Antwort."
+  );
+}
+
+if (!res.ok) {
+  throw new Error(
+    data?.error || "Automatische Teamverteilung fehlgeschlagen."
+  );
+}
 
       await loadPlanning(selectedDate);
 

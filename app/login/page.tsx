@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
+/*import SupportContactButton from "@/components/layout/support-contact-button";*/
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -106,7 +107,8 @@ export default function LoginPage() {
               {error}
             </div>
           ) : null}
-
+          
+          
           <button
             type="button"
             onClick={handleLogin}

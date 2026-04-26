@@ -97,11 +97,30 @@ model User {
   availabilities           Availability[]
   operationDayTeamPilots   OperationDayTeam[]       @relation("OperationDayTeamPilot")
   operationDayTeamMembers  OperationDayTeamMember[]
-
+pushDevices PushDevice[]
   homeLatitude   Float?
 homeLongitude  Float?
 autoAssignPriority Int @default(0)
 isPrimaryPilot Boolean @default(false)
+lastSeenAt      DateTime?
+sessionVersion   Int  @default(0)
+}
+
+model PushDevice {
+  id          String   @id @default(cuid())
+  userId      String
+  token       String   @unique
+  platform    String?
+  browser     String?
+  deviceLabel String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastSeenAt  DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Team {

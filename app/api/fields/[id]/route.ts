@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
+import {requireAdminApi} from "@/lib/admin";
 
 function normalizeOptionalString(value: unknown) {
   if (value === undefined || value === null) return null;
@@ -18,6 +19,65 @@ function normalizeOptionalNumber(value: unknown) {
   }
 
   return n;
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const authCheck = await requireAdminApi();
+
+  if (!authCheck.ok) {
+    return NextResponse.json(
+      { error: authCheck.message },
+      { status: authCheck.status }
+    );
+  }
+
+  try {
+    const { id } = await context.params;
+
+    const existingField = await db.field.findUnique({
+      where: { id },
+      include: {
+        orders: {
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!existingField) {
+      return NextResponse.json(
+        { error: "Fläche nicht gefunden." },
+        { status: 404 }
+      );
+    }
+
+    if (existingField.orders.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Fläche kann nicht gelöscht werden, weil noch Aufträge damit verknüpft sind.",
+        },
+        { status: 400 }
+      );
+    }
+
+    await db.field.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("Fehler beim Löschen der Fläche:", error);
+
+    return NextResponse.json(
+      {
+        error: error?.message || "Fläche konnte nicht gelöscht werden.",
+      },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(

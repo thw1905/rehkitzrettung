@@ -8,23 +8,16 @@ export const dynamic = "force-dynamic";
 function getUserTeamIds(currentUser: any) {
   const teamIds = new Set<string>();
 
-  for (const membership of (currentUser.teamMemberships || []) as Array<{
-    teamId: string;
-  }>) {
-    if (membership.teamId) {
-      teamIds.add(membership.teamId);
+  for (const operationDayTeam of currentUser.operationDayTeamPilots || []) {
+    if (operationDayTeam.teamId) {
+      teamIds.add(operationDayTeam.teamId);
     }
   }
 
-  for (const team of (currentUser.pilotTeams || []) as Array<{ id: string }>) {
-    if (team.id) {
-      teamIds.add(team.id);
-    }
-  }
-
-  for (const team of (currentUser.copilotTeams || []) as Array<{ id: string }>) {
-    if (team.id) {
-      teamIds.add(team.id);
+  for (const membership of currentUser.operationDayTeamMembers || []) {
+    const teamId = membership.operationDayTeam?.teamId;
+    if (teamId) {
+      teamIds.add(teamId);
     }
   }
 

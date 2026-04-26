@@ -21,6 +21,14 @@ function parseDateOnlyToUtc(dateString: string) {
 }
 
 async function getOrCreateOperationDay(date: Date) {
+  const existing = await db.operationDay.findUnique({
+    where: { date },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
   try {
     return await db.operationDay.create({
       data: {
@@ -30,17 +38,13 @@ async function getOrCreateOperationDay(date: Date) {
     });
   } catch (error: any) {
     if (error?.code === "P2002") {
-      const existing = await db.operationDay.findUnique({
+      const createdByParallelRequest = await db.operationDay.findUnique({
         where: { date },
       });
 
-      if (existing) {
-        return existing;
+      if (createdByParallelRequest) {
+        return createdByParallelRequest;
       }
-
-      throw new Error(
-        "OperationDay konnte nach Unique-Konflikt nicht geladen werden."
-      );
     }
 
     throw error;

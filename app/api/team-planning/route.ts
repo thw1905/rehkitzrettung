@@ -31,6 +31,14 @@ function canBeUsedForPilot(role: string, status: AvailabilityStatus) {
 }
 
 async function getOrCreateOperationDay(date: Date) {
+  const existing = await db.operationDay.findUnique({
+    where: { date },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
   try {
     return await db.operationDay.create({
       data: {
@@ -39,14 +47,13 @@ async function getOrCreateOperationDay(date: Date) {
       },
     });
   } catch (error: any) {
-    // Falls parallel schon angelegt wurde, vorhandenen Datensatz laden
     if (error?.code === "P2002") {
-      const existing = await db.operationDay.findUnique({
+      const createdByParallelRequest = await db.operationDay.findUnique({
         where: { date },
       });
 
-      if (existing) {
-        return existing;
+      if (createdByParallelRequest) {
+        return createdByParallelRequest;
       }
     }
 

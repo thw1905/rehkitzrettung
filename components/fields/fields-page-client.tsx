@@ -41,6 +41,8 @@ type FieldEditorValue = {
   location: { lat: number; lng: number } | null;
 };
 
+type MeetingPointFilter = "ALLE" | "MIT_TREFFPUNKT" | "OHNE_TREFFPUNKT";
+
 function formatArea(squareMeters: number) {
   if (!Number.isFinite(squareMeters) || squareMeters <= 0) {
     return {
@@ -70,11 +72,42 @@ function getFieldLabel(field: Pick<FieldItem, "displayName" | "name">) {
   return "Unbekannte Fläche";
 }
 
+function hasMeetingPoint(field: {
+  locationLatitude?: number | null;
+  locationLongitude?: number | null;
+}) {
+  return (
+    typeof field.locationLatitude === "number" &&
+    typeof field.locationLongitude === "number"
+  );
+}
+
+function getMeetingPointBadgeClasses(field: {
+  locationLatitude?: number | null;
+  locationLongitude?: number | null;
+}) {
+  if (hasMeetingPoint(field)) {
+    return "border-green-300 bg-green-100 text-green-900";
+  }
+
+  return "border-orange-300 bg-orange-100 text-orange-900";
+}
+
+function getMeetingPointBadgeText(field: {
+  locationLatitude?: number | null;
+  locationLongitude?: number | null;
+}) {
+  return hasMeetingPoint(field) ? "Treffpunkt gesetzt" : "Treffpunkt fehlt";
+}
+
 export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
 
   const [geoJson, setGeoJson] = useState<PolygonFeature>(null);
-  const [fieldLocation, setFieldLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [fieldLocation, setFieldLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [locationNote, setLocationNote] = useState("");
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -85,6 +118,10 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [openFieldId, setOpenFieldId] = useState<string | null>(null);
+  const [meetingPointFilter, setMeetingPointFilter] =
+    useState<MeetingPointFilter>("ALLE");
+
+
 
   async function loadFields() {
     setLoadingFields(true);
@@ -117,24 +154,56 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
 
   const formattedArea = formatArea(areaInSquareMeters);
 
+  const fieldsWithoutMeetingPointCount = useMemo(
+    () => fields.filter((field) => !hasMeetingPoint(field)).length,
+    [fields]
+  );
+
+  const fieldsWithMeetingPointCount = useMemo(
+    () => fields.filter((field) => hasMeetingPoint(field)).length,
+    [fields]
+  );
+
   const filteredFields = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    if (!term) return fields;
+    let result = [...fields];
 
-    return fields.filter((field) =>
+    result.sort((a, b) => {
+      const aHasMeetingPoint = hasMeetingPoint(a) ? 1 : 0;
+      const bHasMeetingPoint = hasMeetingPoint(b) ? 1 : 0;
+
+      if (aHasMeetingPoint !== bHasMeetingPoint) {
+        return aHasMeetingPoint - bHasMeetingPoint;
+      }
+
+      return getFieldLabel(a).localeCompare(getFieldLabel(b), "de");
+    });
+
+    if (meetingPointFilter === "MIT_TREFFPUNKT") {
+      result = result.filter((field) => hasMeetingPoint(field));
+    }
+
+    if (meetingPointFilter === "OHNE_TREFFPUNKT") {
+      result = result.filter((field) => !hasMeetingPoint(field));
+    }
+
+    if (!term) return result;
+
+    return result.filter((field) =>
       [
         field.name,
         field.displayName,
         field.notes || "",
         field.locationNote || "",
         field.orders.map((o) => o.team?.name || "").join(" "),
+        hasMeetingPoint(field) ? "treffpunkt gesetzt" : "treffpunkt fehlt",
       ]
         .join(" ")
         .toLowerCase()
         .includes(term)
     );
-  }, [fields, search]);
+  }, [fields, search, meetingPointFilter]);
 
   function handleFieldEditorChange(value: FieldEditorValue) {
     setGeoJson(value.polygon);
@@ -169,6 +238,40 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
     setNotes(field.notes || "");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  async function deleteField(field: FieldItem) {
+  const confirmed = window.confirm(
+    `Möchtest du die Fläche "${getFieldLabel(field)}" wirklich löschen?`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/fields/${field.id}`, {
+      method: "DELETE",
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Fläche konnte nicht gelöscht werden.");
+    }
+
+    if (editingFieldId === field.id) {
+      resetForm();
+    }
+
+    if (openFieldId === field.id) {
+      setOpenFieldId(null);
+    }
+
+    await loadFields();
+    alert("Fläche gelöscht.");
+  } catch (error: any) {
+    console.error("Fehler beim Löschen der Fläche:", error);
+    alert(error?.message || "Fläche konnte nicht gelöscht werden.");
+  }
+}
 
   async function saveField() {
     if (!displayName.trim()) {
@@ -242,6 +345,26 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
           </p>
         </div>
 
+        <div className="grid grid-cols-2 gap-3 md:max-w-md">
+          <div className="rounded-xl border border-orange-300 bg-orange-50 px-4 py-3 text-center">
+            <div className="text-xs font-semibold uppercase tracking-wide text-orange-700">
+              Treffpunkt fehlt
+            </div>
+            <div className="mt-1 text-xl font-bold text-orange-900">
+              {fieldsWithoutMeetingPointCount}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-green-300 bg-green-50 px-4 py-3 text-center">
+            <div className="text-xs font-semibold uppercase tracking-wide text-green-700">
+              Treffpunkt gesetzt
+            </div>
+            <div className="mt-1 text-xl font-bold text-green-900">
+              {fieldsWithMeetingPointCount}
+            </div>
+          </div>
+        </div>
+
         {isAdmin && (
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-6">
@@ -295,9 +418,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className="mt-1 text-sm text-gray-700">
-                      Notiz
-                    </label>
+                    <label className="mt-1 text-sm text-gray-700">Notiz</label>
                     <textarea
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
@@ -312,7 +433,8 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                 <div className="mb-4">
                   <h2 className="text-lg font-semibold">2. Fläche zeichnen</h2>
                   <p className="text-sm text-gray-600">
-                    Zeichne die Fläche auf der Karte. Danach kannst du die Eckpunkte weiter anpassen.
+                    Zeichne die Fläche auf der Karte. Danach kannst du die
+                    Eckpunkte weiter anpassen.
                   </p>
                 </div>
 
@@ -329,8 +451,8 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                 <div className="mb-4">
                   <h2 className="text-lg font-semibold">3. Treffpunkt setzen</h2>
                   <p className="text-sm text-gray-600">
-                    Klicke auf der Karte auf den Treffpunkt oder Startpunkt für das Team.
-                    Der Marker kann danach verschoben werden.
+                    Klicke auf der Karte auf den Treffpunkt oder Startpunkt für
+                    das Team. Der Marker kann danach verschoben werden.
                   </p>
                 </div>
 
@@ -405,7 +527,22 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                     <div className="text-xs uppercase tracking-wide text-gray-500">
                       Treffpunkt
                     </div>
-                    <div className="mt-1 text-sm text-gray-700">
+                    <div className="mt-2">
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold ${getMeetingPointBadgeClasses(
+                          {
+                            locationLatitude: fieldLocation?.lat ?? null,
+                            locationLongitude: fieldLocation?.lng ?? null,
+                          }
+                        )}`}
+                      >
+                        {getMeetingPointBadgeText({
+                          locationLatitude: fieldLocation?.lat ?? null,
+                          locationLongitude: fieldLocation?.lng ?? null,
+                        })}
+                      </span>
+                    </div>
+                    <div className="mt-3 text-sm text-gray-700">
                       {fieldLocation
                         ? `${fieldLocation.lat.toFixed(6)}, ${fieldLocation.lng.toFixed(6)}`
                         : "-"}
@@ -443,22 +580,40 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
               <div className="mt-1 text-sm text-gray-700">
                 <h2 className="text-lg font-semibold">Hinweis</h2>
                 <p className="mt-2 text-sm text-gray-600">
-                  Der Anzeigename wird später überall zuerst angezeigt, der Flächenname steht in Klammern dahinter.
+                  Der Anzeigename wird später überall zuerst angezeigt, der
+                  Flächenname steht in Klammern dahinter.
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        <div className="mt-1 text-sm text-gray-600">
-          <label className="mb-2 block text-sm font-medium">Suche</label>
-          <input
-            type="text"
-            placeholder="Fläche, Anzeigename, Team ..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border px-3 py-2"
-          />
+        <div className="grid gap-4 rounded-2xl bg-white p-4 shadow md:grid-cols-[1fr_260px]">
+          <div className="mt-1 text-sm text-gray-600">
+            <label className="mb-2 block text-sm font-medium">Suche</label>
+            <input
+              type="text"
+              placeholder="Fläche, Anzeigename, Team, Treffpunkt ..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-xl border px-3 py-2"
+            />
+          </div>
+
+          <div className="mt-1 text-sm text-gray-600">
+            <label className="mb-2 block text-sm font-medium">Treffpunkt</label>
+            <select
+              value={meetingPointFilter}
+              onChange={(e) =>
+                setMeetingPointFilter(e.target.value as MeetingPointFilter)
+              }
+              className="w-full rounded-xl border px-3 py-2"
+            >
+              <option value="ALLE">Alle</option>
+              <option value="MIT_TREFFPUNKT">Nur mit Treffpunkt</option>
+              <option value="OHNE_TREFFPUNKT">Nur ohne Treffpunkt</option>
+            </select>
+          </div>
         </div>
 
         {loadingFields ? (
@@ -482,6 +637,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
 
               const fieldArea = formatArea(squareMeters);
               const isOpen = openFieldId === field.id;
+              const meetingPointSet = hasMeetingPoint(field);
 
               return (
                 <div
@@ -496,8 +652,18 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                     className="flex w-full items-center justify-between gap-4 p-4 text-left"
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-base font-semibold text-gray-900">
-                        {getFieldLabel(field)}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="truncate text-base font-semibold text-gray-900">
+                          {getFieldLabel(field)}
+                        </div>
+
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${getMeetingPointBadgeClasses(
+                            field
+                          )}`}
+                        >
+                          {getMeetingPointBadgeText(field)}
+                        </span>
                       </div>
                     </div>
 
@@ -514,17 +680,35 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
 
                   {isOpen && (
                     <div className="border-t px-4 pb-4 pt-4">
-                      <div className="mb-4 flex justify-end">
-                        {isAdmin && (
-                          <button
-  type="button"
-  onClick={() => startEditField(field)}
-  className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm"
->
-  Bearbeiten
-</button>
-                        )}
-                      </div>
+                      <div className="mb-4 flex justify-end gap-2">
+  {isAdmin && (
+    <>
+      <button
+        type="button"
+        onClick={() => startEditField(field)}
+        className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm"
+      >
+        Bearbeiten
+      </button>
+
+      <button
+        type="button"
+        onClick={() => deleteField(field)}
+        className="rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50"
+      >
+        Löschen
+      </button>
+    </>
+  )}
+</div>
+
+                      {!meetingPointSet && (
+                        <div className="mb-4 rounded-xl border border-orange-300 bg-orange-50 p-4 text-sm text-orange-900">
+                          Für diese Fläche ist noch kein Treffpunkt gesetzt.
+                          Nach KML-Importen sollte dieser Punkt geprüft und manuell
+                          ergänzt werden.
+                        </div>
+                      )}
 
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-3">
@@ -561,10 +745,18 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                             <div className="text-xs uppercase tracking-wide text-gray-500">
                               Treffpunkt
                             </div>
-                            <div className="mt-1 text-sm text-gray-700">
-                              {typeof field.locationLatitude === "number" &&
-                              typeof field.locationLongitude === "number"
-                                ? `${field.locationLatitude.toFixed(6)}, ${field.locationLongitude.toFixed(6)}`
+                            <div className="mt-2">
+                              <span
+                                className={`rounded-full border px-3 py-1 text-xs font-semibold ${getMeetingPointBadgeClasses(
+                                  field
+                                )}`}
+                              >
+                                {getMeetingPointBadgeText(field)}
+                              </span>
+                            </div>
+                            <div className="mt-3 text-sm text-gray-700">
+                              {meetingPointSet
+                                ? `${field.locationLatitude!.toFixed(6)}, ${field.locationLongitude!.toFixed(6)}`
                                 : "-"}
                             </div>
                             <div className="mt-2 text-sm text-gray-700">

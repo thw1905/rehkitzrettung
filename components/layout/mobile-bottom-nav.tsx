@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import SupportContactButton from "./support-contact-button";
 
 type MobileBottomNavProps = {
   user: {
@@ -40,8 +41,9 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
   const baseItems = [
     { href: "/dashboard", label: "Dashboard", icon: "🏠" },
     { href: "/my-orders", label: "Meine Aufträge", icon: "📋" },
-    { href: "/availability", label: "Verfügbar", icon: "📅" },
-    { href: "/fields", label: "Flächen", icon: "🌾" },
+    { href: "/team-members", label: "Mein Team"},
+    { href: "/availability", label: "Meine Verfügbarkeit", icon: "📅" },
+    
   ];
 
   const adminMoreItems = [
@@ -54,10 +56,13 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     { href: "/helpers", label: "Helfer" },
     { href: "/orders-map", label: "Kartenübersicht" },
     { href: "/statistics", label: "Statistik" },
+    { href: "/fields", label: "Flächen" },
     { href: "/profile", label: "Mein Profil" },
   ];
 
-  const userMoreItems = [{ href: "/profile", label: "Mein Profil" }];
+  const userMoreItems = [{ href: "/profile", label: "Mein Profil" },
+    { href: "/fields", label: "Flächen" },
+  ];
 
   const moreItems = isAdmin ? adminMoreItems : userMoreItems;
 
@@ -96,6 +101,8 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
                 </Link>
               );
             })}
+
+            <SupportContactButton/>
 
             <button
               type="button"

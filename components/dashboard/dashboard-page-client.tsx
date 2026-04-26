@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import EnablePushButton from "@/components/EnablePushButton";
+import { ja } from "zod/locales";
 
 const OrdersMapView = dynamic(
   () => import("@/components/orders/orders-map-view"),
@@ -98,6 +100,18 @@ type AssignmentReasons = {
   helperAssignments: AssignmentReasonItem[];
   orderAssignments: AssignmentReasonItem[];
 };
+
+async function readJsonResponse<T>(res: Response, label: string): Promise<T> {
+  const contentType = res.headers.get("content-type") || "";
+
+  if (!contentType.includes("application/json")) {
+    const text = await res.text();
+    console.error(`Keine JSON Antwort bei ${label}:`, text);
+    throw new Error(`${label} liefert keine JSON-Antwort.`);
+  }
+
+  return (await res.json()) as T;
+}
 
 function isToday(dateString: string | null) {
   if (!dateString) return false;
@@ -198,7 +212,7 @@ function normalizeTeamsFromPlanningResponse(data: any): DashboardTeam[] {
             },
           };
         })
-        .filter(Boolean),
+        .filter(Boolean) as DashboardTeam["members"],
     };
   });
 }
@@ -221,7 +235,9 @@ function StatCard({
 
   return (
     <div className={`page-card-muted p-4 ${toneClasses[tone]}`}>
-      <div className="text-xs font-semibold uppercase tracking-wide">{label}</div>
+      <div className="text-xs font-semibold uppercase tracking-wide">
+        {label}
+      </div>
       <div className="mt-2 text-2xl font-bold">{value}</div>
     </div>
   );
@@ -248,20 +264,21 @@ export default function DashboardPageClient({ isAdmin }: Props) {
   const [loadingMap, setLoadingMap] = useState(true);
   const [loadingTeams, setLoadingTeams] = useState(isAdmin);
   const [loadingPerformance, setLoadingPerformance] = useState(isAdmin);
-
   const [assignmentReasons, setAssignmentReasons] =
-  useState<AssignmentReasons | null>(null);
-const [loadingReasons, setLoadingReasons] = useState(isAdmin);
+    useState<AssignmentReasons | null>(null);
+  const [loadingReasons, setLoadingReasons] = useState(isAdmin);
 
   async function loadOrders() {
     try {
       const res = await fetch(isAdmin ? "/api/orders/all" : "/api/orders", {
         cache: "no-store",
       });
-      const data = await res.json();
+
+      const data = await readJsonResponse<any>(res, "orders");
       setOrders(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
+      setOrders([]);
     } finally {
       setLoadingMap(false);
     }
@@ -297,10 +314,11 @@ const [loadingReasons, setLoadingReasons] = useState(isAdmin);
     async function loadStats() {
       try {
         const res = await fetch("/api/dashboard-stats", { cache: "no-store" });
-        const data = await res.json();
+        const data = await readJsonResponse<Stats>(res, "dashboard-stats");
         setStats(data);
       } catch (error) {
         console.error(error);
+        setStats(null);
       } finally {
         setLoadingStats(false);
       }
@@ -312,7 +330,8 @@ const [loadingReasons, setLoadingReasons] = useState(isAdmin);
         const res = await fetch(`/api/team-planning?date=${today}`, {
           cache: "no-store",
         });
-        const data = await res.json();
+
+        const data = await readJsonResponse<any>(res, "team-planning");
         setTeams(normalizeTeamsFromPlanningResponse(data));
       } catch (error) {
         console.error(error);
@@ -327,33 +346,40 @@ const [loadingReasons, setLoadingReasons] = useState(isAdmin);
         const res = await fetch("/api/dashboard-team-performance", {
           cache: "no-store",
         });
-        const data = await res.json();
+
+        const data = await readJsonResponse<any>(
+          res,
+          "dashboard-team-performance"
+        );
         setPerformance(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error(error);
+        setPerformance([]);
       } finally {
         setLoadingPerformance(false);
       }
     }
 
     async function loadAssignmentReasons() {
-  try {
-    const today = getTodayDateString();
-    const res = await fetch(
-      `/api/dashboard-assignment-reasons?date=${today}`,
-      {
-        cache: "no-store",
+      try {
+        const today = getTodayDateString();
+        const res = await fetch(
+          `/api/dashboard-assignment-reasons?date=${today}`,
+          { cache: "no-store" }
+        );
+
+        const data = await readJsonResponse<AssignmentReasons>(
+          res,
+          "dashboard-assignment-reasons"
+        );
+        setAssignmentReasons(data);
+      } catch (error) {
+        console.error(error);
+        setAssignmentReasons(null);
+      } finally {
+        setLoadingReasons(false);
       }
-    );
-    const data = await res.json();
-    setAssignmentReasons(data);
-  } catch (error) {
-    console.error(error);
-    setAssignmentReasons(null);
-  } finally {
-    setLoadingReasons(false);
-  }
-}
+    }
 
     loadStats();
     loadTeams();
@@ -373,7 +399,8 @@ const [loadingReasons, setLoadingReasons] = useState(isAdmin);
       ),
     [orders]
   );
-const pilotReasonSection = useMemo(() => {
+
+  const pilotReasonSection = useMemo(() => {
     return getVisibleReasonItems(assignmentReasons?.pilotAssignments || [], 5);
   }, [assignmentReasons]);
 
@@ -384,6 +411,7 @@ const pilotReasonSection = useMemo(() => {
   const orderReasonSection = useMemo(() => {
     return getVisibleReasonItems(assignmentReasons?.orderAssignments || [], 5);
   }, [assignmentReasons]);
+
   return (
     <main className="bg-gray-50">
       <div className="mx-auto max-w-7xl space-y-4 p-3 md:space-y-5 md:p-5">
@@ -418,14 +446,20 @@ const pilotReasonSection = useMemo(() => {
 
             <section className="page-card p-4 md:p-5">
               <div className="mb-4">
-                <h2 className="text-lg font-bold text-gray-900">Teamübersicht</h2>
+                <h2 className="text-lg font-bold text-gray-900">
+                  Teamübersicht
+                </h2>
                 <p className="mt-1 text-sm text-gray-700">
                   Aktuelle Besetzung der Teams für heute.
                 </p>
               </div>
 
+            
+
               {loadingTeams ? (
-                <div className="text-sm text-gray-700">Teams werden geladen...</div>
+                <div className="text-sm text-gray-700">
+                  Teams werden geladen...
+                </div>
               ) : teams.length === 0 ? (
                 <div className="text-sm text-gray-700">
                   Für heute ist noch keine Teamplanung vorhanden.
@@ -587,125 +621,62 @@ const pilotReasonSection = useMemo(() => {
             </section>
 
             <section className="page-card p-4 md:p-5">
-  <div className="mb-4">
-    <h2 className="text-lg font-bold text-gray-900">
-      Warum wurde so verteilt?
-    </h2>
-    <p className="mt-1 text-sm text-gray-700">
-      Nachvollziehbare Gründe für Team-, Helfer- und Auftragszuordnung.
-    </p>
-  </div>
-
-  {loadingReasons ? (
-    <div className="text-sm text-gray-700">
-      Zuweisungsgründe werden geladen...
-    </div>
-  ) : !assignmentReasons ? (
-    <div className="text-sm text-gray-700">
-      Keine Zuweisungsgründe verfügbar.
-    </div>
-  ) : (
-    <div className="grid gap-3 xl:grid-cols-3">
-      <div className="page-card-muted p-4">
-        <div className="mb-3 text-sm font-semibold text-gray-900">
-          Piloten
-        </div>
-
-        {pilotReasonSection.visible.length === 0 ? (
-          <div className="text-sm text-gray-600">
-            Keine Pilotenzuordnungen vorhanden.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {pilotReasonSection.visible.map((item, index) => (
-              <div
-                key={`pilot-${index}`}
-                className="rounded-lg bg-white px-3 py-2 text-sm text-gray-800"
-              >
-                {item.reason}
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-gray-900">
+                  Warum wurde so verteilt?
+                </h2>
+                <p className="mt-1 text-sm text-gray-700">
+                  Nachvollziehbare Gründe für Team-, Helfer- und
+                  Auftragszuordnung.
+                </p>
               </div>
-            ))}
 
-            {pilotReasonSection.hiddenCount > 0 && (
-              <div className="text-sm text-gray-500">
-                + {pilotReasonSection.hiddenCount} weitere
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="page-card-muted p-4">
-        <div className="mb-3 text-sm font-semibold text-gray-900">
-          Helfer
-        </div>
-
-        {helperReasonSection.visible.length === 0 ? (
-          <div className="text-sm text-gray-600">
-            Keine Helferzuordnungen vorhanden.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {helperReasonSection.visible.map((item, index) => (
-              <div
-                key={`helper-${index}`}
-                className="rounded-lg bg-white px-3 py-2 text-sm text-gray-800"
-              >
-                {item.reason}
-              </div>
-            ))}
-
-            {helperReasonSection.hiddenCount > 0 && (
-              <div className="text-sm text-gray-500">
-                + {helperReasonSection.hiddenCount} weitere
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="page-card-muted p-4">
-        <div className="mb-3 text-sm font-semibold text-gray-900">
-          Aufträge
-        </div>
-
-        {orderReasonSection.visible.length === 0 ? (
-          <div className="text-sm text-gray-600">
-            Keine Auftragszuordnungen vorhanden.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {orderReasonSection.visible.map((item, index) => (
-              <div
-                key={`order-${index}`}
-                className="rounded-lg bg-white px-3 py-2 text-sm text-gray-800"
-              >
-                {item.reason}
-              </div>
-            ))}
-
-            {orderReasonSection.hiddenCount > 0 && (
-              <div className="text-sm text-gray-500">
-                + {orderReasonSection.hiddenCount} weitere
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )}
-</section>
+              {loadingReasons ? (
+                <div className="text-sm text-gray-700">
+                  Zuweisungsgründe werden geladen...
+                </div>
+              ) : !assignmentReasons ? (
+                <div className="text-sm text-gray-700">
+                  Keine Zuweisungsgründe verfügbar.
+                </div>
+              ) : (
+                <div className="grid gap-3 xl:grid-cols-3">
+                  <ReasonCard
+                    title="Piloten"
+                    empty="Keine Pilotenzuordnungen vorhanden."
+                    section={pilotReasonSection}
+                    prefix="pilot"
+                  />
+                  <ReasonCard
+                    title="Helfer"
+                    empty="Keine Helferzuordnungen vorhanden."
+                    section={helperReasonSection}
+                    prefix="helper"
+                  />
+                  <ReasonCard
+                    title="Aufträge"
+                    empty="Keine Auftragszuordnungen vorhanden."
+                    section={orderReasonSection}
+                    prefix="order"
+                  />
+                </div>
+              )}
+            </section>
 
             <section className="page-card overflow-hidden p-0">
               <div className="border-b border-gray-200 px-4 py-4 md:px-5">
-                <h2 className="text-lg font-bold text-gray-900">Aktive Aufträge</h2>
+                <h2 className="text-lg font-bold text-gray-900">
+                  Aktive Aufträge
+                </h2>
                 <p className="mt-1 text-sm text-gray-700">
                   Offene und laufende Flächen auf der Karte.
                 </p>
               </div>
 
               {loadingMap ? (
-                <div className="p-6 text-sm text-gray-700">Karte wird geladen...</div>
+                <div className="p-6 text-sm text-gray-700">
+                  Karte wird geladen...
+                </div>
               ) : adminActiveOrders.length === 0 ? (
                 <div className="p-6 text-sm text-gray-700">
                   Keine offenen oder laufenden Aufträge vorhanden.
@@ -720,14 +691,18 @@ const pilotReasonSection = useMemo(() => {
         ) : (
           <section className="page-card overflow-hidden p-0">
             <div className="border-b border-gray-200 px-4 py-4 md:px-5">
-              <h2 className="text-lg font-bold text-gray-900">Heutige Aufträge</h2>
+              <h2 className="text-lg font-bold text-gray-900">
+                Heutige Aufträge
+              </h2>
               <p className="mt-1 text-sm text-gray-700">
                 Nur offene und laufende Flächen des heutigen Tages.
               </p>
             </div>
 
             {loadingMap ? (
-              <div className="p-6 text-sm text-gray-700">Karte wird geladen...</div>
+              <div className="p-6 text-sm text-gray-700">
+                Karte wird geladen...
+              </div>
             ) : todayOrdersForNonAdmin.length === 0 ? (
               <div className="p-6 text-sm text-gray-700">
                 Für heute gibt es keine offenen Aufträge.
@@ -741,5 +716,47 @@ const pilotReasonSection = useMemo(() => {
         )}
       </div>
     </main>
+  );
+}
+
+function ReasonCard({
+  title,
+  empty,
+  section,
+  prefix,
+}: {
+  title: string;
+  empty: string;
+  section: {
+    visible: AssignmentReasonItem[];
+    hiddenCount: number;
+  };
+  prefix: string;
+}) {
+  return (
+    <div className="page-card-muted p-4">
+      <div className="mb-3 text-sm font-semibold text-gray-900">{title}</div>
+
+      {section.visible.length === 0 ? (
+        <div className="text-sm text-gray-600">{empty}</div>
+      ) : (
+        <div className="space-y-2">
+          {section.visible.map((item, index) => (
+            <div
+              key={`${prefix}-${index}`}
+              className="rounded-lg bg-white px-3 py-2 text-sm text-gray-800"
+            >
+              {item.reason}
+            </div>
+          ))}
+
+          {section.hiddenCount > 0 && (
+            <div className="text-sm text-gray-500">
+              + {section.hiddenCount} weitere
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

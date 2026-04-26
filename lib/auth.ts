@@ -4,7 +4,6 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 
 export const authOptions: NextAuthOptions = {
-  
   useSecureCookies: false,
 
   session: {
@@ -73,15 +72,26 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        const updatedUser = await db.user.update({
+          where: { id: user.id },
+          data: {
+            sessionVersion: {
+              increment: 1,
+            },
+            lastSeenAt: new Date(),
+          },
+        });
+
         return {
-          id: user.id,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-          isAdmin: user.isAdmin,
-          isApproved: user.isApproved,
+          id: updatedUser.id,
+          email: updatedUser.email,
+          name: `${updatedUser.firstName} ${updatedUser.lastName}`,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          role: updatedUser.role,
+          isAdmin: updatedUser.isAdmin,
+          isApproved: updatedUser.isApproved,
+          sessionVersion: updatedUser.sessionVersion,
         } as any;
       },
     }),
@@ -96,28 +106,56 @@ export const authOptions: NextAuthOptions = {
         token.isApproved = (user as any).isApproved;
         token.firstName = (user as any).firstName;
         token.lastName = (user as any).lastName;
+        token.sessionVersion = (user as any).sessionVersion;
+        return token;
+      }
+
+      if (token?.id) {
+        const dbUser = await db.user.findUnique({
+          where: { id: String(token.id) },
+          select: {
+            sessionVersion: true,
+            isApproved: true,
+          },
+        });
+
+        if (!dbUser || !dbUser.isApproved) {
+          token.invalidSession = true;
+          return token;
+        }
+
+        if (dbUser.sessionVersion !== token.sessionVersion) {
+          token.invalidSession = true;
+          return token;
+        }
       }
 
       return token;
     },
 
     async session({ session, token }) {
-      if (session.user) {
-        (session.user as any).id = token.id;
-        (session.user as any).role = token.role;
-        (session.user as any).isAdmin = token.isAdmin;
-        (session.user as any).isApproved = token.isApproved;
-        (session.user as any).firstName = token.firstName;
-        (session.user as any).lastName = token.lastName;
-      }
+  if ((token as any).invalidSession) {
+    session.expires = new Date(0).toISOString();
+    return session;
+  }
 
-      return session;
-    },
+  if (session.user) {
+    (session.user as any).id = token.id;
+    (session.user as any).role = token.role;
+    (session.user as any).isAdmin = token.isAdmin;
+    (session.user as any).isApproved = token.isApproved;
+    (session.user as any).firstName = token.firstName;
+    (session.user as any).lastName = token.lastName;
+    (session.user as any).sessionVersion = token.sessionVersion;
+  }
+
+  return session;
+}
   },
 
   pages: {
     signIn: "/login",
   },
 
-  secret: process.env.AUTH_SECRET,
+  secret: process.env.NEXTAUTH_SECRET,
 };

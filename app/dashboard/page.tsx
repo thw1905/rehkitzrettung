@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import DashboardPageClient from "@/components/dashboard/dashboard-page-client";
 
+
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
 
@@ -15,4 +16,5 @@ export default async function DashboardPage() {
       isAdmin={!!(session.user as any).isAdmin}
     />
   );
+  
 }
