@@ -12,6 +12,13 @@ enum Role {
   SUCHER
 }
 
+enum DrohneLicense {
+  NONE
+  A1_A3
+  A2
+  Special
+}
+
 enum OrderStatus {
   OFFEN
   IN_ARBEIT
@@ -91,6 +98,7 @@ model User {
   role                     Role                     @default(SUCHER)
   isAdmin                  Boolean                  @default(false)
   isApproved               Boolean                  @default(false)
+  DrohneLicense   DrohneLicense   @default(NONE)
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
 

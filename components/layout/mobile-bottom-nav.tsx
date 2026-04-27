@@ -55,7 +55,6 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     { href: "/availability/admin", label: "Verfügbarkeit Admin" },
     { href: "/owners", label: "Ansprechpartner" },
     { href: "/helpers", label: "Helfer" },
-    { href: "/orders-map", label: "Kartenübersicht" },
     { href: "/statistics", label: "Statistik" },
     { href: "/fields", label: "Flächen" },
     { href: "/profile", label: "Mein Profil" },
