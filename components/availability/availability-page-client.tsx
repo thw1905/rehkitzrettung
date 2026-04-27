@@ -58,22 +58,23 @@ function getStatusEmoji(status: AvailabilityStatus) {
   return "⬜";
 }
 
-function buildEmptyDays(days: number) {
-  const result: {
-    date: string;
-    status: AvailabilityStatus;
-    note: string | null;
-  }[] = [];
+function buildSeasonDays() {
+  const result = [];
 
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
+  const year = new Date().getFullYear();
+  const start = new Date(year, 4, 1);
+  const end = new Date(year, 5, 30);
 
-  for (let i = 0; i < days; i++) {
-    const current = new Date(start);
-    current.setDate(start.getDate() + i);
+  // restlicher Code...
 
+
+  for (
+    let current = new Date(start);
+    current <= end;
+    current.setDate(current.getDate() + 1)
+  ) {
     result.push({
-      date: toDateKey(current),
+      date: toDateKey(new Date(current)),
       status: "OFFEN",
       note: null,
     });
@@ -106,7 +107,7 @@ export default function AvailabilityPageClient({
       }
 
       const loaded = Array.isArray(data) ? data : [];
-      const fullDays = buildEmptyDays(days);
+      const fullDays = buildSeasonDays();
 
       const byDate = new Map<string, AvailabilityItem>();
 
@@ -200,7 +201,7 @@ export default function AvailabilityPageClient({
 }
 
   const displayDays = useMemo(() => {
-    return buildEmptyDays(days).map((day) => ({
+    return buildSeasonDays().map((day) => ({
       date: day.date,
       draft: drafts[day.date] || {
         status: "OFFEN" as AvailabilityStatus,
