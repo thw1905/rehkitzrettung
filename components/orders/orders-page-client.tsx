@@ -163,8 +163,8 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
   const [creating, setCreating] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusView, setStatusView] = useState<"AKTIV" | "ERLEDIGT" | "ALLE">(
-    "AKTIV"
+  const [statusView, setStatusView] = useState<"AKTIV" |"OFFEN"|"IN_ARBEIT"| "ERLEDIGT" | "ALLE">(
+    "OFFEN"
   );
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
 
@@ -175,11 +175,11 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
 
     try {
       const [ordersRes, ownersRes, fieldsRes, teamsRes] = await Promise.all([
-        fetch("/api/orders", { cache: "no-store" }),
-        fetch("/api/owners", { cache: "no-store" }),
-        fetch("/api/fields-list", { cache: "no-store" }),
-        fetch("/api/teams-list", { cache: "no-store" }),
-      ]);
+  fetch(isAdmin ? "/api/orders/all" : "/api/orders", { cache: "no-store" }),
+  fetch("/api/owners", { cache: "no-store" }),
+  fetch("/api/fields-list", { cache: "no-store" }),
+  fetch("/api/teams-list", { cache: "no-store" }),
+]);
 
       const ordersData = await readJsonSafe<Order[]>(ordersRes);
       const ownersData = await readJsonSafe<Owner[]>(ownersRes);
@@ -376,6 +376,14 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
       return orders.filter((order) => order.status !== "ERLEDIGT");
     }
 
+    if (statusView === "OFFEN") {
+  return orders.filter((order) => order.status === "OFFEN");
+}
+
+if (statusView === "IN_ARBEIT") {
+  return orders.filter((order) => order.status === "IN_ARBEIT");
+}
+
     if (statusView === "ERLEDIGT") {
       return orders.filter((order) => order.status === "ERLEDIGT");
     }
@@ -553,9 +561,11 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
                   }
                   className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:w-44 md:text-sm"
                 >
-                  <option value="AKTIV">Nur aktive</option>
-                  <option value="ERLEDIGT">Nur erledigte</option>
-                  <option value="ALLE">Alle</option>
+                  <option value="AKTIV">Aktive</option>
+<option value="OFFEN">Offene</option>
+<option value="IN_ARBEIT">In Arbeit</option>
+<option value="ERLEDIGT">Erledigte</option>
+<option value="ALLE">Alle</option>
                 </select>
               </div>
             )}

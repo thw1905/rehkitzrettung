@@ -16,6 +16,8 @@ type ExistingFieldLite = {
 type UploadPayload = {
   xmlText: string;
   takeoffPoint: { lat: number; lng: number } | null;
+  documentName: string | null;
+  firstWaypointPoint: { lat: number; lng: number } | null;
 };
 
 type FileImportResult = {
@@ -151,6 +153,41 @@ function extractTakeoffPointFromAnyXml(xmlText: string) {
   return { lat, lng };
 }
 
+function extractDocumentNameFromXml(xmlText: string) {
+  const match = xmlText.match(/<Document>[\s\S]*?<name>\s*([^<]+)\s*<\/name>/i);
+  return match?.[1]?.trim() || null;
+}
+
+function extractFirstWaypointPointFromXml(xmlText: string) {
+  const placemarkMatches = [
+    ...xmlText.matchAll(/<Placemark[\s\S]*?<\/Placemark>/gi),
+  ];
+
+  for (const placemarkMatch of placemarkMatches) {
+    const placemark = placemarkMatch[0];
+
+    const nameMatch = placemark.match(/<name>\s*([^<]+)\s*<\/name>/i);
+    const name = nameMatch?.[1]?.trim().toLowerCase() || "";
+
+    if (name !== "p1") continue;
+
+    const coordinatesMatch = placemark.match(
+      /<coordinates>\s*([0-9.\-]+)\s*,\s*([0-9.\-]+)(?:\s*,\s*([0-9.\-]+))?\s*<\/coordinates>/i
+    );
+
+    if (!coordinatesMatch) continue;
+
+    const lng = Number(coordinatesMatch[1]);
+    const lat = Number(coordinatesMatch[2]);
+
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { lat, lng };
+    }
+  }
+
+  return null;
+}
+
 async function extractImportPayloadFromUpload(file: File): Promise<UploadPayload> {
   const fileName = file.name.toLowerCase();
 
@@ -158,9 +195,11 @@ async function extractImportPayloadFromUpload(file: File): Promise<UploadPayload
     const xmlText = await file.text();
 
     return {
-      xmlText,
-      takeoffPoint: extractTakeoffPointFromAnyXml(xmlText),
-    };
+  xmlText,
+  takeoffPoint: extractTakeoffPointFromAnyXml(xmlText),
+  documentName: extractDocumentNameFromXml(xmlText),
+  firstWaypointPoint: extractFirstWaypointPointFromXml(xmlText),
+};
   }
 
   if (fileName.endsWith(".kmz")) {
@@ -202,9 +241,11 @@ async function extractImportPayloadFromUpload(file: File): Promise<UploadPayload
     }
 
     return {
-      xmlText,
-      takeoffPoint,
-    };
+  xmlText,
+  takeoffPoint,
+  documentName: extractDocumentNameFromXml(xmlText),
+  firstWaypointPoint: extractFirstWaypointPointFromXml(xmlText),
+};
   }
 
   throw new Error("Nur KML- oder KMZ-Dateien sind erlaubt.");
@@ -214,7 +255,10 @@ async function importSingleFile(
   file: File,
   existingFields: ExistingFieldLite[]
 ): Promise<FileImportResult> {
-  const { xmlText, takeoffPoint } = await extractImportPayloadFromUpload(file);
+  const { xmlText, takeoffPoint, documentName, firstWaypointPoint } =
+  await extractImportPayloadFromUpload(file);
+
+const meetingPoint = takeoffPoint || firstWaypointPoint;
 
   const kmlDoc = new DOMParser().parseFromString(xmlText, "text/xml");
   const geojson = toGeoJSON(kmlDoc);
@@ -247,7 +291,12 @@ async function importSingleFile(
       continue;
     }
 
-    const fieldName = getFeatureName(feature, index, file.name);
+    const rawFeatureName = getFeatureName(feature, index, file.name);
+
+const fieldName =
+  rawFeatureName.toLowerCase() === "area" && documentName
+    ? documentName
+    : rawFeatureName;
 
     const createdField = await db.field.create({
       data: {
@@ -255,11 +304,13 @@ async function importSingleFile(
         displayName: fieldName,
         areaGeoJson: feature as any,
         notes: `Importiert aus ${file.name.toLowerCase().endsWith(".kmz") ? "KMZ" : "KML"}`,
-        locationLatitude: takeoffPoint?.lat ?? null,
-        locationLongitude: takeoffPoint?.lng ?? null,
-        locationNote: takeoffPoint
-          ? "Automatisch aus DJI Takeoff Point übernommen"
-          : null,
+        locationLatitude: meetingPoint?.lat ?? null,
+locationLongitude: meetingPoint?.lng ?? null,
+locationNote: takeoffPoint
+  ? "Automatisch aus DJI Takeoff Point übernommen"
+  : firstWaypointPoint
+    ? "Automatisch aus erstem DJI-Wegpunkt übernommen"
+    : null,
       },
     });
 
@@ -276,7 +327,7 @@ async function importSingleFile(
     importedCount,
     skippedCount,
     duplicateCount,
-    meetingPointImported: !!takeoffPoint,
+    meetingPointImported: !!meetingPoint,
   };
 }
 

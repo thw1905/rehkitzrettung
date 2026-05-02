@@ -16,8 +16,7 @@ type AppHeaderProps = {
 };
 
 function navClass(isActive: boolean, variant: "default" | "personal" = "default") {
-  const base =
-    "rounded-xl px-3 py-2 text-sm font-medium transition border";
+  const base = "rounded-xl px-3 py-2 text-sm font-medium transition border";
 
   if (variant === "personal") {
     return [
@@ -39,9 +38,68 @@ function navClass(isActive: boolean, variant: "default" | "personal" = "default"
 export default function AppHeader({ user }: AppHeaderProps) {
   const pathname = usePathname();
   const isAdmin = Boolean(user?.isAdmin);
+  
 
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
+  const [creatingDemoOrder, setCreatingDemoOrder] = useState(false);
+  const [personalMenuOpen, setPersonalMenuOpen] = useState(false);
+  const [managementMenuOpen, setManagementMenuOpen] = useState(false);
+const [operationsMenuOpen, setOperationsMenuOpen] = useState(false);
+  const closeAllMenus = () => {
+  setPersonalMenuOpen(false);
+  setManagementMenuOpen(false);
+  setOperationsMenuOpen(false);
+};
+
+useEffect(() => {
+  function handleClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+
+    if (!target.closest("[data-header-menu]")) {
+      closeAllMenus();
+    }
+  }
+
+  document.addEventListener("mousedown", handleClickOutside);
+
+  return () => {
+    document.removeEventListener("mousedown", handleClickOutside);
+  };
+}, []);
+
+  async function handleCreateDemoOrder() {
+    const pin = window.prompt("PIN für Demo-Auftrag eingeben:");
+
+    if (!pin) return;
+
+    try {
+      setCreatingDemoOrder(true);
+
+      const response = await fetch("/api/demo-order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pin }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        alert(result?.error || "Demo-Auftrag konnte nicht erstellt werden.");
+        return;
+      }
+
+      alert("Demo-Auftrag erfolgreich erstellt.");
+      window.location.href = "/orders";
+    } catch (error) {
+      console.error("Demo-Auftrag Fehler:", error);
+      alert("Demo-Auftrag konnte nicht erstellt werden.");
+    } finally {
+      setCreatingDemoOrder(false);
+    }
+  }
 
   useEffect(() => {
     if (!isAdmin) {
@@ -115,24 +173,39 @@ export default function AppHeader({ user }: AppHeaderProps) {
 
   const personalNavItems = [
     { href: "/my-orders", label: "Meine Aufträge" },
-    { href: "/team-members", label: "Mein Team"},
+    { href: "/team-members", label: "Mein Team" },
     { href: "/availability", label: "Meine Verfügbarkeit" },
     { href: "/profile", label: "Mein Profil" },
   ];
 
-  const adminNavItems = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/orders", label: "Aufträge" },
-    { href: "/team-planning", label: "Teamplanung" },
-    { href: "/day-assignments", label: "Auftragszuordnung" },
-    { href: "/helpers", label: "Helfer" },
-    { href: "/availability/admin", label: "Verfügbarkeit Admin" },
-    { href: "/team-slots", label: "Team-Slots" },
-    { href: "/fields", label: "Flächen" },
-    { href: "/owners", label: "Ansprechpartner" },
-    { href: "/statistics", label: "Statistik" },
-    { href: "/admin/field-import", label: "KML-Import" },
-  ];
+  const managementNavItems = [
+  { href: "/orders", label: "Aufträge" },
+  { href: "/helpers", label: "Helfer" },
+  { href: "/fields", label: "Flächen" },
+  { href: "/owners", label: "Ansprechpartner" },
+];
+
+const operationsNavItems = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/team-planning", label: "Teamplanung" },
+  { href: "/day-assignments", label: "Auftragszuordnung" },
+  { href: "/availability/admin", label: "Verfügbarkeit Admin" },
+  { href: "/team-slots", label: "Team-Slots" },
+  { href: "/statistics", label: "Statistik" },
+  { href: "/admin/field-import", label: "KML-Import" },
+];
+
+const isPersonalActive = personalNavItems.some(
+  (item) => pathname === item.href || pathname.startsWith(item.href + "/")
+);
+
+const isManagementActive = managementNavItems.some(
+  (item) => pathname === item.href || pathname.startsWith(item.href + "/")
+);
+
+const isOperationsActive = operationsNavItems.some(
+  (item) => pathname === item.href || pathname.startsWith(item.href + "/")
+);
 
   const helpersActive =
     pathname === "/helpers" || pathname.startsWith("/helpers/");
@@ -201,7 +274,46 @@ export default function AppHeader({ user }: AppHeaderProps) {
                 </div>
               )}
 
-              <SupportContactButton/>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleCreateDemoOrder}
+                  disabled={creatingDemoOrder}
+                  className="rounded-xl border border-yellow-300 bg-yellow-100 px-3 py-2 text-sm font-semibold text-yellow-900 transition hover:bg-yellow-200 disabled:opacity-50"
+                >
+                  {creatingDemoOrder ? "Erstelle..." : "🟡 Demo-Auftrag"}
+                </button>
+              )}
+
+              <button
+  type="button"
+  onClick={async () => {
+    const confirmed = window.confirm(
+      "Alle Demo-Aufträge löschen?"
+    );
+
+    if (!confirmed) return;
+
+    const res = await fetch("/api/cleanup-demo-orders", {
+      method: "POST",
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data?.error || "Demo-Aufträge konnten nicht gelöscht werden.");
+      return;
+    }
+
+    alert(`Demo-Aufträge gelöscht: ${data.deleted}`);
+    window.location.reload();
+  }}
+  className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-100"
+>
+  Demo löschen
+</button>
+
+              <SupportContactButton />
 
               <div className="text-right">
                 <div className="text-sm font-semibold text-gray-900">
@@ -224,72 +336,131 @@ export default function AppHeader({ user }: AppHeaderProps) {
           </div>
 
           <nav className="mt-3 hidden flex-wrap gap-2 md:flex">
-  {personalNavItems.map((item) => {
-    const isActive =
-      pathname === item.href || pathname.startsWith(item.href + "/");
+           <div className="relative" data-header-menu>
+  <button
+    type="button"
+    onClick={() => setPersonalMenuOpen(!personalMenuOpen)}
+    className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-900 hover:bg-blue-100"
+  >
+    Persönlicher Bereich ▼
+  </button>
 
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        className={navClass(isActive, "personal")}
-      >
-        {item.label}
-      </Link>
-    );
-  })}
+  {personalMenuOpen && (
+    <div className="absolute left-0 z-50 mt-2 min-w-[240px] rounded-2xl border border-gray-200 bg-white p-2 shadow-lg">
+      {personalNavItems.map((item) => {
+        const isActive =
+          pathname === item.href || pathname.startsWith(item.href + "/");
 
-  {isAdmin &&
-    adminNavItems.map((item) => {
-      const isActive =
-        pathname === item.href || pathname.startsWith(item.href + "/");
-
-      return (
-        <Link
-          key={item.href}
-          href={item.href}
-          className={navClass(isActive)}
-        >
-          {item.label}
-        </Link>
-      );
-    })}
-
-  {!isAdmin && (
-    <>
-      <Link
-        href="/dashboard"
-        className={navClass(
-          pathname === "/dashboard" ||
-            pathname.startsWith("/dashboard/")
-        )}
-      >
-        Dashboard
-      </Link>
-
-      <Link
-        href="/fields"
-        className={navClass(
-          pathname === "/fields" ||
-            pathname.startsWith("/fields/")
-        )}
-      >
-        Flächen
-      </Link>
-    </>
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={() => setPersonalMenuOpen(false)}
+            className={`block rounded-xl px-4 py-3 text-sm font-medium transition ${
+              isActive
+                ? "bg-blue-100 text-blue-900"
+                : "text-gray-800 hover:bg-gray-100"
+            }`}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </div>
   )}
+</div>
 
-  {isAdmin && pendingCount !== null && pendingCount > 0 && (
-    <Link href="/helpers" className={navClass(helpersActive)}>
-      <span className="inline-flex items-center">
-        Freigaben
-        <span className="pending-badge-pulse ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
-          {pendingCount}
-        </span>
-      </span>
-    </Link>
-  )}
-</nav>
+            {isAdmin && (
+  <>
+    <div className="relative" data-header-menu>
+      <button
+        type="button"
+        onClick={() => {
+          setManagementMenuOpen((prev) => !prev);
+          setOperationsMenuOpen(false);
+          setPersonalMenuOpen(false);
+        }}
+        className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-100"
+      >
+        ⚙ Verwaltung ▼
+      </button>
+
+      {managementMenuOpen && (
+        <div className="absolute left-0 z-50 mt-2 min-w-[240px] rounded-2xl border border-gray-200 bg-white p-2 shadow-lg">
+          {managementNavItems.map((item) => {
+            const isActive =
+              pathname === item.href || pathname.startsWith(item.href + "/");
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setManagementMenuOpen(false)}
+                className={`block rounded-xl px-4 py-3 text-sm font-medium transition ${
+                  isActive
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-800 hover:bg-gray-100"
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+
+    <div className="relative" data-header-menu>
+      <button
+        type="button"
+        onClick={() => {
+          setOperationsMenuOpen((prev) => !prev);
+          setManagementMenuOpen(false);
+          setPersonalMenuOpen(false);
+        }}
+        className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-100"
+      >
+        📊 Einsatzleitung ▼
+      </button>
+
+      {operationsMenuOpen && (
+        <div className="absolute left-0 z-50 mt-2 min-w-[260px] rounded-2xl border border-gray-200 bg-white p-2 shadow-lg">
+          {operationsNavItems.map((item) => {
+            const isActive =
+              pathname === item.href || pathname.startsWith(item.href + "/");
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setOperationsMenuOpen(false)}
+                className={`block rounded-xl px-4 py-3 text-sm font-medium transition ${
+                  isActive
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-800 hover:bg-gray-100"
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  </>
+)}
+
+            {isAdmin && pendingCount !== null && pendingCount > 0 && (
+              <Link href="/helpers" className={navClass(helpersActive)}>
+                <span className="inline-flex items-center">
+                  Freigaben
+                  <span className="pending-badge-pulse ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
+                    {pendingCount}
+                  </span>
+                </span>
+              </Link>
+            )}
+          </nav>
         </div>
       </header>
     </>

@@ -219,7 +219,7 @@ model Order {
   fieldId                   String
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
-
+  isDemo                    Boolean           @default(false)
   operationDay              OperationDay?     @relation(fields: [operationDayId], references: [id])
   operationDayTeam          OperationDayTeam? @relation(fields: [operationDayTeamId], references: [id])
   owner                     Owner             @relation(fields: [ownerId], references: [id])

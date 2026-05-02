@@ -268,6 +268,7 @@ export default function DashboardPageClient({ isAdmin }: Props) {
     useState<AssignmentReasons | null>(null);
   const [loadingReasons, setLoadingReasons] = useState(isAdmin);
 
+
   async function loadOrders() {
     try {
       const res = await fetch(isAdmin ? "/api/orders/all" : "/api/orders", {
