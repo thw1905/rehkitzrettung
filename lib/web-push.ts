@@ -1,19 +1,23 @@
 import webpush from "web-push";
 import { db } from "@/lib/db";
 
-webpush.setVapidDetails(
-  process.env.WEB_PUSH_SUBJECT || "mailto:test@test.com",
-  process.env.NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY!,
-  process.env.WEB_PUSH_PRIVATE_KEY!
-);
-
 type PushPayload = {
   title: string;
   body: string;
   url?: string;
 };
 
+function ensureVapidConfigured() {
+  webpush.setVapidDetails(
+    process.env.WEB_PUSH_SUBJECT || "mailto:test@test.com",
+    process.env.NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY || "",
+    process.env.WEB_PUSH_PRIVATE_KEY || ""
+  );
+}
+
 export async function sendWebPushToUser(userId: string, payload: PushPayload) {
+  ensureVapidConfigured();
+
   const subscriptions = await db.webPushSubscription.findMany({
     where: {
       userId,
@@ -33,23 +37,18 @@ export async function sendWebPushToUser(userId: string, payload: PushPayload) {
             auth: sub.auth,
           },
         },
-        JSON.stringify({
-          title: payload.title,
-          body: payload.body,
-          url: payload.url || "/dashboard",
-        })
+        JSON.stringify(payload)
       );
 
       sent++;
-    } catch (error: any) {
-      console.error("WebPush Fehler:", error);
+    } catch (error) {
+      console.error("Push Fehler (User):", error);
 
-      if (error?.statusCode === 404 || error?.statusCode === 410) {
-        await db.webPushSubscription.update({
-          where: { id: sub.id },
-          data: { isActive: false },
-        });
-      }
+      // ungültige Subscription deaktivieren
+      await db.webPushSubscription.update({
+        where: { id: sub.id },
+        data: { isActive: false },
+      });
     }
   }
 
@@ -57,6 +56,8 @@ export async function sendWebPushToUser(userId: string, payload: PushPayload) {
 }
 
 export async function sendWebPushToAll(payload: PushPayload) {
+  ensureVapidConfigured();
+
   const subscriptions = await db.webPushSubscription.findMany({
     where: {
       isActive: true,
@@ -75,23 +76,17 @@ export async function sendWebPushToAll(payload: PushPayload) {
             auth: sub.auth,
           },
         },
-        JSON.stringify({
-          title: payload.title,
-          body: payload.body,
-          url: payload.url || "/dashboard",
-        })
+        JSON.stringify(payload)
       );
 
       sent++;
-    } catch (error: any) {
-      console.error("WebPush Fehler:", error);
+    } catch (error) {
+      console.error("Push Fehler (All):", error);
 
-      if (error?.statusCode === 404 || error?.statusCode === 410) {
-        await db.webPushSubscription.update({
-          where: { id: sub.id },
-          data: { isActive: false },
-        });
-      }
+      await db.webPushSubscription.update({
+        where: { id: sub.id },
+        data: { isActive: false },
+      });
     }
   }
 
