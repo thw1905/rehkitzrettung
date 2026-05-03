@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-/*import SupportContactButton from "@/components/layout/support-contact-button";*/
+import SupportContactButton from "@/components/layout/support-contact-button";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -60,7 +60,7 @@ export default function LoginPage() {
             Rehkitzrettung Einsatzsystem
           </p>
         </div>
-
+       
         <div className="space-y-4">
           <div>
             <label
@@ -117,13 +117,14 @@ export default function LoginPage() {
           >
             {loading ? "Anmeldung läuft..." : "Anmelden"}
           </button>
-
+         
           <Link
             href="/register"
             className="block w-full rounded-xl border border-gray-300 px-4 py-3 text-center text-base font-semibold text-gray-800"
           >
             Neu registrieren
           </Link>
+          <SupportContactButton />
         </div>
       </div>
     </main>
