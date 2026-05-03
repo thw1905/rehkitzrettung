@@ -41,14 +41,15 @@ export async function sendWebPushToUser(userId: string, payload: PushPayload) {
       );
 
       sent++;
-    } catch (error) {
-      console.error("Push Fehler (User):", error);
+    } catch (error: any) {
+      console.error("Push Fehler:", error);
 
-      // ungültige Subscription deaktivieren
-      await db.webPushSubscription.update({
-        where: { id: sub.id },
-        data: { isActive: false },
-      });
+      if (error?.statusCode === 404 || error?.statusCode === 410) {
+        await db.webPushSubscription.update({
+          where: { id: sub.id },
+          data: { isActive: false },
+        });
+      }
     }
   }
 
@@ -80,13 +81,15 @@ export async function sendWebPushToAll(payload: PushPayload) {
       );
 
       sent++;
-    } catch (error) {
-      console.error("Push Fehler (All):", error);
+    } catch (error: any) {
+      console.error("Push Fehler:", error);
 
-      await db.webPushSubscription.update({
-        where: { id: sub.id },
-        data: { isActive: false },
-      });
+      if (error?.statusCode === 404 || error?.statusCode === 410) {
+        await db.webPushSubscription.update({
+          where: { id: sub.id },
+          data: { isActive: false },
+        });
+      }
     }
   }
 
