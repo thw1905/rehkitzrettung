@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { registerPush } from "@/lib/push/registerPush";
+import { registerWebPush } from "@/lib/push/registerWebPush";
 
 export default function EnablePushButton() {
   const [loading, setLoading] = useState(false);
@@ -12,7 +12,7 @@ export default function EnablePushButton() {
       setLoading(true);
       setMessage("");
 
-      const result = await registerPush();
+      const result = await registerWebPush();
 
       if (!result.success) {
         setMessage(result.error);

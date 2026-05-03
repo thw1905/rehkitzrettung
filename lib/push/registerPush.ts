@@ -63,7 +63,12 @@ export async function registerPush(): Promise<RegisterPushResult> {
     if (!vapidKey) {
       return { success: false, error: "VAPID Key fehlt" };
     }
-
+    console.log("Firebase Check:", {
+  apiKeyVorhanden: !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  senderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  vapidKeyVorhanden: !!process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+});
     const token = await getToken(messaging, {
       vapidKey,
       serviceWorkerRegistration: registration,
@@ -97,7 +102,7 @@ export async function registerPush(): Promise<RegisterPushResult> {
 
     return { success: true, token };
   } catch (error) {
-    console.error("registerPush error:", error);
+    console.error("registerWebPush error:", error);
     return { success: false, error: "Push konnte nicht aktiviert werden" };
   }
 }

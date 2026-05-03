@@ -187,6 +187,7 @@ useEffect(() => {
 
 const operationsNavItems = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/notifications", label: "Benachrichtigungen"},
   { href: "/team-planning", label: "Teamplanung" },
   { href: "/day-assignments", label: "Auftragszuordnung" },
   { href: "/availability/admin", label: "Verfügbarkeit Admin" },

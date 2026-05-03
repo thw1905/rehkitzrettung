@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import EnablePushButton from "@/components/EnablePushButton";
 import { ja } from "zod/locales";
+import { registerWebPush } from "@/lib/push/registerWebPush";
+
+
 
 const OrdersMapView = dynamic(
   () => import("@/components/orders/orders-map-view"),
@@ -500,6 +503,21 @@ export default function DashboardPageClient({ isAdmin }: Props) {
                 </div>
               )}
             </section>
+
+            <button
+  onClick={async () => {
+    const result = await registerWebPush();
+
+    if (result.success) {
+      alert("Push aktiviert ✅");
+    } else {
+      alert(result.error);
+    }
+  }}
+  className="rounded-xl bg-black px-4 py-2 text-white"
+>
+  Push aktivieren
+</button>
 
             <section className="page-card p-4 md:p-5">
               <div className="mb-4">

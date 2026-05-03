@@ -101,7 +101,7 @@ model User {
   DrohneLicense   DrohneLicense   @default(NONE)
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
-
+  webPushSubscriptions     WebPushSubscription[]
   availabilities           Availability[]
   operationDayTeamPilots   OperationDayTeam[]       @relation("OperationDayTeamPilot")
   operationDayTeamMembers  OperationDayTeamMember[]
@@ -112,6 +112,23 @@ autoAssignPriority Int @default(0)
 isPrimaryPilot Boolean @default(false)
 lastSeenAt      DateTime?
 sessionVersion   Int  @default(0)
+}
+
+model WebPushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastSeenAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model PushDevice {

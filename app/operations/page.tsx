@@ -1,4 +1,6 @@
+import { icon } from "leaflet";
 import Link from "next/link";
+import { title } from "process";
 
 const sections = [
   {
@@ -23,6 +25,7 @@ const sections = [
   {
     title: "Einstellungen",
     items: [
+      { href: "/notifications", title: "Benachrichtigungen", icon: "🔔"},
       { href: "/availability/admin", title: "Verfügbarkeit Admin", icon: "📅" },
       { href: "/team-slots", title: "Team-Slots", icon: "🧩" },
       { href: "/admin/field-import", title: "KML-Import", icon: "🗺️" },
