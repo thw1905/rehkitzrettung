@@ -17,28 +17,19 @@ type Stats = {
   totalDays: number;
 };
 
+type ProfileForm = {
+  firstName: string;
+  lastName: string;
+  street: string;
+  zip: string;
+  city: string;
+  phone: string;
+  email: string;
+};
+
 function getRoleLabel(role: string, isAdmin: boolean) {
   const roleLabel = role === "PILOT" ? "Pilot" : "Sucher";
   return isAdmin ? `${roleLabel} · Admin` : roleLabel;
-}
-
-function InfoRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-        {label}
-      </div>
-      <div className="mt-1 text-sm font-medium text-gray-900 break-words">
-        {value}
-      </div>
-    </div>
-  );
 }
 
 function StatCard({
@@ -60,17 +51,48 @@ function StatCard({
   );
 }
 
-export default function ProfilePageClient({
-  user,
-}: ProfilePageClientProps) {
+export default function ProfilePageClient({ user }: ProfilePageClientProps) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
+
+  const [profile, setProfile] = useState<ProfileForm>({
+    firstName: user.firstName,
+    lastName: user.lastName,
+    street: "",
+    zip: "",
+    city: "",
+    phone: "",
+    email: user.email,
+  });
+
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
 
   useEffect(() => {
+    async function loadProfile() {
+      try {
+        const res = await fetch("/api/profile", { cache: "no-store" });
+        const data = await res.json();
+
+        if (res.ok) {
+          setProfile({
+            firstName: data.firstName || "",
+            lastName: data.lastName || "",
+            street: data.street || "",
+            zip: data.zip || "",
+            city: data.city || "",
+            phone: data.phone || "",
+            email: data.email || "",
+          });
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
     async function loadStats() {
       try {
         const res = await fetch("/api/profile/stats", {
@@ -88,8 +110,48 @@ export default function ProfilePageClient({
       }
     }
 
+    loadProfile();
     loadStats();
   }, []);
+
+  function updateProfileField(key: keyof ProfileForm, value: string) {
+    setProfile((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  async function saveProfile() {
+    if (!profile.firstName || !profile.lastName || !profile.email) {
+      alert("Vorname, Nachname und E-Mail müssen ausgefüllt sein.");
+      return;
+    }
+
+    setSavingProfile(true);
+
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(profile),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Profil konnte nicht gespeichert werden.");
+      }
+
+      alert("Profil erfolgreich gespeichert.");
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.message || "Profil konnte nicht gespeichert werden.");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
 
   async function changePassword() {
     if (!currentPassword || !newPassword) {
@@ -141,25 +203,81 @@ export default function ProfilePageClient({
             Mein Profil
           </h1>
           <p className="mt-2 text-sm leading-6 text-gray-600 md:text-base">
-            Hier kannst du deine persönlichen Daten ansehen, deine Statistik
-            prüfen und dein Passwort ändern.
+            Hier kannst du deine persönlichen Daten, deine Statistik und dein
+            Passwort verwalten.
           </p>
         </section>
 
         <section className="grid gap-4 md:grid-cols-2">
           <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-100 md:p-6">
-            <h2 className="text-lg font-semibold text-gray-900">Meine Daten</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Meine Daten
+            </h2>
 
-            <div className="mt-4 space-y-3">
-              <InfoRow
-                label="Name"
-                value={`${user.firstName} ${user.lastName}`}
+            <div className="mt-4 grid gap-4">
+              <input
+                value={profile.firstName}
+                onChange={(e) => updateProfileField("firstName", e.target.value)}
+                className="rounded-2xl border px-4 py-3"
+                placeholder="Vorname"
               />
-              <InfoRow label="E-Mail" value={user.email} />
-              <InfoRow
-                label="Rolle"
-                value={getRoleLabel(user.role, user.isAdmin)}
+
+              <input
+                value={profile.lastName}
+                onChange={(e) => updateProfileField("lastName", e.target.value)}
+                className="rounded-2xl border px-4 py-3"
+                placeholder="Nachname"
               />
+
+              <input
+                value={profile.street}
+                onChange={(e) => updateProfileField("street", e.target.value)}
+                className="rounded-2xl border px-4 py-3"
+                placeholder="Straße"
+              />
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input
+                  value={profile.zip}
+                  onChange={(e) => updateProfileField("zip", e.target.value)}
+                  className="rounded-2xl border px-4 py-3"
+                  placeholder="PLZ"
+                />
+
+                <input
+                  value={profile.city}
+                  onChange={(e) => updateProfileField("city", e.target.value)}
+                  className="rounded-2xl border px-4 py-3"
+                  placeholder="Ort"
+                />
+              </div>
+
+              <input
+                value={profile.phone}
+                onChange={(e) => updateProfileField("phone", e.target.value)}
+                className="rounded-2xl border px-4 py-3"
+                placeholder="Telefon"
+              />
+
+              <input
+                type="email"
+                value={profile.email}
+                onChange={(e) => updateProfileField("email", e.target.value)}
+                className="rounded-2xl border px-4 py-3"
+                placeholder="E-Mail"
+              />
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
+                Rolle: {getRoleLabel(user.role, user.isAdmin)}
+              </div>
+
+              <button
+                onClick={saveProfile}
+                disabled={savingProfile}
+                className="rounded-2xl bg-black px-5 py-3 font-semibold text-white disabled:opacity-50"
+              >
+                {savingProfile ? "Speichert..." : "Profil speichern"}
+              </button>
             </div>
           </div>
 
@@ -190,48 +308,33 @@ export default function ProfilePageClient({
         </section>
 
         <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-100 md:p-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Passwort ändern
-            </h2>
-            <p className="text-sm text-gray-600">
-              Vergib ein neues Passwort mit mindestens 6 Zeichen.
-            </p>
-          </div>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Passwort ändern
+          </h2>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-800">
-                Aktuelles Passwort
-              </label>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 outline-none transition focus:border-black"
-                placeholder="Aktuelles Passwort eingeben"
-              />
-            </div>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="rounded-2xl border px-4 py-3"
+              placeholder="Aktuelles Passwort"
+            />
 
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-800">
-                Neues Passwort
-              </label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 outline-none transition focus:border-black"
-                placeholder="Neues Passwort eingeben"
-              />
-            </div>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="rounded-2xl border px-4 py-3"
+              placeholder="Neues Passwort"
+            />
           </div>
 
-          <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <div className="mt-5 flex justify-end">
             <button
               onClick={changePassword}
               disabled={savingPassword}
-              className="w-full rounded-2xl bg-black px-5 py-3 text-base font-semibold text-white disabled:opacity-50 sm:w-auto"
+              className="rounded-2xl bg-black px-5 py-3 font-semibold text-white disabled:opacity-50"
             >
               {savingPassword ? "Speichert..." : "Passwort ändern"}
             </button>

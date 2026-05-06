@@ -252,14 +252,17 @@ const isOperationsActive = operationsNavItems.some(
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="rounded-xl border border-gray-300 px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
-            >
-              Logout
-            </button>
-          </div>
+            
+  <SupportContactButton />
+
+  <button
+    type="button"
+    onClick={() => signOut({ callbackUrl: "/login" })}
+    className="rounded-xl border border-gray-300 px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+  >
+    Logout
+  </button>
+</div>
 
           <div className="hidden md:flex md:items-start md:justify-between md:gap-3">
             <div className="min-w-0">

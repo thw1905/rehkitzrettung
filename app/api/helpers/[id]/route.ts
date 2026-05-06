@@ -97,3 +97,55 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const currentUser = await getCurrentUserWithTeams();
+
+  if (!currentUser) {
+    return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
+  }
+
+  if (!currentUser.isAdmin) {
+    return NextResponse.json(
+      { error: "Nur Admins dürfen Helfer löschen." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    const { id } = await context.params;
+
+    if (id === currentUser.id) {
+      return NextResponse.json(
+        { error: "Du kannst dich nicht selbst löschen." },
+        { status: 400 }
+      );
+    }
+
+    await db.webPushSubscription.deleteMany({ where: { userId: id } });
+    await db.pushDevice.deleteMany({ where: { userId: id } });
+    await db.availability.deleteMany({ where: { userId: id } });
+    await db.operationDayTeamMember.deleteMany({ where: { userId: id } });
+
+    await db.operationDayTeam.updateMany({
+      where: { pilotId: id },
+      data: { pilotId: null },
+    });
+
+    await db.user.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("Fehler beim Löschen des Helfers:", error);
+
+    return NextResponse.json(
+      { error: error?.message || "Helfer konnte nicht gelöscht werden." },
+      { status: 500 }
+    );
+  }
+}

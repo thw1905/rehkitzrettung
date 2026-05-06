@@ -78,6 +78,7 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
 
   return (
     <nav className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-[85] border-t border-gray-200 bg-white/95 px-3 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur md:hidden">
+    
       <div className="mx-auto flex max-w-3xl items-center gap-2">
         {baseItems.map((item) => {
           const active = isItemActive(item);
@@ -95,6 +96,7 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     {item.label}
   </span>
 </Link>
+
 );
 })}
 </div>
