@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const fieldIds = Array.isArray(body.fieldIds)
+    const fieldIds:string[] = Array.isArray(body.fieldIds)
       ? body.fieldIds.map((id: unknown) => String(id)).filter(Boolean)
       : [];
 
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     });
 
     const foundFieldIds = new Set(fields.map((field) => field.id));
-    const missingFieldIds = fieldIds.filter((id) => !foundFieldIds.has(id));
+    const missingFieldIds = fieldIds.filter((id: string) => !foundFieldIds.has(id));
 
     const createdOrders = [];
 
