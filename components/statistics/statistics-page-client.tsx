@@ -12,6 +12,7 @@ type Summary = {
   rehkitzeAbgesprungen: number;
   sonstigesWildGesichert: number;
   sonstigesWildAbgesprungen: number;
+  maulwurfhuegelFehlstelle: number;
 };
 
 type TeamStat = {
@@ -27,6 +28,7 @@ type TeamStat = {
   rehkitzeAbgesprungen: number;
   sonstigesWildGesichert: number;
   sonstigesWildAbgesprungen: number;
+  maulwurfhuegelFehlstelle: number;
 };
 
 type DayStat = {
@@ -40,6 +42,7 @@ type DayStat = {
   rehkitzeAbgesprungen: number;
   sonstigesWildGesichert: number;
   sonstigesWildAbgesprungen: number;
+  maulwurfhuegelFehlstelle: number;
 };
 
 type StatisticsResponse = {
@@ -89,7 +92,9 @@ function StatCard({
 
   return (
     <div className={`page-card-muted p-4 ${toneClasses[tone]}`}>
-      <div className="text-xs font-semibold uppercase tracking-wide">{label}</div>
+      <div className="text-xs font-semibold uppercase tracking-wide">
+        {label}
+      </div>
       <div className="mt-2 text-2xl font-bold">{value}</div>
     </div>
   );
@@ -109,7 +114,9 @@ export default function StatisticsPageClient() {
 
     try {
       const res = await fetch(
-        `/api/statistics?from=${encodeURIComponent(fromValue)}&to=${encodeURIComponent(toValue)}`,
+        `/api/statistics?from=${encodeURIComponent(
+          fromValue
+        )}&to=${encodeURIComponent(toValue)}`,
         { cache: "no-store" }
       );
 
@@ -210,7 +217,7 @@ export default function StatisticsPageClient() {
               />
             </section>
 
-            <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
               <div className="rounded-xl border border-green-300 bg-green-50 p-4">
                 <div className="text-xs font-semibold uppercase tracking-wide text-green-700">
                   Rehkitze gesichert
@@ -244,6 +251,15 @@ export default function StatisticsPageClient() {
                 </div>
                 <div className="mt-2 text-2xl font-bold text-orange-900">
                   {data.summary.sonstigesWildAbgesprungen}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-300 bg-slate-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                  Maulwurf / Fehlstellen
+                </div>
+                <div className="mt-2 text-2xl font-bold text-slate-900">
+                  {data.summary.maulwurfhuegelFehlstelle}
                 </div>
               </div>
             </section>
@@ -355,6 +371,15 @@ export default function StatisticsPageClient() {
                             {team.sonstigesWildAbgesprungen}
                           </div>
                         </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
+                          <div className="text-xs font-medium text-slate-700">
+                            Maulwurf / Fehlstellen
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-900">
+                            {team.maulwurfhuegelFehlstelle}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -449,6 +474,15 @@ export default function StatisticsPageClient() {
                           </div>
                           <div className="mt-1 font-semibold text-orange-900">
                             {day.sonstigesWildAbgesprungen}
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-xs font-medium text-slate-700">
+                            Maulwurf / Fehlst.
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-900">
+                            {day.maulwurfhuegelFehlstelle}
                           </div>
                         </div>
                       </div>

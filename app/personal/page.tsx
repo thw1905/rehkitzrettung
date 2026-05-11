@@ -27,6 +27,11 @@ const items = [
     description: "Zu- und Absagen verwalten",
   },
   {
+    href: "/personal-statistics",
+    title: "Meine Statistik",
+    icon: "📊",
+  },
+  {
     href: "/profile",
     title: "Mein Profil",
     icon: "👤",

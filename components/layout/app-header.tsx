@@ -177,6 +177,7 @@ useEffect(() => {
     { href: "/my-notifications", label: "Meine Benachrichtigungen" },
     { href: "/team-members", label: "Mein Team" },
     { href: "/availability", label: "Meine Verfügbarkeit" },
+    { href: "/personal-statistics", label: "Meine Statistik"},
     { href: "/profile", label: "Mein Profil" },
   ];
 

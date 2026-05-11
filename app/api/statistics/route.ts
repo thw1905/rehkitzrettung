@@ -12,7 +12,48 @@ function getEndOfDay(date: Date) {
 
 function diffMinutes(startTime: Date | null, endTime: Date | null) {
   if (!startTime || !endTime) return 0;
-  return Math.max(0, Math.floor((endTime.getTime() - startTime.getTime()) / 60000));
+
+  return Math.max(
+    0,
+    Math.floor((endTime.getTime() - startTime.getTime()) / 60000)
+  );
+}
+
+function getWildCounts(order: any) {
+  const pinpoints = Array.isArray(order.pinpoints) ? order.pinpoints : [];
+
+  if (pinpoints.length > 0) {
+    return {
+      rehkitzeGesichert: pinpoints.reduce(
+        (sum: number, p: any) => sum + (p.rehkitzeGesichert || 0),
+        0
+      ),
+      rehkitzeAbgesprungen: pinpoints.reduce(
+        (sum: number, p: any) => sum + (p.rehkitzeAbgesprungen || 0),
+        0
+      ),
+      sonstigesWildGesichert: pinpoints.reduce(
+        (sum: number, p: any) => sum + (p.sonstigesWildGesichert || 0),
+        0
+      ),
+      sonstigesWildAbgesprungen: pinpoints.reduce(
+        (sum: number, p: any) => sum + (p.sonstigesWildAbgesprungen || 0),
+        0
+      ),
+      maulwurfhuegelFehlstelle: pinpoints.reduce(
+        (sum: number, p: any) => sum + (p.maulwurfhuegelFehlstelle || 0),
+        0
+      ),
+    };
+  }
+
+  return {
+    rehkitzeGesichert: order.rehkitzeGesichert || 0,
+    rehkitzeAbgesprungen: order.rehkitzeAbgesprungen || 0,
+    sonstigesWildGesichert: order.sonstigesWildGesichert || 0,
+    sonstigesWildAbgesprungen: order.sonstigesWildAbgesprungen || 0,
+    maulwurfhuegelFehlstelle: order.maulwurfhuegelFehlstelle || 0,
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -61,10 +102,22 @@ export async function GET(req: NextRequest) {
         executedAreaSqm: true,
         startTime: true,
         endTime: true,
+
         rehkitzeGesichert: true,
         rehkitzeAbgesprungen: true,
         sonstigesWildGesichert: true,
         sonstigesWildAbgesprungen: true,
+        maulwurfhuegelFehlstelle: true,
+
+        pinpoints: {
+          select: {
+            rehkitzeGesichert: true,
+            rehkitzeAbgesprungen: true,
+            sonstigesWildGesichert: true,
+            sonstigesWildAbgesprungen: true,
+            maulwurfhuegelFehlstelle: true,
+          },
+        },
       },
     });
 
@@ -76,6 +129,7 @@ export async function GET(req: NextRequest) {
       rehkitzeAbgesprungen: 0,
       sonstigesWildGesichert: 0,
       sonstigesWildAbgesprungen: 0,
+      maulwurfhuegelFehlstelle: 0,
     };
 
     const teamMap = new Map<
@@ -91,6 +145,7 @@ export async function GET(req: NextRequest) {
         rehkitzeAbgesprungen: number;
         sonstigesWildGesichert: number;
         sonstigesWildAbgesprungen: number;
+        maulwurfhuegelFehlstelle: number;
       }
     >();
 
@@ -105,6 +160,7 @@ export async function GET(req: NextRequest) {
         rehkitzeAbgesprungen: number;
         sonstigesWildGesichert: number;
         sonstigesWildAbgesprungen: number;
+        maulwurfhuegelFehlstelle: number;
       }
     >();
 
@@ -116,13 +172,16 @@ export async function GET(req: NextRequest) {
         ? new Date(order.executionDate).toISOString().slice(0, 10)
         : "ohne-datum";
 
+      const counts = getWildCounts(order);
+
       totals.totalOrders += 1;
       totals.totalAreaSqm += areaSqm;
       totals.totalMinutes += minutes;
-      totals.rehkitzeGesichert += order.rehkitzeGesichert || 0;
-      totals.rehkitzeAbgesprungen += order.rehkitzeAbgesprungen || 0;
-      totals.sonstigesWildGesichert += order.sonstigesWildGesichert || 0;
-      totals.sonstigesWildAbgesprungen += order.sonstigesWildAbgesprungen || 0;
+      totals.rehkitzeGesichert += counts.rehkitzeGesichert;
+      totals.rehkitzeAbgesprungen += counts.rehkitzeAbgesprungen;
+      totals.sonstigesWildGesichert += counts.sonstigesWildGesichert;
+      totals.sonstigesWildAbgesprungen += counts.sonstigesWildAbgesprungen;
+      totals.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
 
       const teamEntry = teamMap.get(teamName) || {
         teamName,
@@ -135,15 +194,17 @@ export async function GET(req: NextRequest) {
         rehkitzeAbgesprungen: 0,
         sonstigesWildGesichert: 0,
         sonstigesWildAbgesprungen: 0,
+        maulwurfhuegelFehlstelle: 0,
       };
 
       teamEntry.orderCount += 1;
       teamEntry.totalAreaSqm += areaSqm;
       teamEntry.totalMinutes += minutes;
-      teamEntry.rehkitzeGesichert += order.rehkitzeGesichert || 0;
-      teamEntry.rehkitzeAbgesprungen += order.rehkitzeAbgesprungen || 0;
-      teamEntry.sonstigesWildGesichert += order.sonstigesWildGesichert || 0;
-      teamEntry.sonstigesWildAbgesprungen += order.sonstigesWildAbgesprungen || 0;
+      teamEntry.rehkitzeGesichert += counts.rehkitzeGesichert;
+      teamEntry.rehkitzeAbgesprungen += counts.rehkitzeAbgesprungen;
+      teamEntry.sonstigesWildGesichert += counts.sonstigesWildGesichert;
+      teamEntry.sonstigesWildAbgesprungen += counts.sonstigesWildAbgesprungen;
+      teamEntry.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
 
       teamMap.set(teamName, teamEntry);
 
@@ -156,15 +217,17 @@ export async function GET(req: NextRequest) {
         rehkitzeAbgesprungen: 0,
         sonstigesWildGesichert: 0,
         sonstigesWildAbgesprungen: 0,
+        maulwurfhuegelFehlstelle: 0,
       };
 
       dayEntry.orderCount += 1;
       dayEntry.totalAreaSqm += areaSqm;
       dayEntry.totalMinutes += minutes;
-      dayEntry.rehkitzeGesichert += order.rehkitzeGesichert || 0;
-      dayEntry.rehkitzeAbgesprungen += order.rehkitzeAbgesprungen || 0;
-      dayEntry.sonstigesWildGesichert += order.sonstigesWildGesichert || 0;
-      dayEntry.sonstigesWildAbgesprungen += order.sonstigesWildAbgesprungen || 0;
+      dayEntry.rehkitzeGesichert += counts.rehkitzeGesichert;
+      dayEntry.rehkitzeAbgesprungen += counts.rehkitzeAbgesprungen;
+      dayEntry.sonstigesWildGesichert += counts.sonstigesWildGesichert;
+      dayEntry.sonstigesWildAbgesprungen += counts.sonstigesWildAbgesprungen;
+      dayEntry.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
 
       dayMap.set(dateKey, dayEntry);
     }
@@ -175,6 +238,7 @@ export async function GET(req: NextRequest) {
     const teams = Array.from(teamMap.values())
       .map((item) => {
         const totalHa = item.totalAreaSqm / 10000;
+
         return {
           ...item,
           totalHa,
@@ -186,6 +250,7 @@ export async function GET(req: NextRequest) {
     const days = Array.from(dayMap.values())
       .map((item) => {
         const totalHa = item.totalAreaSqm / 10000;
+
         return {
           ...item,
           totalHa,

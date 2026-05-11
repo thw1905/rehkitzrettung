@@ -34,13 +34,14 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     : [
         { href: "/personal", label: "Persönlich", icon: "👤" },
         { href: "/dashboard", label: "Dashboard", icon: "🏠" },
-        { href: "/fields", label: "Flächen", icon: "🌾" },
+        { href: "/personal-statistics", label: "Statistik", icon: "📊" },
       ];
 
   function isItemActive(item: { href: string }) {
     if (item.href === "/personal") {
       return (
         pathname.startsWith("/personal") ||
+        pathname.startsWith("/personal-statistics") ||
         pathname.startsWith("/my-orders") ||
         pathname.startsWith("/my-notifications") ||
         pathname.startsWith("/team-members") ||
