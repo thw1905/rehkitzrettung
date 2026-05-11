@@ -42,6 +42,7 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
       return (
         pathname.startsWith("/personal") ||
         pathname.startsWith("/my-orders") ||
+        pathname.startsWith("/my-notifications") ||
         pathname.startsWith("/team-members") ||
         (pathname.startsWith("/availability") &&
           !pathname.startsWith("/availability/admin")) ||
@@ -53,6 +54,7 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
       return (
         pathname.startsWith("/management") ||
         pathname.startsWith("/orders") ||
+        pathname.startsWith("/field-order-map") ||
         pathname.startsWith("/helpers") ||
         pathname.startsWith("/fields") ||
         pathname.startsWith("/owners")

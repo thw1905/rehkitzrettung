@@ -64,7 +64,7 @@ model OperationDay {
   note      String?
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
-
+ meetingTime String?
   orders    Order[]
   teams     OperationDayTeam[]
 }
@@ -112,6 +112,44 @@ autoAssignPriority Int @default(0)
 isPrimaryPilot Boolean @default(false)
 lastSeenAt      DateTime?
 sessionVersion   Int  @default(0)
+notificationAcknowledgements NotificationAcknowledgement[]
+notificationRecipients NotificationRecipient[]
+}
+
+model NotificationMessage {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  url       String?
+  type      String
+  date      DateTime?
+  createdAt DateTime @default(now())
+  recipients NotificationRecipient[]
+  acknowledgements NotificationAcknowledgement[]
+}
+
+model NotificationRecipient {
+  id             String   @id @default(cuid())
+  notificationId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  notification NotificationMessage @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+}
+
+model NotificationAcknowledgement {
+  id             String   @id @default(cuid())
+  notificationId String
+  userId         String
+  acknowledgedAt DateTime @default(now())
+
+  notification NotificationMessage @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
 }
 
 model WebPushSubscription {

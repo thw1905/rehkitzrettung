@@ -127,3 +127,18 @@ header {
 .mobile-bottom-nav {
   z-index: 85 !important;
 }
+
+.field-map-label {
+  border: none !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  color: #111827 !important;
+  font-weight: 700 !important;
+  font-size: 12px !important;
+  padding: 3px 6px !important;
+  border-radius: 999px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25) !important;
+}
+
+.field-map-label::before {
+  display: none !important;
+}

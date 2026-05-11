@@ -19,7 +19,23 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const { title, body: text, target } = body;
+    const title = String(body?.title || "").trim();
+    const text = String(body?.body || "").trim();
+    const target = String(body?.target || "ALL").trim();
+
+    if (!title) {
+      return NextResponse.json(
+        { error: "Titel fehlt." },
+        { status: 400 }
+      );
+    }
+
+    if (!text) {
+      return NextResponse.json(
+        { error: "Nachricht fehlt." },
+        { status: 400 }
+      );
+    }
 
     const users = await db.user.findMany({
       where: {
@@ -38,7 +54,7 @@ export async function POST(req: NextRequest) {
       filtered = users.filter((u) => u.role === "PILOT");
     }
 
-    if (target === "SUCHER") {
+    if (target === "SUCHER" || target === "SEARCHER") {
       filtered = users.filter((u) => u.role === "SUCHER");
     }
 
@@ -46,19 +62,42 @@ export async function POST(req: NextRequest) {
       filtered = users.filter((u) => u.isAdmin);
     }
 
-    if (target === "PILOT_SUCHER") {
+    if (target === "PILOT_SUCHER" || target === "PILOT_SEARCHER") {
       filtered = users.filter(
         (u) => u.role === "PILOT" || u.role === "SUCHER"
       );
     }
 
-    let sent = 0;
+    const userIds = Array.from(new Set(filtered.map((user) => user.id)));
 
-    for (const user of filtered) {
-      const count = await sendWebPushToUser(user.id, {
+    if (userIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        sent: 0,
+        recipientCount: 0,
+      });
+    }
+
+    const notification = await db.notificationMessage.create({
+      data: {
         title,
         body: text,
-        url: "/dashboard",
+        type: "CUSTOM_MESSAGE",
+        recipients: {
+          create: userIds.map((userId) => ({
+            userId,
+          })),
+        },
+      },
+    });
+
+    let sent = 0;
+
+    for (const userId of userIds) {
+      const count = await sendWebPushToUser(userId, {
+        title: notification.title,
+        body: notification.body,
+        url: `/notifications/${notification.id}`,
       });
 
       sent += count;
@@ -67,12 +106,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       sent,
+      recipientCount: userIds.length,
+      notificationId: notification.id,
     });
   } catch (error: any) {
     console.error("Custom Push Fehler:", error);
 
     return NextResponse.json(
-      { error: "Fehler beim Senden" },
+      {
+        error:
+          error?.message ||
+          "Fehler beim Senden.",
+      },
       { status: 500 }
     );
   }

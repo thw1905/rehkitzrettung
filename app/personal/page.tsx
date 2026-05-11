@@ -1,4 +1,6 @@
+import { icon } from "leaflet";
 import Link from "next/link";
+import { title } from "process";
 
 const items = [
   {
@@ -7,6 +9,11 @@ const items = [
     icon: "📋",
     description: "Eigene Einsätze und Aufträge ansehen",
   },
+  {
+     href: "/my-notifications", 
+     title: "Meine Benachrichtigungen", 
+     icon: "🔔" 
+    },
   {
     href: "/team-members",
     title: "Mein Team",

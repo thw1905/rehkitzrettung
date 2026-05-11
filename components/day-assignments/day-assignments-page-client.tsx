@@ -56,6 +56,7 @@ type ResponseData = {
     id: string;
     date: string;
     status: string;
+    meetingTime?: string;
   };
   orders: OrderItem[];
   dayTeams: DayTeam[];
@@ -105,6 +106,9 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
   const [dayTeams, setDayTeams] = useState<DayTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
+  const [notifying, setNotifying] = useState(false);
+  const [meetingTime, setMeetingTime] = useState("");
+const [savingMeetingTime, setSavingMeetingTime] = useState(false);
 
   function handleDateChange(date: string) {
   setSelectedDate(date);
@@ -127,6 +131,7 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
 
       setOrders(Array.isArray(data.orders) ? data.orders : []);
       setDayTeams(Array.isArray(data.dayTeams) ? data.dayTeams : []);
+      setMeetingTime(data.operationDay?.meetingTime || "");
     } catch (error: any) {
       console.error("Fehler beim Laden:", error);
       alert(error?.message || "Tages-Zuordnung konnte nicht geladen werden.");
@@ -178,6 +183,78 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
     }
   }
 
+  async function saveMeetingTime(value: string) {
+  setMeetingTime(value);
+  setSavingMeetingTime(true);
+
+  try {
+    const res = await fetch("/api/operation-days/meeting-time", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        date: selectedDate,
+        meetingTime: value,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        data?.error || "Treffzeit konnte nicht gespeichert werden."
+      );
+    }
+  } catch (error: any) {
+    console.error(error);
+    alert(
+      error?.message || "Treffzeit konnte nicht gespeichert werden."
+    );
+  } finally {
+    setSavingMeetingTime(false);
+  }
+}
+
+  async function notifyTeams() {
+  const confirmed = window.confirm(
+    `Möchtest du alle Teammitglieder für den ${selectedDate} benachrichtigen?`
+  );
+
+  if (!confirmed) return;
+
+  setNotifying(true);
+
+  try {
+    const res = await fetch("/api/web-push/notify-operation-day", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        date: selectedDate,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        data?.error || "Benachrichtigung konnte nicht gesendet werden."
+      );
+    }
+
+    alert(
+      `Benachrichtigung gesendet.\nNutzer: ${data.notifiedUsers}\nPushs: ${data.sentPushes}`
+    );
+  } catch (error: any) {
+    console.error("Fehler beim Benachrichtigen:", error);
+    alert(error?.message || "Benachrichtigung konnte nicht gesendet werden.");
+  } finally {
+    setNotifying(false);
+  }
+}
+
   return (
     <main className="min-h-screen bg-gray-50 px-3 py-4 md:px-6 md:py-8">
       <div className="mx-auto max-w-6xl space-y-4 md:space-y-6">
@@ -202,6 +279,25 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
             />
           </div>
 
+          <div className="mt-4 max-w-sm">
+  <label className="mb-2 block text-sm font-semibold text-gray-900">
+    Treffzeit
+  </label>
+
+  <input
+    type="time"
+    value={meetingTime}
+    onChange={(e) => saveMeetingTime(e.target.value)}
+    className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-base"
+  />
+
+  {savingMeetingTime && (
+    <div className="mt-1 text-xs text-gray-500">
+      Speichert...
+    </div>
+  )}
+</div>
+
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
               href={`/team-planning?date=${selectedDate}`}
@@ -209,6 +305,14 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
             >
               Zurück zur Teamplanung
             </Link>
+            <button
+  type="button"
+  onClick={notifyTeams}
+  disabled={notifying || dayTeams.length === 0}
+  className="rounded-2xl bg-black px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:opacity-50"
+>
+  {notifying ? "Sendet..." : "Teams benachrichtigen"}
+</button>
           </div>
         </section>
 

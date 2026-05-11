@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import SupportContactButton from "@/components/layout/support-contact-button";
+import NotificationBell from "../notifications/notification-bell";
 
 type AppHeaderProps = {
   user: {
@@ -173,6 +174,7 @@ useEffect(() => {
 
   const personalNavItems = [
     { href: "/my-orders", label: "Meine Aufträge" },
+    { href: "/my-notifications", label: "Meine Benachrichtigungen" },
     { href: "/team-members", label: "Mein Team" },
     { href: "/availability", label: "Meine Verfügbarkeit" },
     { href: "/profile", label: "Mein Profil" },
@@ -180,6 +182,7 @@ useEffect(() => {
 
   const managementNavItems = [
   { href: "/orders", label: "Aufträge" },
+  { href: "/field-order-map", label: "Aufträge per Karte" },
   { href: "/helpers", label: "Helfer" },
   { href: "/fields", label: "Flächen" },
   { href: "/owners", label: "Ansprechpartner" },
@@ -252,8 +255,8 @@ const isOperationsActive = operationsNavItems.some(
               )}
             </div>
 
-            
-  <SupportContactButton />
+  <NotificationBell/>
+  <SupportContactButton/>
 
   <button
     type="button"
@@ -316,7 +319,7 @@ const isOperationsActive = operationsNavItems.some(
 >
   Demo löschen
 </button>
-
+              <NotificationBell/>
               <SupportContactButton />
 
               <div className="text-right">

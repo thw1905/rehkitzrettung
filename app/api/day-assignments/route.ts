@@ -124,10 +124,11 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       operationDay: {
-        id: operationDay.id,
-        date: operationDay.date.toISOString().slice(0, 10),
-        status: operationDay.status,
-      },
+  id: operationDay.id,
+  date: operationDay.date.toISOString().slice(0, 10),
+  status: operationDay.status,
+  meetingTime: operationDay.meetingTime || "",
+},
       orders: normalizedOrders,
       dayTeams,
     });

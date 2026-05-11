@@ -97,7 +97,16 @@ function FitMapToData({
   return null;
 }
 
-export default function OrdersMapView({ orders }: { orders: Order[] }) {
+export default function OrdersMapView({
+  orders,
+  isAdmin = false,
+}: {
+  orders: Order[];
+  isAdmin?: boolean;
+}) {
+  function getOrderLink(orderId: string) {
+  return isAdmin ? `/orders?open=${orderId}` : `/my-orders?open=${orderId}`;
+}
   const polygons = useMemo(() => {
     return orders
       .map((order) => {
@@ -244,11 +253,11 @@ export default function OrdersMapView({ orders }: { orders: Order[] }) {
 
                 <div className="pt-2">
                   <Link
-                    href={`/orders?open=${order.id}`}
-                    className="block rounded-xl bg-black px-3 py-2 text-center text-sm text-white"
-                  >
-                    Auftrag öffnen
-                  </Link>
+  href={getOrderLink(order.id)}
+  className="block rounded-xl bg-black px-3 py-2 text-center text-sm text-white"
+>
+  Auftrag öffnen
+</Link>
                 </div>
               </div>
             </Popup>
@@ -279,11 +288,11 @@ export default function OrdersMapView({ orders }: { orders: Order[] }) {
                   </div>
 
                   <Link
-                    href={`/orders?open=${order.id}`}
-                    className="mt-2 block rounded-lg bg-blue-600 px-3 py-1 text-center text-white"
-                  >
-                    Öffnen
-                  </Link>
+  href={getOrderLink(order.id)}
+  className="mt-2 block rounded-lg bg-blue-600 px-3 py-1 text-center text-white"
+>
+  Öffnen
+</Link>
                 </div>
               </Popup>
             </CircleMarker>

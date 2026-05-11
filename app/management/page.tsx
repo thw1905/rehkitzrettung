@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { title } from "process";
 
 const sections = [
   {
     title: "Verwaltung",
     items: [
       { href: "/orders", title: "Aufträge", icon: "📋" },
+      { href: "/field-order-map", title: "Aufträge per Karte", icon: "🗺️" },
       { href: "/helpers", title: "Helfer", icon: "👥" },
       { href: "/fields", title: "Flächen", icon: "🌾" },
       { href: "/owners", title: "Ansprechpartner", icon: "☎️" },

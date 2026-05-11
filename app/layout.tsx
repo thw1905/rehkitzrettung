@@ -4,6 +4,7 @@ import AppHeader from "@/components/layout/app-header";
 import MobileBottomNav from "@/components/layout/mobile-bottom-nav";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import PushPermissionBanner from "@/components/push/push-permission-banner";
 ;
 
 export default async function RootLayout({
@@ -29,6 +30,8 @@ export default async function RootLayout({
         
         <Providers>
           {session?.user ? <AppHeader user={user} /> : null}
+
+          {session?.user ?<PushPermissionBanner/>: null}
         
           <div className={session?.user ? "pb-28 md:pb-0" : ""}>{children}</div>
           

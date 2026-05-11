@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import EnablePushButton from "@/components/EnablePushButton";
-import { ja } from "zod/locales";
-import { registerWebPush } from "@/lib/push/registerWebPush";
+
 
 
 
@@ -504,20 +502,7 @@ export default function DashboardPageClient({ isAdmin }: Props) {
               )}
             </section>
 
-            <button
-  onClick={async () => {
-    const result = await registerWebPush();
-
-    if (result.success) {
-      alert("Push aktiviert ✅");
-    } else {
-      alert(result.error);
-    }
-  }}
-  className="rounded-xl bg-black px-4 py-2 text-white"
->
-  Push aktivieren
-</button>
+            
 
             <section className="page-card p-4 md:p-5">
               <div className="mb-4">
@@ -702,7 +687,7 @@ export default function DashboardPageClient({ isAdmin }: Props) {
                 </div>
               ) : (
                 <div className="map-wrapper h-[55vh] md:h-[70vh]">
-                  <OrdersMapView orders={adminActiveOrders} />
+                  <OrdersMapView orders={adminActiveOrders}isAdmin={isAdmin} />
                 </div>
               )}
             </section>
@@ -728,7 +713,7 @@ export default function DashboardPageClient({ isAdmin }: Props) {
               </div>
             ) : (
               <div className="map-wrapper h-[60vh] md:h-[78vh]">
-                <OrdersMapView orders={todayOrdersForNonAdmin} />
+                <OrdersMapView orders={todayOrdersForNonAdmin}isAdmin={isAdmin} />
               </div>
             )}
           </section>

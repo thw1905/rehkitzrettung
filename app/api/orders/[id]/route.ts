@@ -272,21 +272,21 @@ export async function PATCH(
   }
 
   const userBelongsToThisOrder =
-    !!existingOrder.operationDayTeam &&
-    (existingOrder.operationDayTeam.pilotId === currentUser.id ||
-      existingOrder.operationDayTeam.members.some(
-        (member) => member.userId === currentUser.id
-      ));
+  !!existingOrder.operationDayTeam &&
+  (existingOrder.operationDayTeam.pilotId === currentUser.id ||
+    existingOrder.operationDayTeam.members.some(
+      (member) => member.userId === currentUser.id
+    ));
 
-  if (!currentUser.isAdmin && !userBelongsToThisOrder) {
-    return NextResponse.json(
-      { error: "Keine Berechtigung für diesen Auftrag." },
-      { status: 403 }
-    );
-  }
+if (!currentUser.isAdmin && !userBelongsToThisOrder) {
+  return NextResponse.json(
+    { error: "Keine Berechtigung für diesen Auftrag." },
+    { status: 403 }
+  );
+}
 
-  const userIsPilotForThisOrder =
-    existingOrder.operationDayTeam?.pilotId === currentUser.id;
+const userIsPilotForThisOrder =
+  existingOrder.operationDayTeam?.pilotId === currentUser.id;
 
   try {
     const nextStatus = parseOrderStatus(body.status);
@@ -500,91 +500,94 @@ export async function PATCH(
 
       return NextResponse.json(normalizeOrderResponse(order));
     }
-
     if (!userIsPilotForThisOrder) {
-      return NextResponse.json(
-        { error: "Nur Pilot oder Admin dürfen diesen Auftrag ändern." },
-        { status: 403 }
-      );
+  return NextResponse.json(
+    { error: "Nur Pilot oder Admin dürfen diesen Auftrag starten oder beenden." },
+    { status: 403 }
+  );
+}
+
+const data: any = {
+  status: nextStatus ?? existingOrder.status,
+  notes:
+    body.notes === undefined
+      ? existingOrder.notes
+      : body.notes === null
+        ? null
+        : String(body.notes),
+
+  rehkitzeGesichert: parseNonNegativeInt(
+    body.rehkitzeGesichert,
+    existingOrder.rehkitzeGesichert ?? 0
+  ),
+  rehkitzeAbgesprungen: parseNonNegativeInt(
+    body.rehkitzeAbgesprungen,
+    existingOrder.rehkitzeAbgesprungen ?? 0
+  ),
+  sonstigesWildGesichert: parseNonNegativeInt(
+    body.sonstigesWildGesichert,
+    existingOrder.sonstigesWildGesichert ?? 0
+  ),
+  sonstigesWildAbgesprungen: parseNonNegativeInt(
+    body.sonstigesWildAbgesprungen,
+    existingOrder.sonstigesWildAbgesprungen ?? 0
+  ),
+  maulwurfhuegelFehlstelle: parseNonNegativeInt(
+    body.maulwurfhuegelFehlstelle,
+    existingOrder.maulwurfhuegelFehlstelle ?? 0
+  ),
+};
+
+if (nextStatus && nextStatus !== existingOrder.status) {
+  if (nextStatus === OrderStatus.IN_ARBEIT && !existingOrder.startTime) {
+    data.startTime = new Date();
+    Object.assign(data, buildExecutionSnapshot(existingOrder));
+  }
+
+  if (nextStatus === OrderStatus.ERLEDIGT) {
+    if (!existingOrder.startTime) {
+      data.startTime = new Date();
+      Object.assign(data, buildExecutionSnapshot(existingOrder));
     }
 
-    const data: any = {
-      status: nextStatus ?? existingOrder.status,
-      notes:
-        body.notes === undefined
-          ? existingOrder.notes
-          : body.notes === null
-            ? null
-            : String(body.notes),
-      rehkitzeGesichert: parseNonNegativeInt(
-        body.rehkitzeGesichert,
-        existingOrder.rehkitzeGesichert ?? 0
-      ),
-      rehkitzeAbgesprungen: parseNonNegativeInt(
-        body.rehkitzeAbgesprungen,
-        existingOrder.rehkitzeAbgesprungen ?? 0
-      ),
-      sonstigesWildGesichert: parseNonNegativeInt(
-        body.sonstigesWildGesichert,
-        existingOrder.sonstigesWildGesichert ?? 0
-      ),
-      sonstigesWildAbgesprungen: parseNonNegativeInt(
-        body.sonstigesWildAbgesprungen,
-        existingOrder.sonstigesWildAbgesprungen ?? 0
-      ),
-      maulwurfhuegelFehlstelle: parseNonNegativeInt(
-        body.maulwurfhuegelFehlstelle,
-        existingOrder.maulwurfhuegelFehlstelle ?? 0
-      ),
-    };
+    data.endTime = new Date();
+  }
 
-    if (nextStatus && nextStatus !== existingOrder.status) {
-      if (nextStatus === OrderStatus.IN_ARBEIT && !existingOrder.startTime) {
-        data.startTime = new Date();
-        Object.assign(data, buildExecutionSnapshot(existingOrder));
-      }
+  if (nextStatus === OrderStatus.OFFEN) {
+    data.endTime = null;
+  }
+}
 
-      if (nextStatus === OrderStatus.ERLEDIGT) {
-        if (!existingOrder.startTime) {
-          data.startTime = new Date();
-          Object.assign(data, buildExecutionSnapshot(existingOrder));
-        }
-        data.endTime = new Date();
-      }
-
-      if (nextStatus === OrderStatus.OFFEN) {
-        data.endTime = null;
-      }
-    }
-
-    const order = await db.order.update({
-      where: { id },
-      data,
+const order = await db.order.update({
+  where: { id },
+  data,
+  include: {
+    owner: true,
+    field: true,
+    operationDay: true,
+    operationDayTeam: {
       include: {
-        owner: true,
-        field: true,
-        operationDay: true,
-        operationDayTeam: {
+        team: true,
+        pilot: true,
+        members: {
           include: {
-            team: true,
-            pilot: true,
-            members: {
-              include: {
-                user: true,
-              },
-              orderBy: {
-                createdAt: "asc",
-              },
-            },
+            user: true,
+          },
+          orderBy: {
+            createdAt: "asc",
           },
         },
-        pinpoints: {
-          orderBy: { sequenceNumber: "asc" },
-        },
       },
-    });
+    },
+    pinpoints: {
+      orderBy: { sequenceNumber: "asc" },
+    },
+  },
+});
 
-    return NextResponse.json(normalizeOrderResponse(order));
+return NextResponse.json(normalizeOrderResponse(order));
+
+   
   } catch (error: any) {
     console.error("Fehler beim Aktualisieren des Auftrags:", error);
 

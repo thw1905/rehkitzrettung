@@ -13,7 +13,6 @@ function toDateKeyUtc(date: Date) {
 function buildSeasonDays() {
   const year = new Date().getFullYear();
 
-  // Saison: 01.05. – 30.06.
   const start = new Date(Date.UTC(year, 4, 1, 0, 0, 0, 0));
   const end = new Date(Date.UTC(year, 6, 1, 0, 0, 0, 0));
 
@@ -73,8 +72,7 @@ export async function POST() {
       );
     }
 
-    let remindedUsers = 0;
-    let sentPushes = 0;
+    const reminderUserIds = new Set<string>();
 
     for (const user of users) {
       const needsReminder = days.some((day) => {
@@ -83,14 +81,39 @@ export async function POST() {
         return !status || status === "OFFEN" || status === "VIELLEICHT";
       });
 
-      if (!needsReminder) continue;
+      if (needsReminder) {
+        reminderUserIds.add(user.id);
+      }
+    }
 
-      remindedUsers++;
+    if (reminderUserIds.size === 0) {
+      return NextResponse.json({
+        success: true,
+        remindedUsers: 0,
+        sentPushes: 0,
+      });
+    }
 
-      const sent = await sendWebPushToUser(user.id, {
+    const notification = await db.notificationMessage.create({
+      data: {
         title: "📅 Verfügbarkeit eintragen",
         body: "Bitte trage deine Verfügbarkeit für die kommenden Tage ein.",
-        url: "/availability",
+        type: "AVAILABILITY_REMINDER",
+        recipients: {
+          create: Array.from(reminderUserIds).map((userId) => ({
+            userId,
+          })),
+        },
+      },
+    });
+
+    let sentPushes = 0;
+
+    for (const userId of reminderUserIds) {
+      const sent = await sendWebPushToUser(userId, {
+        title: notification.title,
+        body: notification.body,
+        url: `/notifications/${notification.id}`,
       });
 
       sentPushes += sent;
@@ -98,8 +121,9 @@ export async function POST() {
 
     return NextResponse.json({
       success: true,
-      remindedUsers,
+      remindedUsers: reminderUserIds.size,
       sentPushes,
+      notificationId: notification.id,
     });
   } catch (error: any) {
     console.error("Verfügbarkeits-Erinnerung Fehler:", error);
