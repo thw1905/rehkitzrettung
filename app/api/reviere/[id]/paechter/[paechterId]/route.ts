@@ -1,13 +1,10 @@
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdminApi } from "@/lib/admin";
 
 export async function DELETE(
-  _req: Request,
-  context: { params: Promise<{ id: string; pachterId: string }> }
+  _req: NextRequest,
+  context: { params: Promise<{ id: string; paechterId: string }> }
 ) {
   const authCheck = await requireAdminApi();
 
@@ -19,29 +16,26 @@ export async function DELETE(
   }
 
   try {
-    const { id, pachterId } = await context.params;
+    const { id, paechterId } = await context.params;
 
-    const existing = await db.revierPachterAssignment.findUnique({
-      where: {
-        revierId_pachterId: {
-          revierId: id,
-          pachterId,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!existing) {
-      return NextResponse.json({
-        success: true,
-      });
+    if (!id) {
+      return NextResponse.json(
+        { error: "Revier fehlt." },
+        { status: 400 }
+      );
     }
 
-    await db.revierPachterAssignment.delete({
+    if (!paechterId) {
+      return NextResponse.json(
+        { error: "Pächter fehlt." },
+        { status: 400 }
+      );
+    }
+
+    await db.revierPachterAssignment.deleteMany({
       where: {
-        id: existing.id,
+        revierId: id,
+        pachterId: paechterId,
       },
     });
 
@@ -49,13 +43,13 @@ export async function DELETE(
       success: true,
     });
   } catch (error: any) {
-    console.error("Revierpächter entfernen Fehler:", error);
+    console.error("Pächter vom Revier entfernen Fehler:", error);
 
     return NextResponse.json(
       {
         error:
           error?.message ||
-          "Revierpächter konnte nicht entfernt werden.",
+          "Pächter konnte nicht vom Revier entfernt werden.",
       },
       { status: 500 }
     );
