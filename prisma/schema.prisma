@@ -246,6 +246,63 @@ locationLongitude  Float?
 locationNote       String?
 }
 
+model RevierPachter {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  phone     String?
+  email     String?
+  street    String?
+  zip       String?
+  city      String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviere   RevierPachterAssignment[]
+}
+
+model Revier {
+  id          String   @id @default(cuid())
+  externalId  String?  @unique
+  name        String
+  nummer      String?
+  areaGeoJson Json
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  paechter    RevierPachterAssignment[]
+
+  orders      OrderRevier[]
+}
+
+model RevierPachterAssignment {
+  id        String @id @default(cuid())
+  revierId  String
+  pachterId String
+
+  revier    Revier        @relation(fields: [revierId], references: [id], onDelete: Cascade)
+  pachter   RevierPachter @relation(fields: [pachterId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([revierId, pachterId])
+}
+
+model OrderRevier {
+  id             String @id @default(cuid())
+  orderId        String
+  revierId       String
+  overlapSqm     Float?
+  overlapPercent Float?
+
+  order          Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  revier         Revier @relation(fields: [revierId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, revierId])
+}
+
 model Order {
   id                        String            @id @default(cuid())
   title                     String
@@ -281,6 +338,8 @@ model Order {
   field                     Field             @relation(fields: [fieldId], references: [id])
   pinpoints                 OrderPinpoint[]
   isManualTeamAssignment Boolean @default(false)
+  reviere                   OrderRevier[]
+  sortOrder                 Int               @default(0)
 }
 
 model OrderPinpoint {

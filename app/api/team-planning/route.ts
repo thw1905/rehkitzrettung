@@ -61,6 +61,30 @@ async function getOrCreateOperationDay(date: Date) {
   }
 }
 
+const orderInclude = {
+  owner: true,
+  field: true,
+  reviere: {
+    include: {
+      revier: {
+        include: {
+          paechter: {
+            include: {
+              pachter: true,
+            },
+            orderBy: {
+              createdAt: "asc" as const,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      overlapSqm: "desc" as const,
+    },
+  },
+};
+
 export async function GET(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserWithTeams();
@@ -86,11 +110,20 @@ export async function GET(req: NextRequest) {
         },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
+
       db.operationDayTeam.findMany({
         where: {
           operationDayId: operationDay.id,
         },
         include: {
+          orders: {
+            include: orderInclude,
+            orderBy: [
+              { sortOrder: "asc" },
+              { mowingDate: "asc" },
+              { createdAt: "asc" },
+            ],
+          },
           pilot: {
             select: {
               id: true,
@@ -124,6 +157,7 @@ export async function GET(req: NextRequest) {
           },
         },
       }),
+
       db.user.findMany({
         where: {
           isApproved: true,
@@ -179,6 +213,7 @@ export async function GET(req: NextRequest) {
         searchers:
           existingAssignment?.members.map((member) => member.user) || [],
         note: existingAssignment?.note || "",
+        orders: existingAssignment?.orders || [],
       };
     });
 
@@ -228,7 +263,13 @@ export async function PUT(req: NextRequest) {
     }
 
     const searcherIds = Array.isArray(body.searcherIds)
-      ? [...new Set(body.searcherIds.filter((id): id is string => typeof id === "string" && !!id))]
+      ? [
+          ...new Set(
+            body.searcherIds.filter(
+              (id): id is string => typeof id === "string" && !!id
+            )
+          ),
+        ]
       : [];
 
     if (!body.pilotId) {
@@ -264,7 +305,10 @@ export async function PUT(req: NextRequest) {
     });
 
     if (!teamSlot) {
-      return NextResponse.json({ error: "Team-Slot nicht gefunden." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Team-Slot nicht gefunden." },
+        { status: 404 }
+      );
     }
 
     const allUserIds = [body.pilotId, ...searcherIds];
@@ -289,12 +333,14 @@ export async function PUT(req: NextRequest) {
     const usersById = new Map(users.map((user) => [user.id, user]));
 
     const pilotUser = usersById.get(body.pilotId);
+
     if (!pilotUser) {
       return NextResponse.json({ error: "Pilot nicht gefunden." }, { status: 404 });
     }
 
     const pilotStatus =
-      (pilotUser.availabilities[0]?.status as AvailabilityStatus | undefined) || "OFFEN";
+      (pilotUser.availabilities[0]?.status as AvailabilityStatus | undefined) ||
+      "OFFEN";
 
     if (!canBeUsedForPilot(pilotUser.role, pilotStatus)) {
       return NextResponse.json(

@@ -8,6 +8,20 @@ const FieldOrderMapLeaflet = dynamic(
   { ssr: false }
 );
 
+type RevierItem = {
+  id: string;
+  name: string;
+  nummer?: string | null;
+  areaGeoJson: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
+  pachter?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
+};
+
 type Owner = {
   id: string;
   firstName: string;
@@ -56,6 +70,7 @@ export default function FieldOrderMapClient() {
   const [mowingDate, setMowingDate] = useState(getTodayDateInputValue());
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
+  const [reviere, setReviere] = useState<RevierItem[]>([]);
   const [creating, setCreating] = useState(false);
   const selectedFields = useMemo(() => {
     const selected = new Set(selectedFieldIds);
@@ -80,13 +95,15 @@ export default function FieldOrderMapClient() {
     setLoading(true);
 
     try {
-      const [fieldsRes, ownersRes] = await Promise.all([
-        fetch("/api/fields", { cache: "no-store" }),
-        fetch("/api/owners", { cache: "no-store" }),
-      ]);
+      const [fieldsRes, ownersRes, reviereRes] = await Promise.all([
+  fetch("/api/fields", { cache: "no-store" }),
+  fetch("/api/owners", { cache: "no-store" }),
+  fetch("/api/reviere", { cache: "no-store" }),
+]);
 
       const fieldsData = await fieldsRes.json();
       const ownersData = await ownersRes.json();
+      const reviereData = await reviereRes.json();
 
       if (!fieldsRes.ok) {
         throw new Error(fieldsData?.error || "Flächen konnten nicht geladen werden.");
@@ -96,8 +113,13 @@ export default function FieldOrderMapClient() {
         throw new Error(ownersData?.error || "Ansprechpartner konnten nicht geladen werden.");
       }
 
+      if (!reviereRes.ok) {
+  throw new Error(reviereData?.error || "Reviere konnten nicht geladen werden.");
+}
+
       setFields(Array.isArray(fieldsData) ? fieldsData : []);
       setOwners(Array.isArray(ownersData) ? ownersData : []);
+      setReviere(Array.isArray(reviereData) ? reviereData : []);
     } catch (error: any) {
       console.error(error);
       alert(error?.message || "Daten konnten nicht geladen werden.");
@@ -192,6 +214,7 @@ export default function FieldOrderMapClient() {
               <div className="h-[65vh] overflow-hidden rounded-2xl">
                 <FieldOrderMapLeaflet
                   fields={fields}
+                  reviere={reviere}
                   selectedFieldIds={selectedFieldIds}
                   onToggleField={toggleField}
                 />

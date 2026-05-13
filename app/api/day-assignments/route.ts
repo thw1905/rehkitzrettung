@@ -42,7 +42,10 @@ export async function GET(req: NextRequest) {
     const currentUser = await getCurrentUserWithTeams();
 
     if (!currentUser || !currentUser.isAdmin) {
-      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Keine Berechtigung." },
+        { status: 403 }
+      );
     }
 
     const { searchParams } = new URL(req.url);
@@ -82,12 +85,33 @@ export async function GET(req: NextRequest) {
               sequenceNumber: "asc",
             },
           },
+          reviere: {
+            include: {
+              revier: {
+                include: {
+                  paechter: {
+                    include: {
+                      pachter: true,
+                    },
+                    orderBy: {
+                      createdAt: "asc",
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: {
+              overlapSqm: "desc",
+            },
+          },
         },
         orderBy: [
-          { status: "asc" },
+          { sortOrder: "asc" },
+          { mowingDate: "asc" },
           { createdAt: "asc" },
         ],
       }),
+
       db.operationDayTeam.findMany({
         where: {
           operationDayId: operationDay.id,
@@ -106,7 +130,13 @@ export async function GET(req: NextRequest) {
           orders: {
             select: {
               id: true,
+              sortOrder: true,
             },
+            orderBy: [
+              { sortOrder: "asc" },
+              { mowingDate: "asc" },
+              { createdAt: "asc" },
+            ],
           },
         },
         orderBy: {
@@ -124,11 +154,11 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       operationDay: {
-  id: operationDay.id,
-  date: operationDay.date.toISOString().slice(0, 10),
-  status: operationDay.status,
-  meetingTime: operationDay.meetingTime || "",
-},
+        id: operationDay.id,
+        date: operationDay.date.toISOString().slice(0, 10),
+        status: operationDay.status,
+        meetingTime: operationDay.meetingTime || "",
+      },
       orders: normalizedOrders,
       dayTeams,
     });

@@ -58,7 +58,10 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
         pathname.startsWith("/field-order-map") ||
         pathname.startsWith("/helpers") ||
         pathname.startsWith("/fields") ||
-        pathname.startsWith("/owners")
+        pathname.startsWith("/owners") ||
+        pathname.startsWith("/reviere") ||
+        pathname.startsWith("/revier-paechter")||
+        pathname.startsWith("/admin/db-check")
       );
     }
 

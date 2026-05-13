@@ -76,12 +76,15 @@ function getAvailabilityBadgeClass(status: AvailabilityStatus) {
   if (status === "ZUGESAGT") {
     return "border-green-300 bg-green-50 text-green-900";
   }
+
   if (status === "VIELLEICHT") {
     return "border-amber-300 bg-amber-50 text-amber-900";
   }
+
   if (status === "ABGESAGT") {
     return "border-red-300 bg-red-50 text-red-900";
   }
+
   return "border-gray-300 bg-gray-100 text-gray-800";
 }
 
@@ -146,25 +149,26 @@ function PersonOptionCard({
 
 export default function TeamPlanningPageClient() {
   const searchParams = useSearchParams();
-const router = useRouter();
+  const router = useRouter();
 
-const initialDate =
-  searchParams.get("date") || getTodayDateInputValue();
+  const initialDate = searchParams.get("date") || getTodayDateInputValue();
 
-const [selectedDate, setSelectedDate] = useState(initialDate);
+  const [selectedDate, setSelectedDate] = useState(initialDate);
   const [operationDayId, setOperationDayId] = useState<string | null>(null);
   const [pilots, setPilots] = useState<AvailableUser[]>([]);
   const [searchers, setSearchers] = useState<AvailableUser[]>([]);
   const [assignments, setAssignments] = useState<EditableAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingTeamId, setSavingTeamId] = useState<string | null>(null);
-  const [deletingAssignmentId, setDeletingAssignmentId] = useState<string | null>(null);
+  const [deletingAssignmentId, setDeletingAssignmentId] = useState<
+    string | null
+  >(null);
   const [autoAssigning, setAutoAssigning] = useState(false);
 
   function handleDateChange(date: string) {
-  setSelectedDate(date);
-  router.replace(`/team-planning?date=${date}`);
-}
+    setSelectedDate(date);
+    router.replace(`/team-planning?date=${date}`);
+  }
 
   async function loadPlanning(date: string) {
     setLoading(true);
@@ -174,6 +178,7 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
         `/api/team-planning?date=${encodeURIComponent(date)}`,
         { cache: "no-store" }
       );
+
       const data: TeamPlanningResponse & { error?: string } = await res.json();
 
       if (!res.ok) {
@@ -184,12 +189,14 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
       setPilots(Array.isArray(data.pilots) ? data.pilots : []);
       setSearchers(Array.isArray(data.searchers) ? data.searchers : []);
       setAssignments(
-        (Array.isArray(data.assignments) ? data.assignments : []).map((item) => ({
-          ...item,
-          editedPilotId: item.pilot?.id || "",
-          editedSearcherIds: item.searchers.map((s) => s.id),
-          editedNote: item.note || "",
-        }))
+        (Array.isArray(data.assignments) ? data.assignments : []).map(
+          (item) => ({
+            ...item,
+            editedPilotId: item.pilot?.id || "",
+            editedSearcherIds: item.searchers.map((s) => s.id),
+            editedNote: item.note || "",
+          })
+        )
       );
     } catch (error: any) {
       console.error("Fehler beim Laden der Teamplanung:", error);
@@ -204,12 +211,12 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
   }
 
   useEffect(() => {
-  const nextDate = searchParams.get("date") || getTodayDateInputValue();
+    const nextDate = searchParams.get("date") || getTodayDateInputValue();
 
-  if (nextDate !== selectedDate) {
-    setSelectedDate(nextDate);
-  }
-}, [searchParams, selectedDate]);
+    if (nextDate !== selectedDate) {
+      setSelectedDate(nextDate);
+    }
+  }, [searchParams, selectedDate]);
 
   useEffect(() => {
     loadPlanning(selectedDate);
@@ -217,7 +224,12 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
 
   function updateAssignment(
     teamId: string,
-    changes: Partial<Pick<EditableAssignment, "editedPilotId" | "editedSearcherIds" | "editedNote">>
+    changes: Partial<
+      Pick<
+        EditableAssignment,
+        "editedPilotId" | "editedSearcherIds" | "editedNote"
+      >
+    >
   ) {
     setAssignments((prev) =>
       prev.map((item) =>
@@ -241,7 +253,9 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
         if (exists) {
           return {
             ...item,
-            editedSearcherIds: item.editedSearcherIds.filter((id) => id !== userId),
+            editedSearcherIds: item.editedSearcherIds.filter(
+              (id) => id !== userId
+            ),
           };
         }
 
@@ -285,7 +299,8 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
   function getAvailableSearchersForTeam(team: EditableAssignment) {
     const result = searchers.filter(
       (user) =>
-        (!globallyAssigned.has(user.id) || team.editedSearcherIds.includes(user.id)) &&
+        (!globallyAssigned.has(user.id) ||
+          team.editedSearcherIds.includes(user.id)) &&
         user.id !== team.editedPilotId
     );
 
@@ -396,43 +411,44 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
   }
 
   async function resetPlanning() {
-  if (!selectedDate) {
-    alert("Bitte zuerst ein Datum auswählen.");
-    return;
-  }
-
-  const confirmed = window.confirm(
-    "Möchtest du die komplette Tagesplanung wirklich löschen? Dabei werden Team-Zuordnungen und Auftrags-Zuordnungen für diesen Tag entfernt."
-  );
-
-  if (!confirmed) return;
-
-  try {
-    const res = await fetch("/api/team-planning/reset", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        date: selectedDate,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data?.error || "Tagesplanung konnte nicht gelöscht werden.");
+    if (!selectedDate) {
+      alert("Bitte zuerst ein Datum auswählen.");
+      return;
     }
 
-    alert(data?.message || "Tagesplanung gelöscht.");
-    if (selectedDate){
-    await loadPlanning(selectedDate);
+    const confirmed = window.confirm(
+      "Möchtest du die komplette Tagesplanung wirklich löschen? Dabei werden Team-Zuordnungen und Auftrags-Zuordnungen für diesen Tag entfernt."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch("/api/team-planning/reset", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          date: selectedDate,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Tagesplanung konnte nicht gelöscht werden.");
+      }
+
+      alert(data?.message || "Tagesplanung gelöscht.");
+
+      if (selectedDate) {
+        await loadPlanning(selectedDate);
+      }
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.message || "Tagesplanung konnte nicht gelöscht werden.");
     }
-  } catch (error: any) {
-    console.error(error);
-    alert(error?.message || "Tagesplanung konnte nicht gelöscht werden.");
   }
-}
 
   async function autoAssignTeams() {
     if (!selectedDate) {
@@ -441,7 +457,7 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
     }
 
     const confirmed = window.confirm(
-      "Sollen die Teams für diesen Tag automatisch verteilt werden? Bereits vorhandene Tages-Teams ohne Auftragszuordnung werden dabei überschrieben."
+      "Sollen die Teams für diesen Tag automatisch verteilt werden? Bereits vorhandene Tages-Teams und Auftragszuordnungen werden dabei überschrieben."
     );
 
     if (!confirmed) return;
@@ -466,22 +482,20 @@ const [selectedDate, setSelectedDate] = useState(initialDate);
 
       const contentType = res.headers.get("content-type") || "";
 
-let data: any = null;
+      let data: any = null;
 
-if (contentType.includes("application/json")) {
-  data = await res.json();
-} else {
-  const text = await res.text();
-  throw new Error(
-    text || "Server liefert keine gültige JSON-Antwort."
-  );
-}
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text || "Server liefert keine gültige JSON-Antwort.");
+      }
 
-if (!res.ok) {
-  throw new Error(
-    data?.error || "Automatische Teamverteilung fehlgeschlagen."
-  );
-}
+      if (!res.ok) {
+        throw new Error(
+          data?.error || "Automatische Teamverteilung fehlgeschlagen."
+        );
+      }
 
       await loadPlanning(selectedDate);
 
@@ -500,13 +514,15 @@ if (!res.ok) {
       alert(
         `Teams wurden automatisch verteilt.\n\nVerwendete Teams: ${
           data?.summary?.totalTeamsUsed ?? 0
-        }\nZugewiesene Personen: ${data?.summary?.totalAssignedUsers ?? 0}${warningText}${unassignedText}`
+        }\nZugewiesene Personen: ${
+          data?.summary?.totalAssignedUsers ?? 0
+        }\nZugewiesene Aufträge: ${
+          data?.summary?.totalAssignedOrders ?? 0
+        }${warningText}${unassignedText}`
       );
     } catch (error: any) {
       console.error("Fehler bei der automatischen Teamverteilung:", error);
-      alert(
-        error?.message || "Automatische Teamverteilung fehlgeschlagen."
-      );
+      alert(error?.message || "Automatische Teamverteilung fehlgeschlagen.");
     } finally {
       setAutoAssigning(false);
     }
@@ -519,10 +535,11 @@ if (!res.ok) {
           <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
             Teamplanung
           </h1>
+
           <p className="mt-2 text-sm leading-6 text-gray-600 md:text-base">
-            Plane hier die Besetzung der Team-Slots für einen bestimmten Einsatztag.
-            Es werden nur Personen mit Zusage oder Vielleicht berücksichtigt.
-            Piloten können auch als Sucher eingesetzt werden.
+            Plane hier die Besetzung der Team-Slots für einen bestimmten
+            Einsatztag. Es werden nur Personen mit Zusage oder Vielleicht
+            berücksichtigt. Piloten können auch als Sucher eingesetzt werden.
           </p>
 
           <div className="mt-5 max-w-sm">
@@ -554,12 +571,12 @@ if (!res.ok) {
             </button>
 
             <button
-  type="button"
-  onClick={resetPlanning}
-  className="rounded-xl border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800"
->
-  Tagesplanung löschen
-</button>
+              type="button"
+              onClick={resetPlanning}
+              className="rounded-xl border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800"
+            >
+              Tagesplanung löschen
+            </button>
 
             <Link
               href={`/day-assignments?date=${selectedDate}`}
@@ -648,7 +665,9 @@ if (!res.ok) {
                               key={user.id}
                               user={user}
                               checked={team.editedSearcherIds.includes(user.id)}
-                              onChange={() => toggleSearcher(team.teamId, user.id)}
+                              onChange={() =>
+                                toggleSearcher(team.teamId, user.id)
+                              }
                             />
                           ))}
                         </div>
@@ -689,10 +708,14 @@ if (!res.ok) {
                       <button
                         type="button"
                         onClick={() => saveAssignment(team)}
-                        disabled={savingTeamId === team.teamId || !hasChanges(team)}
+                        disabled={
+                          savingTeamId === team.teamId || !hasChanges(team)
+                        }
                         className="rounded-2xl bg-black px-5 py-3 text-base font-semibold text-white disabled:opacity-50"
                       >
-                        {savingTeamId === team.teamId ? "Speichert..." : "Speichern"}
+                        {savingTeamId === team.teamId
+                          ? "Speichert..."
+                          : "Speichern"}
                       </button>
                     </div>
                   </div>

@@ -21,6 +21,35 @@ type Team = {
   name: string;
 };
 
+type RevierPachter = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone?: string | null;
+  email?: string | null;
+};
+
+type RevierPachterAssignment = {
+  id: string;
+  pachterId: string;
+  revierId: string;
+  pachter: RevierPachter;
+};
+
+type OrderRevier = {
+  id: string;
+  orderId: string;
+  revierId: string;
+  overlapSqm?: number | null;
+  overlapPercent?: number | null;
+  revier: {
+    id: string;
+    name: string;
+    nummer?: string | null;
+    paechter?: RevierPachterAssignment[];
+  };
+};
+
 type Order = {
   id: string;
   title: string;
@@ -36,6 +65,7 @@ type Order = {
   owner: Owner;
   field: Field;
   team: Team | null;
+  reviere?: OrderRevier[];
   createdAt?: string;
 };
 
@@ -51,7 +81,6 @@ type EditableOrder = Order & {
 const emptyForm = {
   ownerId: "",
   fieldId: "",
-  teamId: "",
   mowingDate: "",
   notes: "",
   status: "OFFEN" as "OFFEN" | "IN_ARBEIT" | "ERLEDIGT",
@@ -69,6 +98,29 @@ function getFieldLabel(field: Field) {
 
 function getOrderLabel(order: Pick<Order, "orderCode" | "title">) {
   return order.orderCode || order.title || "Ohne Nummer";
+}
+
+function getRevierLabel(item: OrderRevier) {
+  const name = (item.revier?.name || "").trim();
+  const nummer = (item.revier?.nummer || "").trim();
+
+  if (name && nummer) return `${name} (${nummer})`;
+  if (name) return name;
+  if (nummer) return nummer;
+  return "Unbekanntes Revier";
+}
+
+function getPachterName(pachter: RevierPachter) {
+  return `${pachter.firstName || ""} ${pachter.lastName || ""}`.trim();
+}
+
+function formatOverlapPercent(value?: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+
+  return new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function formatDate(dateString: string | null) {
@@ -150,6 +202,92 @@ async function readJsonSafe<T>(res: Response): Promise<T> {
   }
 }
 
+function OrderReviereBox({ order }: { order: Order }) {
+  const reviere = order.reviere || [];
+
+  if (reviere.length === 0) {
+    return (
+      <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+        <div className="font-semibold text-gray-900">Revier / Pächter</div>
+        <div className="mt-1">Kein Revier automatisch zugeordnet.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 p-3">
+      <div className="text-sm font-bold text-orange-950">
+        Betroffene Reviere / Pächter
+      </div>
+
+      <div className="mt-3 space-y-3">
+        {reviere.map((item) => {
+          const overlapText = formatOverlapPercent(item.overlapPercent);
+          const paechter = item.revier?.paechter || [];
+
+          return (
+            <div
+              key={item.id}
+              className="rounded-xl bg-white p-3 text-sm text-gray-800"
+            >
+              <div className="font-semibold text-gray-900">
+                {getRevierLabel(item)}
+              </div>
+
+              {overlapText && (
+                <div className="mt-1 text-xs text-gray-500">
+                  Anteil an der Fläche: {overlapText} %
+                </div>
+              )}
+
+              {paechter.length > 0 ? (
+                <div className="mt-2 space-y-1">
+                  {paechter.map((assignment) => (
+                    <div key={assignment.id}>
+                      <span className="font-semibold">Pächter:</span>{" "}
+                      {getPachterName(assignment.pachter)}
+
+                      {assignment.pachter.phone && (
+                        <>
+                          {" "}
+                          ·{" "}
+                          <a
+                            href={`tel:${assignment.pachter.phone}`}
+                            className="font-semibold text-blue-700 underline"
+                          >
+                            {assignment.pachter.phone}
+                          </a>
+                        </>
+                      )}
+
+                      {assignment.pachter.email && (
+                        <>
+                          {" "}
+                          ·{" "}
+                          <a
+                            href={`mailto:${assignment.pachter.email}`}
+                            className="font-semibold text-blue-700 underline"
+                          >
+                            E-Mail
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-gray-500">
+                  Kein Pächter für dieses Revier hinterlegt.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
   const searchParams = useSearchParams();
   const openFromUrl = searchParams.get("open");
@@ -163,9 +301,9 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
   const [creating, setCreating] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusView, setStatusView] = useState<"AKTIV" |"OFFEN"|"IN_ARBEIT"| "ERLEDIGT" | "ALLE">(
-    "OFFEN"
-  );
+  const [statusView, setStatusView] = useState<
+    "AKTIV" | "OFFEN" | "IN_ARBEIT" | "ERLEDIGT" | "ALLE"
+  >("OFFEN");
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
 
   const orderRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -175,11 +313,13 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
 
     try {
       const [ordersRes, ownersRes, fieldsRes, teamsRes] = await Promise.all([
-  fetch(isAdmin ? "/api/orders/all" : "/api/orders", { cache: "no-store" }),
-  fetch("/api/owners", { cache: "no-store" }),
-  fetch("/api/fields-list", { cache: "no-store" }),
-  fetch("/api/teams-list", { cache: "no-store" }),
-]);
+        fetch(isAdmin ? "/api/orders/all" : "/api/orders", {
+          cache: "no-store",
+        }),
+        fetch("/api/owners", { cache: "no-store" }),
+        fetch("/api/fields-list", { cache: "no-store" }),
+        fetch("/api/teams-list", { cache: "no-store" }),
+      ]);
 
       const ordersData = await readJsonSafe<Order[]>(ordersRes);
       const ownersData = await readJsonSafe<Owner[]>(ownersRes);
@@ -230,6 +370,7 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
 
     const timeout = setTimeout(() => {
       const element = orderRefs.current[openFromUrl];
+
       if (element) {
         element.scrollIntoView({
           behavior: "smooth",
@@ -290,7 +431,7 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
         },
         body: JSON.stringify({
           ...form,
-          teamId: normalizeOptionalId(form.teamId),
+          
           mowingDate: form.mowingDate || null,
         }),
       });
@@ -322,7 +463,7 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
         body: JSON.stringify({
           ownerId: order.editedOwnerId,
           fieldId: order.editedFieldId,
-          teamId: normalizeOptionalId(order.editedTeamId),
+          
           mowingDate: order.editedMowingDate || null,
           notes: order.editedNotes,
           status: order.editedStatus,
@@ -377,12 +518,12 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
     }
 
     if (statusView === "OFFEN") {
-  return orders.filter((order) => order.status === "OFFEN");
-}
+      return orders.filter((order) => order.status === "OFFEN");
+    }
 
-if (statusView === "IN_ARBEIT") {
-  return orders.filter((order) => order.status === "IN_ARBEIT");
-}
+    if (statusView === "IN_ARBEIT") {
+      return orders.filter((order) => order.status === "IN_ARBEIT");
+    }
 
     if (statusView === "ERLEDIGT") {
       return orders.filter((order) => order.status === "ERLEDIGT");
@@ -407,6 +548,16 @@ if (statusView === "IN_ARBEIT") {
         order.notes || "",
         order.status,
         formatDuration(order.startTime, order.endTime, order.status),
+        ...(order.reviere || []).flatMap((item) => [
+          item.revier?.name || "",
+          item.revier?.nummer || "",
+          ...(item.revier?.paechter || []).flatMap((assignment) => [
+            assignment.pachter.firstName || "",
+            assignment.pachter.lastName || "",
+            assignment.pachter.phone || "",
+            assignment.pachter.email || "",
+          ]),
+        ]),
       ]
         .join(" ")
         .toLowerCase()
@@ -418,25 +569,25 @@ if (statusView === "IN_ARBEIT") {
     <main className="min-h-screen bg-gray-50 p-3 sm:p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-6xl space-y-4 sm:space-y-5 md:space-y-6">
         <div className="rounded-2xl border-2 border-slate-900 bg-slate-900 p-4 shadow sm:p-5 md:p-6">
-  <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-    Aufträge
-  </h1>
-  <p className="mt-2 text-sm text-slate-100 sm:text-base">
-    Neue Aufträge bekommen automatisch eine Nummer wie 2026-1, 2026-2
-    usw.
-  </p>
-</div>
+          <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+            Aufträge
+          </h1>
+          <p className="mt-2 text-sm text-slate-100 sm:text-base">
+            Neue Aufträge bekommen automatisch eine Nummer wie 2026-1, 2026-2
+            usw.
+          </p>
+        </div>
 
         {isAdmin && (
           <div className="space-y-4 rounded-2xl border-2 border-blue-800 bg-blue-50 p-4 shadow sm:p-5 md:p-6">
-  <div className="rounded-xl bg-blue-800 px-4 py-3">
-    <h2 className="text-lg font-extrabold text-white sm:text-xl">
-      Neuen Auftrag anlegen
-    </h2>
-    <p className="mt-1 text-sm text-blue-100 sm:text-base">
-      Die Auftragsnummer wird automatisch beim Speichern vergeben.
-    </p>
-  </div>
+            <div className="rounded-xl bg-blue-800 px-4 py-3">
+              <h2 className="text-lg font-extrabold text-white sm:text-xl">
+                Neuen Auftrag anlegen
+              </h2>
+              <p className="mt-1 text-sm text-blue-100 sm:text-base">
+                Die Auftragsnummer wird automatisch beim Speichern vergeben.
+              </p>
+            </div>
 
             <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
               <select
@@ -472,20 +623,7 @@ if (statusView === "IN_ARBEIT") {
                 ))}
               </select>
 
-              <select
-                value={form.teamId}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, teamId: e.target.value }))
-                }
-                className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:text-sm"
-              >
-                <option value="">Team auswählen</option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </select>
+              
 
               <input
                 type="date"
@@ -542,7 +680,7 @@ if (statusView === "IN_ARBEIT") {
               <label className="mb-2 block text-sm font-medium">Suche</label>
               <input
                 type="text"
-                placeholder="Nummer, Ansprechpartner, Fläche, Team, Status ..."
+                placeholder="Nummer, Ansprechpartner, Fläche, Team, Revier, Pächter, Status ..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:text-sm"
@@ -556,16 +694,21 @@ if (statusView === "IN_ARBEIT") {
                   value={statusView}
                   onChange={(e) =>
                     setStatusView(
-                      e.target.value as "AKTIV" | "ERLEDIGT" | "ALLE"
+                      e.target.value as
+                        | "AKTIV"
+                        | "OFFEN"
+                        | "IN_ARBEIT"
+                        | "ERLEDIGT"
+                        | "ALLE"
                     )
                   }
                   className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:w-44 md:text-sm"
                 >
                   <option value="AKTIV">Aktive</option>
-<option value="OFFEN">Offene</option>
-<option value="IN_ARBEIT">In Arbeit</option>
-<option value="ERLEDIGT">Erledigte</option>
-<option value="ALLE">Alle</option>
+                  <option value="OFFEN">Offene</option>
+                  <option value="IN_ARBEIT">In Arbeit</option>
+                  <option value="ERLEDIGT">Erledigte</option>
+                  <option value="ALLE">Alle</option>
                 </select>
               </div>
             )}
@@ -643,6 +786,19 @@ if (statusView === "IN_ARBEIT") {
                       <div className="mt-1 text-xs text-gray-500">
                         Team: {order.team?.name || "nicht zugeordnet"}
                       </div>
+
+                      {order.reviere && order.reviere.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {order.reviere.map((item) => (
+                            <span
+                              key={item.id}
+                              className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-900"
+                            >
+                              {getRevierLabel(item)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="shrink-0 text-xl text-gray-500">
@@ -698,22 +854,7 @@ if (statusView === "IN_ARBEIT") {
                             ))}
                           </select>
 
-                          <select
-                            value={order.editedTeamId}
-                            onChange={(e) =>
-                              updateLocalOrder(order.id, {
-                                editedTeamId: e.target.value,
-                              })
-                            }
-                            className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:text-sm"
-                          >
-                            <option value="">Team auswählen</option>
-                            {teams.map((team) => (
-                              <option key={team.id} value={team.id}>
-                                {team.name}
-                              </option>
-                            ))}
-                          </select>
+            
                         </div>
 
                         <div className="space-y-3">
@@ -778,6 +919,8 @@ if (statusView === "IN_ARBEIT") {
                           )}
                         </div>
                       </div>
+
+                      <OrderReviereBox order={order} />
 
                       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                         <button

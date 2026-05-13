@@ -122,53 +122,49 @@ export async function POST(req: NextRequest) {
     const overwriteExisting = body.overwriteExisting !== false;
     const assignOrders = body.assignOrders !== false;
 
-    const [teamSlots, users, existingAssignments, openOrders] =
-      await Promise.all([
-        db.team.findMany({
-          where: {
-            isActive: true,
+    const [teamSlots, users, openOrders] = await Promise.all([
+      db.team.findMany({
+        where: {
+          isActive: true,
+        },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
+
+      db.user.findMany({
+        where: {
+          isApproved: true,
+        },
+        include: {
+          availabilities: {
+            where: { date },
+            take: 1,
           },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        }),
-        db.user.findMany({
-          where: {
-            isApproved: true,
+        },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      }),
+
+      db.order.findMany({
+        where: {
+          operationDayId: operationDay.id,
+          status: {
+            not: "ERLEDIGT",
           },
-          include: {
-            availabilities: {
-              where: { date },
-              take: 1,
+        },
+        include: {
+          field: {
+            select: {
+              locationLatitude: true,
+              locationLongitude: true,
             },
           },
-          orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-        }),
-        db.operationDayTeam.findMany({
-          where: {
-            operationDayId: operationDay.id,
-          },
-          include: {
-            members: true,
-            orders: true,
-          },
-        }),
-        db.order.findMany({
-          where: {
-            operationDayId: operationDay.id,
-            status: {
-              not: "ERLEDIGT",
-            },
-          },
-          include: {
-            field: {
-              select: {
-                locationLatitude: true,
-                locationLongitude: true,
-              },
-            },
-          },
-          orderBy: [{ mowingDate: "asc" }, { createdAt: "asc" }],
-        }),
-      ]);
+        },
+        orderBy: [
+          { sortOrder: "asc" },
+          { mowingDate: "asc" },
+          { createdAt: "asc" },
+        ],
+      }),
+    ]);
 
     if (teamSlots.length === 0) {
       return NextResponse.json(
@@ -236,6 +232,7 @@ export async function POST(req: NextRequest) {
           },
           data: {
             operationDayTeamId: null,
+            sortOrder: 0,
           },
         });
 
@@ -280,6 +277,8 @@ export async function POST(req: NextRequest) {
       }
 
       if (assignOrders && orderAssignments.length > 0) {
+        const orderIndexByTeamId = new Map<string, number>();
+
         for (const assignment of orderAssignments) {
           const targetOperationDayTeam = createdTeams.find(
             (team) => team.teamId === assignment.teamId
@@ -287,12 +286,18 @@ export async function POST(req: NextRequest) {
 
           if (!targetOperationDayTeam) continue;
 
+          const currentIndex = orderIndexByTeamId.get(assignment.teamId) || 0;
+          const nextSortOrder = currentIndex + 1;
+
+          orderIndexByTeamId.set(assignment.teamId, nextSortOrder);
+
           await tx.order.update({
             where: {
               id: assignment.orderId,
             },
             data: {
               operationDayTeamId: targetOperationDayTeam.id,
+              sortOrder: nextSortOrder,
             },
           });
         }
@@ -332,6 +337,7 @@ export async function POST(req: NextRequest) {
         },
         orders: {
           include: {
+            owner: true,
             field: {
               select: {
                 id: true,
@@ -341,8 +347,31 @@ export async function POST(req: NextRequest) {
                 locationLongitude: true,
               },
             },
+            reviere: {
+              include: {
+                revier: {
+                  include: {
+                    paechter: {
+                      include: {
+                        pachter: true,
+                      },
+                      orderBy: {
+                        createdAt: "asc",
+                      },
+                    },
+                  },
+                },
+              },
+              orderBy: {
+                overlapSqm: "desc",
+              },
+            },
           },
-          orderBy: [{ mowingDate: "asc" }, { createdAt: "asc" }],
+          orderBy: [
+            { sortOrder: "asc" },
+            { mowingDate: "asc" },
+            { createdAt: "asc" },
+          ],
         },
       },
       orderBy: {

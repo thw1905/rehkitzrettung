@@ -187,6 +187,9 @@ useEffect(() => {
   { href: "/helpers", label: "Helfer" },
   { href: "/fields", label: "Flächen" },
   { href: "/owners", label: "Ansprechpartner" },
+  { href: "/reviere", label: "Reviere"},
+  { href: "/revier-paechter", label: "Revierpächter"},
+  { href: "/admin/db-check", label: "DB-Check"},
 ];
 
 const operationsNavItems = [

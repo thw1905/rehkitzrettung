@@ -1,3 +1,4 @@
+import { icon } from "leaflet";
 import Link from "next/link";
 import { title } from "process";
 
@@ -10,6 +11,9 @@ const sections = [
       { href: "/helpers", title: "Helfer", icon: "👥" },
       { href: "/fields", title: "Flächen", icon: "🌾" },
       { href: "/owners", title: "Ansprechpartner", icon: "☎️" },
+      { href: "/reviere", title: "Reviere", icon: "🐗"},
+      { href: "/revier-paechter", title: "Revierpächter", icon: "🐗🧑‍💼"},
+      { href: "/admin/db-check", title: "DB-Check"},
     ],
   },
 ];

@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   MapContainer,
   Polygon,
+  Polyline,
   Popup,
   TileLayer,
   Tooltip,
@@ -23,13 +24,33 @@ type FieldItem = {
   locationNote?: string | null;
 };
 
+type RevierItem = {
+  id: string;
+  name: string;
+  nummer?: string | null;
+  areaGeoJson: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
+  pachter?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
+};
+
 type PreparedPolygon = {
   field: FieldItem;
   positions: [number, number][];
 };
 
+type PreparedRevier = {
+  revier: RevierItem;
+  rings: [number, number][][];
+};
+
 type Props = {
   fields: FieldItem[];
+  reviere: RevierItem[];
   selectedFieldIds: string[];
   onToggleField: (fieldId: string) => void;
 };
@@ -42,6 +63,34 @@ function getFieldLabel(field: FieldItem) {
   if (displayName) return displayName;
   if (name) return name;
   return "Unbekannte Fläche";
+}
+
+function getRevierLabel(revier: RevierItem) {
+  const nummer = (revier.nummer || "").trim();
+  const name = (revier.name || "").trim();
+
+  if (nummer && name) return `${nummer} · ${name}`;
+  if (nummer) return nummer;
+  if (name) return name;
+  return "Unbekanntes Revier";
+}
+
+function convertRingToLatLng(ring: any[]) {
+  return ring
+    .map((coord) => {
+      if (!Array.isArray(coord) || coord.length < 2) {
+        return null;
+      }
+
+      const [lng, lat] = coord;
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return null;
+      }
+
+      return [lat, lng] as [number, number];
+    })
+    .filter(Boolean) as [number, number][];
 }
 
 function FitMapToFields({ polygons }: { polygons: PreparedPolygon[] }) {
@@ -68,6 +117,7 @@ function FitMapToFields({ polygons }: { polygons: PreparedPolygon[] }) {
 
 export default function FieldOrderMapLeaflet({
   fields,
+  reviere,
   selectedFieldIds,
   onToggleField,
 }: Props) {
@@ -92,21 +142,7 @@ export default function FieldOrderMapLeaflet({
             return null;
           }
 
-          const positions: [number, number][] = ring
-            .map((coord) => {
-              if (!Array.isArray(coord) || coord.length < 2) {
-                return null;
-              }
-
-              const [lng, lat] = coord;
-
-              if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-                return null;
-              }
-
-              return [lat, lng] as [number, number];
-            })
-            .filter(Boolean) as [number, number][];
+          const positions = convertRingToLatLng(ring);
 
           if (positions.length < 3) {
             return null;
@@ -120,6 +156,56 @@ export default function FieldOrderMapLeaflet({
       })
       .filter(Boolean) as PreparedPolygon[];
   }, [fields]);
+
+  const preparedReviere = useMemo(() => {
+    return reviere
+      .map((revier) => {
+        try {
+          const geometry = revier.areaGeoJson?.geometry;
+
+          if (!geometry) return null;
+
+          const rings: [number, number][][] = [];
+
+          if (geometry.type === "Polygon") {
+            const outerRing = geometry.coordinates?.[0];
+
+            if (Array.isArray(outerRing)) {
+              const converted = convertRingToLatLng(outerRing);
+
+              if (converted.length >= 3) {
+                rings.push(converted);
+              }
+            }
+          }
+
+          if (geometry.type === "MultiPolygon") {
+            for (const polygon of geometry.coordinates || []) {
+              const outerRing = polygon?.[0];
+
+              if (Array.isArray(outerRing)) {
+                const converted = convertRingToLatLng(outerRing);
+
+                if (converted.length >= 3) {
+                  rings.push(converted);
+                }
+              }
+            }
+          }
+
+          if (rings.length === 0) return null;
+
+          return {
+            revier,
+            rings,
+          };
+        } catch (error) {
+          console.error("Fehler bei Revier:", revier.id, error);
+          return null;
+        }
+      })
+      .filter(Boolean) as PreparedRevier[];
+  }, [reviere]);
 
   function getColor(fieldId: string) {
     return selectedSet.has(fieldId) ? "#2563eb" : "#16a34a";
@@ -158,6 +244,60 @@ export default function FieldOrderMapLeaflet({
 
       <FitMapToFields polygons={polygons} />
 
+      {/* Reviergrenzen */}
+      {preparedReviere.map(({ revier, rings }) =>
+        rings.map((ring, index) => (
+          <Polyline
+            key={`${revier.id}-${index}`}
+            positions={ring}
+            pathOptions={{
+              color: "#f97316",
+              weight: 3,
+              opacity: 0.95,
+              dashArray: "8 6",
+            }}
+          >
+            <Tooltip direction="center" className="field-map-label">
+              {getRevierLabel(revier)}
+            </Tooltip>
+
+            <Popup>
+              <div className="min-w-[220px] space-y-2">
+                <div className="text-base font-semibold">
+                  {getRevierLabel(revier)}
+                </div>
+
+                {revier.pachter ? (
+                  <div className="space-y-1 text-sm text-gray-700">
+                    <div>
+                      <b>Pächter:</b> {revier.pachter.firstName}{" "}
+                      {revier.pachter.lastName}
+                    </div>
+
+                    {revier.pachter.phone && (
+                      <div>
+                        <b>Telefon:</b> {revier.pachter.phone}
+                      </div>
+                    )}
+
+                    {revier.pachter.email && (
+                      <div>
+                        <b>E-Mail:</b> {revier.pachter.email}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-600">
+                    Noch kein Revierpächter hinterlegt.
+                  </div>
+                )}
+              </div>
+            </Popup>
+          </Polyline>
+        ))
+      )}
+
+      {/* Flächen */}
       {polygons.map(({ field, positions }) => {
         const selected = selectedSet.has(field.id);
 
@@ -175,10 +315,7 @@ export default function FieldOrderMapLeaflet({
               click: () => onToggleField(field.id),
             }}
           >
-            <Tooltip
-              direction="center"
-              className="field-map-label"
-            >
+            <Tooltip direction="center" className="field-map-label">
               {getFieldLabel(field)}
             </Tooltip>
 

@@ -2,8 +2,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { area, booleanIntersects, featureCollection, intersect } from "@turf/turf";
 import { db } from "@/lib/db";
 import { requireAdminApi } from "@/lib/admin";
+
+const MIN_OVERLAP_SQM = 500;
+const MIN_OVERLAP_PERCENT = 1;
 
 function parseDateOnlyToUtc(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number);
@@ -34,6 +38,98 @@ async function getOrCreateOperationDay(date: Date) {
   });
 }
 
+function getFeatureAreaSqm(feature: any) {
+  try {
+    return area(feature);
+  } catch {
+    return 0;
+  }
+}
+
+function getOverlapForRevier(params: {
+  fieldGeoJson: any;
+  revierGeoJson: any;
+}) {
+  const { fieldGeoJson, revierGeoJson } = params;
+
+  try {
+    if (!fieldGeoJson || !revierGeoJson) {
+      return null;
+    }
+
+    if (!booleanIntersects(fieldGeoJson, revierGeoJson)) {
+      return null;
+    }
+
+    const fieldAreaSqm = getFeatureAreaSqm(fieldGeoJson);
+
+    if (fieldAreaSqm <= 0) {
+      return null;
+    }
+
+    const intersection = intersect(
+      featureCollection([fieldGeoJson, revierGeoJson])
+    );
+
+    if (!intersection) {
+      return null;
+    }
+
+    const overlapSqm = getFeatureAreaSqm(intersection);
+    const overlapPercent = (overlapSqm / fieldAreaSqm) * 100;
+
+    const isRelevant =
+      overlapSqm >= MIN_OVERLAP_SQM ||
+      overlapPercent >= MIN_OVERLAP_PERCENT;
+
+    if (!isRelevant) {
+      return null;
+    }
+
+    return {
+      overlapSqm,
+      overlapPercent,
+    };
+  } catch (error) {
+    console.error("Revier-Überschneidung konnte nicht berechnet werden:", error);
+    return null;
+  }
+}
+
+async function findMatchingReviere(fieldGeoJson: any) {
+  const reviere = await db.revier.findMany({
+    select: {
+      id: true,
+      areaGeoJson: true,
+    },
+  });
+
+  const matches: {
+    revierId: string;
+    overlapSqm: number;
+    overlapPercent: number;
+  }[] = [];
+
+  for (const revier of reviere) {
+    const overlap = getOverlapForRevier({
+      fieldGeoJson,
+      revierGeoJson: revier.areaGeoJson,
+    });
+
+    if (!overlap) continue;
+
+    matches.push({
+      revierId: revier.id,
+      overlapSqm: overlap.overlapSqm,
+      overlapPercent: overlap.overlapPercent,
+    });
+  }
+
+  matches.sort((a, b) => b.overlapSqm - a.overlapSqm);
+
+  return matches;
+}
+
 export async function POST(req: NextRequest) {
   const authCheck = await requireAdminApi();
 
@@ -47,7 +143,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const fieldIds:string[] = Array.isArray(body.fieldIds)
+    const fieldIds: string[] = Array.isArray(body.fieldIds)
       ? body.fieldIds.map((id: unknown) => String(id)).filter(Boolean)
       : [];
 
@@ -101,15 +197,21 @@ export async function POST(req: NextRequest) {
         id: true,
         name: true,
         displayName: true,
+        areaGeoJson: true,
       },
     });
 
     const foundFieldIds = new Set(fields.map((field) => field.id));
-    const missingFieldIds = fieldIds.filter((id: string) => !foundFieldIds.has(id));
+    const missingFieldIds = fieldIds.filter(
+      (id: string) => !foundFieldIds.has(id)
+    );
 
-    const createdOrders = [];
+    const createdOrders: any[] = [];
+    let createdOrderReviereCount = 0;
 
     for (const field of fields) {
+      const matchingReviere = await findMatchingReviere(field.areaGeoJson);
+
       const order = await db.order.create({
         data: {
           title: field.displayName || field.name,
@@ -119,13 +221,37 @@ export async function POST(req: NextRequest) {
           operationDayId: operationDay.id,
           status: "OFFEN",
           notes,
+          reviere: {
+            create: matchingReviere.map((match) => ({
+              revierId: match.revierId,
+              overlapSqm: match.overlapSqm,
+              overlapPercent: match.overlapPercent,
+            })),
+          },
         },
         include: {
           owner: true,
           field: true,
+          reviere: {
+            include: {
+              revier: {
+                include: {
+                  paechter: {
+                    include: {
+                      pachter: true,
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: {
+              overlapSqm: "desc",
+            },
+          },
         },
       });
 
+      createdOrderReviereCount += matchingReviere.length;
       createdOrders.push(order);
     }
 
@@ -133,9 +259,10 @@ export async function POST(req: NextRequest) {
       success: true,
       createdCount: createdOrders.length,
       missingFieldCount: missingFieldIds.length,
+      createdOrderReviereCount,
       createdOrders,
       missingFieldIds,
-      message: `${createdOrders.length} Aufträge erstellt.`,
+      message: `${createdOrders.length} Aufträge erstellt. ${createdOrderReviereCount} Revier-Zuordnungen erkannt.`,
     });
   } catch (error: any) {
     console.error("Bulk-Auftragserstellung Fehler:", error);
