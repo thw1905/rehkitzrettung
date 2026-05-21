@@ -1,8 +1,38 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 
-export async function GET() {
+function parseDateOnlyToUtc(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
+    throw new Error("Ungültiges Datum.");
+  }
+
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+}
+
+function getTodayDateUtc() {
+  const now = new Date();
+
+  return new Date(
+    Date.UTC(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0
+    )
+  );
+}
+
+export async function GET(req: NextRequest) {
   const currentUser = await getCurrentUserWithTeams();
 
   if (!currentUser) {
@@ -10,18 +40,16 @@ export async function GET() {
   }
 
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const { searchParams } = new URL(req.url);
+    const dateParam = searchParams.get("date");
 
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const selectedDate = dateParam
+      ? parseDateOnlyToUtc(dateParam)
+      : getTodayDateUtc();
 
-    const operationDay = await db.operationDay.findFirst({
+    const operationDay = await db.operationDay.findUnique({
       where: {
-        date: {
-          gte: today,
-          lt: tomorrow,
-        },
+        date: selectedDate,
       },
       include: {
         teams: {
@@ -31,6 +59,9 @@ export async function GET() {
             members: {
               include: {
                 user: true,
+              },
+              orderBy: {
+                createdAt: "asc",
               },
             },
           },
@@ -58,23 +89,15 @@ export async function GET() {
     });
 
     const operationDayResponse = {
-  id: operationDay.id,
-  date: operationDay.date,
-  status: operationDay.status,
-};
+      id: operationDay.id,
+      date: operationDay.date,
+      status: operationDay.status,
+    };
 
-if (!ownTeam) {
-  return NextResponse.json({
-    operationDay: operationDayResponse,
-    ownTeamId: null,
-    teams: [],
-  });
-}
-
-return NextResponse.json({
-  operationDay: operationDayResponse,
-  ownTeamId: ownTeam.id,
-  teams: operationDay.teams.map((operationDayTeam) => ({
+    return NextResponse.json({
+      operationDay: operationDayResponse,
+      ownTeamId: ownTeam?.id || null,
+      teams: operationDay.teams.map((operationDayTeam) => ({
         id: operationDayTeam.id,
         teamName: operationDayTeam.team.name,
         pilot: operationDayTeam.pilot

@@ -65,7 +65,14 @@ export async function GET(req: NextRequest) {
         },
         include: {
           owner: true,
-          field: true,
+          field: {
+  select: {
+    id: true,
+    name: true,
+    displayName: true,
+    areaGeoJson: true,
+  },
+},
           operationDayTeam: {
             include: {
               team: true,

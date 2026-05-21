@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { area } from "@turf/area";
 
 type User = {
   id: string;
@@ -42,9 +43,10 @@ type OrderItem = {
     lastName: string;
   };
   field: {
-    name: string;
-    displayName?: string | null;
-  };
+  name: string;
+  displayName?: string | null;
+  areaGeoJson?: GeoJSON.Feature<GeoJSON.Polygon> | null;
+};
   operationDayTeam: DayTeam | null;
   team: {
     id: string;
@@ -83,6 +85,38 @@ function getFieldLabel(order: OrderItem) {
   if (displayName) return displayName;
   if (name) return name;
   return "Unbekannte Fläche";
+}
+
+function getFieldAreaHectare(order: OrderItem) {
+  if (!order.field?.areaGeoJson) return 0;
+
+  try {
+    const sqm = area(order.field.areaGeoJson);
+    const hectare = sqm / 10000;
+
+    if (!Number.isFinite(hectare) || hectare <= 0) {
+      return 0;
+    }
+
+    return hectare;
+  } catch {
+    return 0;
+  }
+}
+
+function formatHectare(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "-";
+
+  return `${value.toLocaleString("de-DE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ha`;
+}
+
+function getTeamTotalHectare(dayTeam: DayTeam, orders: OrderItem[]) {
+  return orders
+    .filter((order) => order.operationDayTeam?.id === dayTeam.id)
+    .reduce((sum, order) => sum + getFieldAreaHectare(order), 0);
 }
 
 function getTeamLabel(dayTeam: DayTeam) {
@@ -454,6 +488,14 @@ export default function DayAssignmentsPageClient() {
                             </div>
 
                             <div className="mt-1 text-sm text-gray-700">
+  Zugeordnete Aufträge: {dayTeam.orders.length}
+</div>
+
+                            <div className="mt-1 text-sm font-semibold text-gray-900">
+  Gesamtfläche: {formatHectare(getTeamTotalHectare(dayTeam, orders))}
+</div>
+
+                            <div className="mt-1 text-sm text-gray-700">
                               Pilot:{" "}
                               {dayTeam.pilot
                                 ? `${dayTeam.pilot.firstName} ${dayTeam.pilot.lastName}`
@@ -494,8 +536,12 @@ export default function DayAssignmentsPageClient() {
                                     </div>
 
                                     <div className="mt-1 text-sm text-gray-700">
-                                      Fläche: {getFieldLabel(order)}
-                                    </div>
+  Fläche: {getFieldLabel(order)}
+</div>
+
+<div className="mt-1 text-sm font-semibold text-gray-900">
+  Größe: {formatHectare(getFieldAreaHectare(order))}
+</div>
 
                                     <div className="mt-1 text-xs text-gray-500">
                                       Ansprechpartner: {order.owner.firstName}{" "}

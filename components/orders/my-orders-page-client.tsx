@@ -4,14 +4,44 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import QrScannerModal from "@/components/orders/qr-scanner-modal";
 import type { Pinpoint } from "@/components/orders/order-field-map";
+import { area } from "@turf/area";
 
 const OrderFieldMap = dynamic(
   () => import("@/components/orders/order-field-map"),
   { ssr: false }
 );
 
+const PinpointNavigationModal = dynamic(
+  () => import("@/components/orders/pinpoint-navigation-modal"),
+  { ssr: false }
+);
+
 type OrderStatus = "OFFEN" | "IN_ARBEIT" | "ERLEDIGT";
 type PinpointStatus = "OFFEN" | "ERREICHT" | "ERLEDIGT";
+
+type RevierPachter = {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+};
+
+type RevierAssignment = {
+  id: string;
+  overlapSqm?: number | null;
+  overlapPercent?: number | null;
+  revier?: {
+    id: string;
+    name?: string | null;
+    nummer?: string | null;
+    artNr?: string | null;
+    paechter?: {
+      id: string;
+      pachter?: RevierPachter | null;
+    }[];
+  } | null;
+};
 
 type Owner = {
   id: string;
@@ -62,6 +92,7 @@ type Order = {
   field?: Field | null;
   team?: Team | null;
   pinpoints?: Pinpoint[];
+  reviere?: RevierAssignment[];
 };
 
 type DraftValues = {
@@ -115,6 +146,15 @@ function formatPinpointStatus(status: PinpointStatus) {
   return "Offen";
 }
 
+function getTodayDateInputValue() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+
+  return `${y}-${m}-${d}`;
+}
+
 function getFieldCenter(
   feature: GeoJSON.Feature<GeoJSON.Polygon>
 ): { lat: number; lng: number } {
@@ -165,8 +205,76 @@ function getFieldLabel(field?: Field | null) {
   return "Unbekannte Fläche";
 }
 
+function getFieldAreaLabel(field?: Field | null) {
+  if (!field?.areaGeoJson) return "-";
+
+  try {
+    const sqm = area(field.areaGeoJson);
+    const hectare = sqm / 10000;
+
+    if (!Number.isFinite(hectare) || hectare <= 0) {
+      return "-";
+    }
+
+    return `${hectare.toLocaleString("de-DE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} ha`;
+  } catch {
+    return "-";
+  }
+}
+
 function getTeamName(team?: Team | null) {
   return team?.name?.trim() || "nicht zugeordnet";
+}
+
+function getRevierLabel(assignment: RevierAssignment) {
+  const revier = assignment.revier;
+
+  if (!revier) return "Unbekanntes Revier";
+
+  const name = (revier.name || "").trim();
+  const artNr = (revier.artNr || "").trim();
+  const nummer = (revier.nummer || "").trim();
+
+  if (name && artNr) return `${name} (${artNr})`;
+  if (name && nummer) return `${name} (${nummer})`;
+  if (name) return name;
+  if (artNr) return artNr;
+  if (nummer) return nummer;
+
+  return "Unbekanntes Revier";
+}
+
+function getPachterName(pachter?: RevierPachter | null) {
+  if (!pachter) return "Unbekannter Pächter";
+
+  return (
+    [pachter.firstName || "", pachter.lastName || ""].join(" ").trim() ||
+    "Unbekannter Pächter"
+  );
+}
+
+function formatOverlap(assignment: RevierAssignment) {
+  const percent =
+    typeof assignment.overlapPercent === "number"
+      ? assignment.overlapPercent
+      : null;
+
+  const sqm =
+    typeof assignment.overlapSqm === "number" ? assignment.overlapSqm : null;
+
+  if (percent != null && sqm != null) {
+    return `${percent.toFixed(1)} % · ${Math.round(sqm).toLocaleString(
+      "de-DE"
+    )} m²`;
+  }
+
+  if (percent != null) return `${percent.toFixed(1)} %`;
+  if (sqm != null) return `${Math.round(sqm).toLocaleString("de-DE")} m²`;
+
+  return "";
 }
 
 function getOrderLabel(order: Order) {
@@ -262,6 +370,7 @@ export default function MyOrdersPageClient({
   isAdmin: boolean;
   role: string;
 }) {
+  const [selectedDate, setSelectedDate] = useState(getTodayDateInputValue());
   const [orders, setOrders] = useState<Order[]>([]);
   const [drafts, setDrafts] = useState<Record<string, DraftValues>>({});
   const [pinpointDrafts, setPinpointDrafts] = useState<Record<string, PinpointDraft>>({});
@@ -279,6 +388,10 @@ export default function MyOrdersPageClient({
   const [openPinpoints, setOpenPinpoints] = useState<Record<string, boolean>>({});
   const [qrScannerOrderId, setQrScannerOrderId] = useState<string | null>(null);
   const [scanSuccessMessage, setScanSuccessMessage] = useState<string | null>(null);
+  const [navigationTarget, setNavigationTarget] = useState<{
+  order: Order;
+  pinpoint: Pinpoint;
+} | null>(null);
 
   const canControlOrder = isAdmin || role === "PILOT";
   const canScanQr = isAdmin || role === "PILOT" || role === "SUCHER";
@@ -287,7 +400,10 @@ export default function MyOrdersPageClient({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/orders", { cache: "no-store" });
+      const res = await fetch(
+  `/api/orders?date=${encodeURIComponent(selectedDate)}`,
+  { cache: "no-store" }
+);
       const data = await res.json();
 
       if (!res.ok) {
@@ -345,7 +461,7 @@ export default function MyOrdersPageClient({
       eventSource.removeEventListener("orders_changed", reload);
       eventSource.close();
     };
-  }, []);
+  }, [selectedDate]);
 
   function toggleOwnerSection(orderId: string) {
     setOpenOwnerSections((prev) => ({
@@ -598,34 +714,36 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
 }
 
   async function navigateToPinpoint(order: Order, pinpoint: Pinpoint) {
-    setSavingId(pinpoint.id);
+  setSavingId(pinpoint.id);
 
-    try {
-      if (pinpoint.status === "OFFEN") {
-        await patchPinpointStatus(order.id, pinpoint.id, {
-          status: "ERREICHT",
-        });
-        await loadOrders();
-      }
+  try {
+    let nextPinpoint = pinpoint;
 
-      const lat = pinpoint.latitude;
-      const lng = pinpoint.longitude;
+    if (pinpoint.status === "OFFEN") {
+      const updated = await patchPinpointStatus(order.id, pinpoint.id, {
+        status: "ERREICHT",
+      });
 
-      if (typeof window !== "undefined") {
-        const isIOS = /iPad|iPhone|iPod/.test(window.navigator.userAgent);
-        const nativeUrl = isIOS
-          ? `maps://?daddr=${lat},${lng}`
-          : `geo:${lat},${lng}?q=${lat},${lng}`;
+      nextPinpoint = {
+        ...pinpoint,
+        status: "ERREICHT",
+        reachedAt: updated?.reachedAt || pinpoint.reachedAt || null,
+      };
 
-        window.location.href = nativeUrl;
-      }
-    } catch (error: any) {
-      console.error("Fehler beim Starten der Navigation:", error);
-      alert(error?.message || "Navigation konnte nicht gestartet werden.");
-    } finally {
-      setSavingId(null);
+      await loadOrders();
     }
+
+    setNavigationTarget({
+      order,
+      pinpoint: nextPinpoint,
+    });
+  } catch (error: any) {
+    console.error("Fehler beim Starten der In-App-Navigation:", error);
+    alert(error?.message || "Navigation konnte nicht gestartet werden.");
+  } finally {
+    setSavingId(null);
   }
+}
 
   function navigateToPinpointGoogle(pinpoint: Pinpoint) {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${pinpoint.latitude},${pinpoint.longitude}`;
@@ -749,6 +867,23 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
           </section>
 
           <section className="page-card p-4">
+  <label className="mb-2 block text-sm font-semibold text-gray-900">
+    Einsatztag
+  </label>
+
+  <input
+    type="date"
+    value={selectedDate}
+    onChange={(e) => setSelectedDate(e.target.value)}
+    className="w-full max-w-sm rounded-xl border px-3 py-3"
+  />
+
+  <p className="mt-2 text-sm text-gray-600">
+    Wähle das Datum aus, für das du deine geplanten Aufträge sehen möchtest.
+  </p>
+</section>
+
+          <section className="page-card p-4">
             <label className="mb-2 block text-sm font-semibold text-gray-900">
               Suche
             </label>
@@ -826,11 +961,14 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                           </div>
 
                           <div className="page-card-muted px-3 py-2 text-sm text-gray-900">
-                            <span className="font-semibold">Mähdatum:</span>{" "}
-                            {order.mowingDate
-                              ? new Date(order.mowingDate).toLocaleDateString("de-DE")
-                              : "-"}
-                          </div>
+  <span className="font-semibold">Mähdatum:</span>{" "}
+  {order.mowingDate
+    ? new Date(order.mowingDate).toLocaleDateString("de-DE")
+    : "-"}
+  <span className="mx-2 text-gray-400">·</span>
+  <span className="font-semibold">Fläche:</span>{" "}
+  {getFieldAreaLabel(order.field)}
+</div>
 
                           {order.startTime && (
                             <div className="page-card-muted px-3 py-2 text-sm text-gray-900">
@@ -864,12 +1002,15 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                             {order.field?.areaGeoJson ? (
                               <div className="map-wrapper">
                                 <OrderFieldMap
-                                  areaGeoJson={order.field.areaGeoJson}
-                                  pinpoints={order.pinpoints || []}
-                                  onPinpointClick={(pinpoint) =>
-                                    markPinpointReached(order, pinpoint)
-                                  }
-                                />
+  areaGeoJson={order.field.areaGeoJson}
+  pinpoints={order.pinpoints || []}
+  locationLatitude={order.field.locationLatitude}
+  locationLongitude={order.field.locationLongitude}
+  locationNote={order.field.locationNote}
+  onPinpointClick={(pinpoint) =>
+    markPinpointReached(order, pinpoint)
+  }
+/>
                               </div>
                             ) : (
                               <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700">
@@ -909,37 +1050,143 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                                 </button>
 
                                 {openOwnerSections[order.id] && (
-                                  <div className="mt-3 space-y-3">
-                                    <InfoCard label="Name" value={getOwnerName(order.owner)} />
-                                    <InfoCard label="Telefon">
-                                      {order.owner?.phone ? (
-                                        <div className="space-y-3">
-                                          <a
-                                            href={`tel:${order.owner.phone}`}
-                                            className="text-base font-semibold text-blue-700 underline"
-                                          >
-                                            {order.owner.phone}
-                                          </a>
+  <div className="mt-3">
+    <div className="rounded-xl border border-gray-200 bg-white p-3">
+      <div className="text-sm font-bold text-gray-900">
+        {getOwnerName(order.owner)}
+      </div>
 
-                                          <a
-                                            href={`tel:${order.owner.phone}`}
-                                            className="block w-full rounded-xl bg-blue-600 py-3 text-center text-base font-semibold text-white"
-                                          >
-                                            📞 Ansprechpartner anrufen
-                                          </a>
-                                        </div>
-                                      ) : (
-                                        <div className="text-sm text-gray-700">-</div>
-                                      )}
-                                    </InfoCard>
-                                  </div>
-                                )}
+      {order.owner?.phone ? (
+        <div className="mt-2 text-sm text-gray-800">
+          Telefon:{" "}
+          <a
+            href={`tel:${order.owner.phone}`}
+            className="font-semibold text-blue-700 underline"
+          >
+            {order.owner.phone}
+          </a>
+        </div>
+      ) : (
+        <div className="mt-2 text-sm text-gray-700">
+          Telefon: -
+        </div>
+      )}
+
+      {order.owner?.email ? (
+        <div className="mt-1 text-sm text-gray-800">
+          E-Mail:{" "}
+          <a
+            href={`mailto:${order.owner.email}`}
+            className="font-semibold text-blue-700 underline"
+          >
+            {order.owner.email}
+          </a>
+        </div>
+      ) : (
+        <div className="mt-1 text-sm text-gray-700">
+          E-Mail: -
+        </div>
+      )}
+
+      {(order.owner?.street || order.owner?.zip || order.owner?.city) && (
+        <div className="mt-2 text-sm text-gray-700">
+          {[order.owner?.street, order.owner?.zip, order.owner?.city]
+            .filter(Boolean)
+            .join(", ")}
+        </div>
+      )}
+    </div>
+  </div>
+)}
                               </div>
 
                               <InfoCard
                                 label="Fläche"
                                 value={getFieldLabel(order.field)}
                               />
+
+                              <InfoCard label="Revier / Pächter">
+  {!order.reviere || order.reviere.length === 0 ? (
+    <div className="text-sm text-gray-700">
+      Kein Revier zugeordnet.
+    </div>
+  ) : (
+    <div className="space-y-3">
+      {order.reviere.map((assignment) => {
+        const paechter = assignment.revier?.paechter || [];
+        const overlapText = formatOverlap(assignment);
+
+        return (
+          <div
+            key={assignment.id}
+            className="rounded-xl border border-gray-200 bg-white p-3"
+          >
+            <div className="text-sm font-bold text-gray-900">
+              {getRevierLabel(assignment)}
+            </div>
+
+            {overlapText && (
+              <div className="mt-1 text-xs text-gray-600">
+                Überschneidung: {overlapText}
+              </div>
+            )}
+
+            <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
+              Pächter
+            </div>
+
+            {paechter.length === 0 ? (
+              <div className="mt-1 text-sm text-gray-700">
+                Kein Pächter hinterlegt.
+              </div>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {paechter.map((item) => {
+                  const pachter = item.pachter;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-lg border border-gray-100 bg-gray-50 p-2 text-sm text-gray-800"
+                    >
+                      <div className="font-semibold">
+                        {getPachterName(pachter)}
+                      </div>
+
+                      {pachter?.phone && (
+                        <div className="mt-1">
+                          Telefon:{" "}
+                          <a
+                            href={`tel:${pachter.phone}`}
+                            className="font-semibold text-blue-700 underline"
+                          >
+                            {pachter.phone}
+                          </a>
+                        </div>
+                      )}
+
+                      {pachter?.email && (
+                        <div className="mt-1">
+                          E-Mail:{" "}
+                          <a
+                            href={`mailto:${pachter.email}`}
+                            className="font-semibold text-blue-700 underline"
+                          >
+                            {pachter.email}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  )}
+</InfoCard>
 
                               <div className="page-card-muted p-3">
                                 <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
@@ -1719,6 +1966,12 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
   onClose={() => setQrScannerOrderId(null)}
   onScanSuccess={handleQrScanSuccess}
 />
+<QrScannerModal
+  open={qrScannerOrderId !== null}
+  onClose={() => setQrScannerOrderId(null)}
+  onScanSuccess={handleQrScanSuccess}
+/>
+
 {scanSuccessMessage && (
   <div className="pointer-events-none fixed inset-x-0 top-4 z-[130] flex justify-center px-4">
     <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-3 text-sm font-semibold text-green-800 shadow-lg">
@@ -1726,6 +1979,25 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
     </div>
   </div>
 )}
+
+{navigationTarget && (
+  <PinpointNavigationModal
+    open={true}
+    pinpoint={navigationTarget.pinpoint}
+    onClose={() => setNavigationTarget(null)}
+    onReached={() => {
+      const target = navigationTarget;
+      setNavigationTarget(null);
+
+      if (target) {
+        markPinpointReached(target.order, target.pinpoint);
+      }
+    }}
+  />
+)}
     </>
   );
 }
+
+  
+  

@@ -29,8 +29,19 @@ type TeamOverviewResponse = {
   error?: string;
 };
 
+function getTodayDateInputValue() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function getFullName(person: Person) {
-  return `${person.firstName || ""} ${person.lastName || ""}`.trim() || "Unbekannt";
+  return (
+    `${person.firstName || ""} ${person.lastName || ""}`.trim() ||
+    "Unbekannt"
+  );
 }
 
 function normalizeWhatsappNumber(phone?: string | null) {
@@ -61,7 +72,7 @@ function PersonCard({
   const whatsappNumber = normalizeWhatsappNumber(person.phone);
   const whatsappLink = whatsappNumber
     ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(
-        "Hallo, ich melde mich wegen der heutigen Rehkitzrettung."
+        "Hallo, ich melde mich wegen der Rehkitzrettung."
       )}`
     : "";
 
@@ -71,6 +82,7 @@ function PersonCard({
         <div className="text-base font-semibold text-gray-900">
           {getFullName(person)}
         </div>
+
         <span className="rounded-full border border-gray-300 bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-800">
           {formatRole(person.role, roleLabel)}
         </span>
@@ -123,9 +135,7 @@ function TeamBlock({
   return (
     <section
       className={`rounded-2xl border p-4 shadow-sm ${
-        isOwnTeam
-          ? "border-green-300 bg-green-50"
-          : "border-gray-200 bg-white"
+        isOwnTeam ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
       }`}
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -171,12 +181,19 @@ function TeamBlock({
 }
 
 export default function TeamMembersPageClient() {
+  const [selectedDate, setSelectedDate] = useState(getTodayDateInputValue());
   const [data, setData] = useState<TeamOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function loadTeamOverview() {
+  async function loadTeamOverview(date: string) {
+    setLoading(true);
+
     try {
-      const res = await fetch("/api/team-overview", { cache: "no-store" });
+      const res = await fetch(
+        `/api/team-overview?date=${encodeURIComponent(date)}`,
+        { cache: "no-store" }
+      );
+
       const contentType = res.headers.get("content-type") || "";
 
       if (!contentType.includes("application/json")) {
@@ -186,12 +203,15 @@ export default function TeamMembersPageClient() {
       const json = await res.json();
 
       if (!res.ok) {
-        throw new Error(json?.error || "Teamübersicht konnte nicht geladen werden.");
+        throw new Error(
+          json?.error || "Teamübersicht konnte nicht geladen werden."
+        );
       }
 
       setData(json);
     } catch (error: any) {
       console.error("Fehler beim Laden der Teamübersicht:", error);
+
       setData({
         operationDay: null,
         ownTeamId: null,
@@ -204,8 +224,8 @@ export default function TeamMembersPageClient() {
   }
 
   useEffect(() => {
-    loadTeamOverview();
-  }, []);
+    loadTeamOverview(selectedDate);
+  }, [selectedDate]);
 
   const ownTeam = useMemo(() => {
     if (!data?.ownTeamId) return null;
@@ -217,84 +237,91 @@ export default function TeamMembersPageClient() {
     return data.teams.filter((team) => team.id !== data.ownTeamId);
   }, [data]);
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-gray-50 p-4 md:p-6">
-        <div className="mx-auto max-w-6xl rounded-2xl bg-white p-6 shadow">
-          Teamübersicht wird geladen...
-        </div>
-      </main>
-    );
-  }
-
-  if (!data?.operationDay) {
-    return (
-      <main className="min-h-screen bg-gray-50 p-4 md:p-6">
-        <div className="mx-auto max-w-6xl rounded-2xl bg-white p-6 shadow">
-          <h1 className="text-2xl font-bold text-gray-900">Mein Team</h1>
-          <p className="mt-2 text-sm text-gray-700">
-            Für heute ist noch kein Einsatztag mit Teams angelegt.
-          </p>
-          {data?.error && (
-            <p className="mt-3 text-sm text-red-700">{data.error}</p>
-          )}
-        </div>
-      </main>
-    );
-  }
-
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-5">
         <section className="rounded-2xl bg-white p-5 shadow">
           <h1 className="text-2xl font-bold text-gray-900">Mein Team</h1>
+
           <p className="mt-2 text-sm text-gray-700">
-            Teamkontakte für den heutigen Einsatztag{" "}
-            {new Date(data.operationDay.date).toLocaleDateString("de-DE")}.
+            Teamkontakte für einen geplanten Einsatztag. Wähle ein Datum aus,
+            um auch bereits geplante Teams für morgen oder spätere Tage zu sehen.
           </p>
+
+          <div className="mt-4 max-w-sm">
+            <label className="mb-2 block text-sm font-semibold text-gray-900">
+              Einsatztag
+            </label>
+
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base"
+            />
+          </div>
         </section>
 
-        {ownTeam ? (
-  <>
-    <TeamBlock team={ownTeam} isOwnTeam />
+        {loading ? (
+          <section className="rounded-2xl bg-white p-6 text-sm text-gray-700 shadow">
+            Teamübersicht wird geladen...
+          </section>
+        ) : !data?.operationDay ? (
+          <section className="rounded-2xl bg-white p-6 shadow">
+            <h2 className="text-lg font-bold text-gray-900">
+              Keine Teamplanung vorhanden
+            </h2>
 
-    <section className="space-y-3">
-      <h2 className="text-lg font-bold text-gray-900">Andere Teams</h2>
+            <p className="mt-2 text-sm text-gray-700">
+              Für den ausgewählten Tag{" "}
+              {new Date(selectedDate).toLocaleDateString("de-DE")} ist noch
+              kein Einsatztag mit Teams angelegt.
+            </p>
 
-      {otherTeams.length === 0 ? (
-        <div className="rounded-2xl bg-white p-5 text-sm text-gray-700 shadow">
-          Keine weiteren Teams vorhanden.
-        </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {otherTeams.map((team) => (
-            <TeamBlock key={team.id} team={team} isOwnTeam={false} />
-          ))}
-        </div>
-      )}
-    </section>
-  </>
-) : (
-  <section className="rounded-2xl border border-orange-300 bg-orange-50 p-5 text-sm text-orange-900">
-    Du bist heute noch keinem Team zugeordnet.
-  </section>
-)}
+            {data?.error && (
+              <p className="mt-3 text-sm text-red-700">{data.error}</p>
+            )}
+          </section>
+        ) : (
+          <>
+            <section className="rounded-2xl bg-white p-5 shadow">
+              <p className="text-sm text-gray-700">
+                Angezeigter Einsatztag:{" "}
+                <span className="font-semibold text-gray-900">
+                  {new Date(data.operationDay.date).toLocaleDateString("de-DE")}
+                </span>
+              </p>
+            </section>
 
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-gray-900">Andere Teams</h2>
+            {ownTeam ? (
+              <TeamBlock team={ownTeam} isOwnTeam={true} />
+            ) : (
+              <section className="rounded-2xl border border-orange-300 bg-orange-50 p-5 text-sm text-orange-900">
+                Du bist an diesem Tag keinem Team zugeordnet.
+              </section>
+            )}
 
-          {otherTeams.length === 0 ? (
-            <div className="rounded-2xl bg-white p-5 text-sm text-gray-700 shadow">
-              Keine weiteren Teams vorhanden.
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {otherTeams.map((team) => (
-                <TeamBlock key={team.id} team={team} isOwnTeam={false} />
-              ))}
-            </div>
-          )}
-        </section>
+            <section className="space-y-3">
+              <h2 className="text-lg font-bold text-gray-900">Andere Teams</h2>
+
+              {otherTeams.length === 0 ? (
+                <div className="rounded-2xl bg-white p-5 text-sm text-gray-700 shadow">
+                  Keine weiteren Teams vorhanden.
+                </div>
+              ) : (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {otherTeams.map((team) => (
+                    <TeamBlock
+                      key={team.id}
+                      team={team}
+                      isOwnTeam={false}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
     </main>
   );

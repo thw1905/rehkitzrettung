@@ -208,7 +208,7 @@ const orderInclude = {
   },
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const currentUser = await getCurrentUserWithTeams();
 
   if (!currentUser) {
@@ -216,8 +216,33 @@ export async function GET() {
   }
 
   try {
+    const { searchParams } = new URL(req.url);
+    const dateParam = searchParams.get("date");
+
+    let dateFilter: {
+      gte: Date;
+      lt: Date;
+    } | undefined = undefined;
+
+    if (dateParam) {
+      const selectedDate = parseDateOnlyToUtc(dateParam);
+      const nextDate = new Date(selectedDate);
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+
+      dateFilter = {
+        gte: selectedDate,
+        lt: nextDate,
+      };
+    }
+
     const orders = await db.order.findMany({
       where: {
+        ...(dateFilter
+          ? {
+              mowingDate: dateFilter,
+            }
+          : {}),
+
         operationDayTeam: {
           is: {
             OR: [
@@ -238,7 +263,7 @@ export async function GET() {
       orderBy: [
         { sortOrder: "asc" },
         { mowingDate: "asc" },
-        { createdAt: "desc" },
+        { createdAt: "asc" },
       ],
       include: orderInclude,
     });
