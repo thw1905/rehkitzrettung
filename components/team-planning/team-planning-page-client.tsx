@@ -15,6 +15,7 @@ type AvailableUser = {
   isAdmin: boolean;
   availabilityStatus: AvailabilityStatus;
   availabilityNote?: string | null;
+  
 };
 
 type Assignment = {
@@ -121,6 +122,8 @@ function PersonOptionCard({
         <div className="text-sm font-semibold text-gray-900">
           {user.firstName} {user.lastName}
         </div>
+
+        
 
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="text-xs text-gray-600">
