@@ -534,14 +534,21 @@ return (
         <div className="px-4 py-4 md:px-5">
           <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-black">
             <video
-              ref={videoRef}
-              className="h-[360px] w-full object-cover"
-              autoPlay
-              muted
-              playsInline
-            />
-            <canvas ref={canvasRef} className="hidden" />
-            <div id="qr-reader-region" className="hidden" />
+  ref={videoRef}
+  className={`h-[360px] w-full object-cover ${
+    modeLabel.includes("Fallback") ? "hidden" : ""
+  }`}
+  autoPlay
+  muted
+  playsInline
+/>
+
+<canvas ref={canvasRef} className="hidden" />
+
+<div
+  id="qr-reader-region"
+  className={modeLabel.includes("Fallback") ? "block bg-black" : "hidden"}
+/>
 
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="relative h-64 w-64 rounded-2xl border-4 border-green-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.2)]">
@@ -557,12 +564,13 @@ return (
             {starting ? "Kamera wird gestartet..." : modeLabel || "Scanner bereit"}
           </div>
 
-          {cameras.length > 1 && (
+          {cameras.length > 0 && (
             <div className="mt-3">
               <label className="mb-1 block text-xs font-semibold text-gray-700">
                 Kamera auswählen
               </label>
               <select
+              
                 value={selectedCameraId}
                 onChange={(e) => setSelectedCameraId(e.target.value)}
                 className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm"
@@ -573,6 +581,11 @@ return (
                   </option>
                 ))}
               </select>
+              {cameras.length === 1 && (
+  <div className="mt-2 text-xs text-gray-500">
+    Es wurde nur eine Kamera erkannt.
+  </div>
+)}
             </div>
           )}
 

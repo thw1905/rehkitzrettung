@@ -15,7 +15,7 @@ type AvailableUser = {
   isAdmin: boolean;
   availabilityStatus: AvailabilityStatus;
   availabilityNote?: string | null;
-  
+  operationDaysCount?: number;
 };
 
 type Assignment = {
@@ -120,8 +120,12 @@ function PersonOptionCard({
 
       <div className="min-w-0">
         <div className="text-sm font-semibold text-gray-900">
-          {user.firstName} {user.lastName}
-        </div>
+  {user.firstName} {user.lastName}
+</div>
+
+<div className="mt-1 text-xs font-medium text-gray-500">
+  {user.operationDaysCount ?? 0} Einsatztage bisher
+</div>
 
         
 
@@ -643,11 +647,9 @@ export default function TeamPlanningPageClient() {
                         <option value="">Bitte auswählen</option>
                         {availablePilots.map((user) => (
                           <option key={user.id} value={user.id}>
-                            {user.lastName}, {user.firstName}
-                            {user.availabilityStatus === "VIELLEICHT"
-                              ? " (vielleicht)"
-                              : ""}
-                          </option>
+  {user.lastName}, {user.firstName} — {user.operationDaysCount ?? 0} Einsatztage
+  {user.availabilityStatus === "VIELLEICHT" ? " (vielleicht)" : ""}
+</option>
                         ))}
                       </select>
                     </div>

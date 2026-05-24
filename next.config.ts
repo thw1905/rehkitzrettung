@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
     "*.192.168.178.94",
     "localhost",
     "127.0.0.1",
-    "obligations-while-beats-causing.trycloudflare.com ",
+    "sour-hairs-beg.loca.lt",
+
   ],
 };
 

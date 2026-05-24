@@ -103,76 +103,120 @@ export async function GET(req: NextRequest) {
     const date = parseDateOnlyToUtc(dateParam);
     const operationDay = await getOrCreateOperationDay(date);
 
-    const [teamSlots, operationDayTeams, users] = await Promise.all([
-      db.team.findMany({
-        where: {
-          isActive: true,
-        },
-        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      }),
+    const [teamSlots, operationDayTeams, users, allPlannedOperationDayTeams] =
+      await Promise.all([
+        db.team.findMany({
+          where: {
+            isActive: true,
+          },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        }),
 
-      db.operationDayTeam.findMany({
-        where: {
-          operationDayId: operationDay.id,
-        },
-        include: {
-          orders: {
-            include: orderInclude,
-            orderBy: [
-              { sortOrder: "asc" },
-              { mowingDate: "asc" },
-              { createdAt: "asc" },
-            ],
+        db.operationDayTeam.findMany({
+          where: {
+            operationDayId: operationDay.id,
           },
-          pilot: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              role: true,
-              isAdmin: true,
+          include: {
+            orders: {
+              include: orderInclude,
+              orderBy: [
+                { sortOrder: "asc" },
+                { mowingDate: "asc" },
+                { createdAt: "asc" },
+              ],
             },
-          },
-          members: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  role: true,
-                  isAdmin: true,
-                },
+            pilot: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true,
+                isAdmin: true,
               },
             },
-            orderBy: {
-              createdAt: "asc",
+            members: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    role: true,
+                    isAdmin: true,
+                  },
+                },
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
+            },
+            team: true,
+          },
+          orderBy: {
+            team: {
+              sortOrder: "asc",
             },
           },
-          team: true,
-        },
-        orderBy: {
-          team: {
-            sortOrder: "asc",
-          },
-        },
-      }),
+        }),
 
-      db.user.findMany({
-        where: {
-          isApproved: true,
-        },
-        include: {
-          availabilities: {
-            where: {
-              date,
-            },
-            take: 1,
+        db.user.findMany({
+          where: {
+            isApproved: true,
           },
-        },
-        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-      }),
-    ]);
+          include: {
+            availabilities: {
+              where: {
+                date,
+              },
+              take: 1,
+            },
+          },
+          orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+        }),
+
+        db.operationDayTeam.findMany({
+          include: {
+            operationDay: {
+              select: {
+                date: true,
+              },
+            },
+            members: {
+              select: {
+                userId: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+    const operationDaysByUserId = new Map<string, Set<string>>();
+
+    for (const plannedTeam of allPlannedOperationDayTeams) {
+      const dayKey = toDateKeyUtc(plannedTeam.operationDay.date);
+
+      if (plannedTeam.pilotId) {
+        if (!operationDaysByUserId.has(plannedTeam.pilotId)) {
+          operationDaysByUserId.set(plannedTeam.pilotId, new Set());
+        }
+
+        operationDaysByUserId.get(plannedTeam.pilotId)?.add(dayKey);
+      }
+
+      for (const member of plannedTeam.members) {
+        if (!operationDaysByUserId.has(member.userId)) {
+          operationDaysByUserId.set(member.userId, new Set());
+        }
+
+        operationDaysByUserId.get(member.userId)?.add(dayKey);
+      }
+    }
+
+    const operationDayCountsByUserId = new Map<string, number>();
+
+    for (const [userId, days] of operationDaysByUserId.entries()) {
+      operationDayCountsByUserId.set(userId, days.size);
+    }
 
     const availableUsers = users.map((user) => {
       const availability = user.availabilities[0];
@@ -188,6 +232,7 @@ export async function GET(req: NextRequest) {
         isAdmin: user.isAdmin,
         availabilityStatus,
         availabilityNote: availability?.note || null,
+        operationDaysCount: operationDayCountsByUserId.get(user.id) || 0,
       };
     });
 
@@ -209,9 +254,19 @@ export async function GET(req: NextRequest) {
         teamName: teamSlot.name,
         sortOrder: teamSlot.sortOrder,
         operationDayTeamId: existingAssignment?.id || null,
-        pilot: existingAssignment?.pilot || null,
+        pilot: existingAssignment?.pilot
+          ? {
+              ...existingAssignment.pilot,
+              operationDaysCount:
+                operationDayCountsByUserId.get(existingAssignment.pilot.id) || 0,
+            }
+          : null,
         searchers:
-          existingAssignment?.members.map((member) => member.user) || [],
+          existingAssignment?.members.map((member) => ({
+            ...member.user,
+            operationDaysCount:
+              operationDayCountsByUserId.get(member.user.id) || 0,
+          })) || [],
         note: existingAssignment?.note || "",
         orders: existingAssignment?.orders || [],
       };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import QrScannerModal from "@/components/orders/qr-scanner-modal";
 import type { Pinpoint } from "@/components/orders/order-field-map";
@@ -385,6 +385,7 @@ export default function MyOrdersPageClient({
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [pinpointModalId, setPinpointModalId] = useState<string | null>(null);
   const [openOwnerSections, setOpenOwnerSections] = useState<Record<string, boolean>>({});
+  const [openInfoSections, setOpenInfoSections] = useState<Record<string, boolean>>({});
   const [openPinpoints, setOpenPinpoints] = useState<Record<string, boolean>>({});
   const [qrScannerOrderId, setQrScannerOrderId] = useState<string | null>(null);
   const [scanSuccessMessage, setScanSuccessMessage] = useState<string | null>(null);
@@ -395,6 +396,7 @@ export default function MyOrdersPageClient({
 
   const canControlOrder = isAdmin || role === "PILOT";
   const canScanQr = isAdmin || role === "PILOT" || role === "SUCHER";
+  const qrScanLockedUntilRef = useRef<Record<string, number>>({});
 
   async function loadOrders() {
     setLoading(true);
@@ -462,6 +464,13 @@ export default function MyOrdersPageClient({
       eventSource.close();
     };
   }, [selectedDate]);
+
+  function toggleInfoSection(orderId: string) {
+    setOpenInfoSections((prev) => ({
+      ...prev,
+      [orderId]: !prev[orderId],
+    }));
+  }
 
   function toggleOwnerSection(orderId: string) {
     setOpenOwnerSections((prev) => ({
@@ -534,6 +543,15 @@ async function handleQrScanSuccess(decodedText: string) {
   if (!qrScannerOrderId) return;
 
   const orderId = qrScannerOrderId;
+  const now = Date.now();
+  const lockedUntil = qrScanLockedUntilRef.current[orderId] || 0;
+
+  if (now < lockedUntil) {
+    return;
+  }
+
+  qrScanLockedUntilRef.current[orderId] = now + 2000;
+
   const order = orders.find((o) => o.id === orderId);
 
   setNewPinpointText((prev) => ({
@@ -1030,12 +1048,23 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                           </div>
 
                           <div className="page-card-muted p-3 md:p-4">
-                            <div className="mb-3 text-sm font-bold text-gray-900">
-                              Einsatzinfos
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleInfoSection(order.id)}
+                              className="mb-3 flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-3 text-left"
+                            >
+                              <span className="text-sm font-bold text-gray-900">
+                                Einsatzinfos
+                              </span>
+                              <span className="text-sm font-semibold text-gray-700">
+                                {openInfoSections[order.id] ? "−" : "+"}
+                              </span>
+                            </button>
 
                             <div className="space-y-3">
-                              <div className="page-card-muted p-3">
+                              {openInfoSections[order.id] && (
+                                <div className="space-y-3">
+                                  <div className="page-card-muted p-3">
                                 <button
                                   type="button"
                                   onClick={() => toggleOwnerSection(order.id)}
@@ -1346,6 +1375,8 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                                   </div>
                                 )}
                               </div>
+                                </div>
+                              )}
 
                               {order.status === "IN_ARBEIT" && (
   <div className="page-card-muted p-3">
@@ -1962,11 +1993,6 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
         </div>
       )}
       <QrScannerModal
-  open={qrScannerOrderId !== null}
-  onClose={() => setQrScannerOrderId(null)}
-  onScanSuccess={handleQrScanSuccess}
-/>
-<QrScannerModal
   open={qrScannerOrderId !== null}
   onClose={() => setQrScannerOrderId(null)}
   onScanSuccess={handleQrScanSuccess}
