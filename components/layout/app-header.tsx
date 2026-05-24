@@ -241,7 +241,7 @@ const isOperationsActive = operationsNavItems.some(
         }
       `}</style>
 
-      <header className="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm">
+      <header className="no-print sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm print:hidden">
         <div className="mx-auto max-w-7xl px-4 py-1">
           <div className="flex items-center justify-between md:hidden">
             <div className="min-w-0">

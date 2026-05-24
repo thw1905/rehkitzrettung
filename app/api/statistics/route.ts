@@ -19,41 +19,118 @@ function diffMinutes(startTime: Date | null, endTime: Date | null) {
   );
 }
 
+function safeNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Wichtig:
+ * Die Wildzahlen kommen aus zwei Stellen:
+ *
+ * 1. Direktfunde am Auftrag:
+ *    order.rehkitzeGesichert, order.rehkitzeAbgesprungen usw.
+ *
+ * 2. Funde an PinPoints:
+ *    order.pinpoints[].rehkitzeGesichert usw.
+ *
+ * Für die Statistik müssen beide zusammengezählt werden.
+ */
 function getWildCounts(order: any) {
   const pinpoints = Array.isArray(order.pinpoints) ? order.pinpoints : [];
 
-  if (pinpoints.length > 0) {
-    return {
-      rehkitzeGesichert: pinpoints.reduce(
-        (sum: number, p: any) => sum + (p.rehkitzeGesichert || 0),
-        0
-      ),
-      rehkitzeAbgesprungen: pinpoints.reduce(
-        (sum: number, p: any) => sum + (p.rehkitzeAbgesprungen || 0),
-        0
-      ),
-      sonstigesWildGesichert: pinpoints.reduce(
-        (sum: number, p: any) => sum + (p.sonstigesWildGesichert || 0),
-        0
-      ),
-      sonstigesWildAbgesprungen: pinpoints.reduce(
-        (sum: number, p: any) => sum + (p.sonstigesWildAbgesprungen || 0),
-        0
-      ),
-      maulwurfhuegelFehlstelle: pinpoints.reduce(
-        (sum: number, p: any) => sum + (p.maulwurfhuegelFehlstelle || 0),
-        0
-      ),
-    };
-  }
+  const pinpointCounts = {
+    rehkitzeGesichert: pinpoints.reduce(
+      (sum: number, p: any) => sum + safeNumber(p.rehkitzeGesichert),
+      0
+    ),
+    rehkitzeAbgesprungen: pinpoints.reduce(
+      (sum: number, p: any) => sum + safeNumber(p.rehkitzeAbgesprungen),
+      0
+    ),
+    sonstigesWildGesichert: pinpoints.reduce(
+      (sum: number, p: any) => sum + safeNumber(p.sonstigesWildGesichert),
+      0
+    ),
+    sonstigesWildAbgesprungen: pinpoints.reduce(
+      (sum: number, p: any) => sum + safeNumber(p.sonstigesWildAbgesprungen),
+      0
+    ),
+    maulwurfhuegelFehlstelle: pinpoints.reduce(
+      (sum: number, p: any) => sum + safeNumber(p.maulwurfhuegelFehlstelle),
+      0
+    ),
+  };
 
   return {
-    rehkitzeGesichert: order.rehkitzeGesichert || 0,
-    rehkitzeAbgesprungen: order.rehkitzeAbgesprungen || 0,
-    sonstigesWildGesichert: order.sonstigesWildGesichert || 0,
-    sonstigesWildAbgesprungen: order.sonstigesWildAbgesprungen || 0,
-    maulwurfhuegelFehlstelle: order.maulwurfhuegelFehlstelle || 0,
+    rehkitzeGesichert:
+      safeNumber(order.rehkitzeGesichert) + pinpointCounts.rehkitzeGesichert,
+
+    rehkitzeAbgesprungen:
+      safeNumber(order.rehkitzeAbgesprungen) +
+      pinpointCounts.rehkitzeAbgesprungen,
+
+    sonstigesWildGesichert:
+      safeNumber(order.sonstigesWildGesichert) +
+      pinpointCounts.sonstigesWildGesichert,
+
+    sonstigesWildAbgesprungen:
+      safeNumber(order.sonstigesWildAbgesprungen) +
+      pinpointCounts.sonstigesWildAbgesprungen,
+
+    maulwurfhuegelFehlstelle:
+      safeNumber(order.maulwurfhuegelFehlstelle) +
+      pinpointCounts.maulwurfhuegelFehlstelle,
   };
+}
+
+function getWildTotal(counts: {
+  rehkitzeGesichert: number;
+  rehkitzeAbgesprungen: number;
+  sonstigesWildGesichert: number;
+  sonstigesWildAbgesprungen: number;
+}) {
+  return (
+    counts.rehkitzeGesichert +
+    counts.rehkitzeAbgesprungen +
+    counts.sonstigesWildGesichert +
+    counts.sonstigesWildAbgesprungen
+  );
+}
+
+function getRevierName(revier?: {
+  name?: string | null;
+  nummer?: string | null;
+} | null) {
+  if (!revier) return "Ohne Revier";
+
+  const name = (revier.name || "").trim();
+  const nummer = (revier.nummer || "").trim();
+
+  if (name && nummer) return `${name} (${nummer})`;
+  if (name) return name;
+  if (nummer) return nummer;
+
+  return "Unbenanntes Revier";
+}
+
+/**
+ * Ein Auftrag kann mehrere Reviere überschneiden.
+ * Damit Wildzahlen nicht mehrfach gezählt werden, ordnen wir die Wildzahlen
+ * nur dem Hauptrevier zu.
+ *
+ * Hauptrevier = Revier mit größter overlapSqm.
+ */
+function getMainRevierAssignment(order: any) {
+  const reviere = Array.isArray(order.reviere) ? order.reviere : [];
+
+  if (reviere.length === 0) return null;
+
+  return [...reviere].sort((a, b) => {
+    const areaA = safeNumber(a.overlapSqm);
+    const areaB = safeNumber(b.overlapSqm);
+
+    return areaB - areaA;
+  })[0];
 }
 
 export async function GET(req: NextRequest) {
@@ -118,6 +195,20 @@ export async function GET(req: NextRequest) {
             maulwurfhuegelFehlstelle: true,
           },
         },
+
+        reviere: {
+          select: {
+            overlapSqm: true,
+            overlapPercent: true,
+            revier: {
+              select: {
+                id: true,
+                name: true,
+                nummer: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -164,9 +255,24 @@ export async function GET(req: NextRequest) {
       }
     >();
 
+    const revierMap = new Map<
+      string,
+      {
+        revierId: string;
+        revierName: string;
+        orderCount: number;
+        totalAreaSqm: number;
+        rehkitzeGesichert: number;
+        rehkitzeAbgesprungen: number;
+        sonstigesWildGesichert: number;
+        sonstigesWildAbgesprungen: number;
+        maulwurfhuegelFehlstelle: number;
+      }
+    >();
+
     for (const order of orders) {
       const minutes = diffMinutes(order.startTime, order.endTime);
-      const areaSqm = order.executedAreaSqm || 0;
+      const areaSqm = safeNumber(order.executedAreaSqm);
       const teamName = order.executedTeamName || "Unbekanntes Team";
       const dateKey = order.executionDate
         ? new Date(order.executionDate).toISOString().slice(0, 10)
@@ -230,6 +336,44 @@ export async function GET(req: NextRequest) {
       dayEntry.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
 
       dayMap.set(dateKey, dayEntry);
+
+      const mainRevierAssignment = getMainRevierAssignment(order);
+      const mainRevier = mainRevierAssignment?.revier || null;
+
+      const revierId = mainRevier?.id || "ohne-revier";
+      const revierName = getRevierName(mainRevier);
+
+      /**
+       * Für Wildzahlen wird der Auftrag nur dem Hauptrevier zugerechnet.
+       * Für die Fläche verwenden wir bevorzugt die Überschneidungsfläche
+       * des Hauptreviers. Wenn diese fehlt, nehmen wir die ausgeführte Fläche.
+       */
+      const revierAreaSqm =
+        safeNumber(mainRevierAssignment?.overlapSqm) > 0
+          ? safeNumber(mainRevierAssignment?.overlapSqm)
+          : areaSqm;
+
+      const revierEntry = revierMap.get(revierId) || {
+        revierId,
+        revierName,
+        orderCount: 0,
+        totalAreaSqm: 0,
+        rehkitzeGesichert: 0,
+        rehkitzeAbgesprungen: 0,
+        sonstigesWildGesichert: 0,
+        sonstigesWildAbgesprungen: 0,
+        maulwurfhuegelFehlstelle: 0,
+      };
+
+      revierEntry.orderCount += 1;
+      revierEntry.totalAreaSqm += revierAreaSqm;
+      revierEntry.rehkitzeGesichert += counts.rehkitzeGesichert;
+      revierEntry.rehkitzeAbgesprungen += counts.rehkitzeAbgesprungen;
+      revierEntry.sonstigesWildGesichert += counts.sonstigesWildGesichert;
+      revierEntry.sonstigesWildAbgesprungen += counts.sonstigesWildAbgesprungen;
+      revierEntry.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
+
+      revierMap.set(revierId, revierEntry);
     }
 
     const totalHa = totals.totalAreaSqm / 10000;
@@ -259,6 +403,38 @@ export async function GET(req: NextRequest) {
       })
       .sort((a, b) => a.date.localeCompare(b.date));
 
+    const reviere = Array.from(revierMap.values())
+      .map((item) => {
+        const totalHa = item.totalAreaSqm / 10000;
+
+        const wildGesamt = getWildTotal({
+          rehkitzeGesichert: item.rehkitzeGesichert,
+          rehkitzeAbgesprungen: item.rehkitzeAbgesprungen,
+          sonstigesWildGesichert: item.sonstigesWildGesichert,
+          sonstigesWildAbgesprungen: item.sonstigesWildAbgesprungen,
+        });
+
+        const rehkitzeGesamt =
+          item.rehkitzeGesichert + item.rehkitzeAbgesprungen;
+
+        return {
+          ...item,
+          totalHa,
+          wildGesamt,
+          rehkitzeGesamt,
+          rehkitzeGesichertPerHa:
+            totalHa > 0 ? item.rehkitzeGesichert / totalHa : 0,
+          rehkitzeGesamtPerHa: totalHa > 0 ? rehkitzeGesamt / totalHa : 0,
+          wildGesamtPerHa: totalHa > 0 ? wildGesamt / totalHa : 0,
+        };
+      })
+      .sort((a, b) => {
+        if (a.revierId === "ohne-revier") return 1;
+        if (b.revierId === "ohne-revier") return -1;
+
+        return b.wildGesamtPerHa - a.wildGesamtPerHa;
+      });
+
     return NextResponse.json({
       range: {
         from: from.toISOString().slice(0, 10),
@@ -271,6 +447,7 @@ export async function GET(req: NextRequest) {
       },
       teams,
       days,
+      reviere,
     });
   } catch (error: any) {
     console.error("Fehler beim Laden der Statistik:", error);
