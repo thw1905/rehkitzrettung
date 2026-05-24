@@ -1431,28 +1431,70 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
             className="rounded-xl border border-gray-200 bg-white p-3"
           >
             <button
-              type="button"
-              onClick={() => togglePinpoint(pinpoint.id)}
-              className="flex w-full items-center justify-between gap-2 text-left"
-            >
-              <div className="font-semibold text-gray-900">
-                PinPoint {pinpoint.sequenceNumber}
-              </div>
+  type="button"
+  onClick={() => togglePinpoint(pinpoint.id)}
+  className={`flex w-full items-start justify-between gap-3 rounded-xl border p-4 text-left ${
+    pinpoint.status === "ERLEDIGT"
+      ? "border-green-300 bg-green-50"
+      : pinpoint.status === "ERREICHT"
+      ? "border-yellow-300 bg-yellow-50"
+      : "border-red-300 bg-red-50"
+  }`}
+>
+  <div className="min-w-0">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="text-lg font-bold text-gray-900">
+        📍 PinPoint {pinpoint.sequenceNumber}
+      </div>
 
-              <div className="flex items-center gap-2">
-                <span
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${getPinpointStatusClass(
-                    pinpoint.status
-                  )}`}
-                >
-                  {formatPinpointStatus(pinpoint.status)}
-                </span>
+      <span
+        className={`rounded-full border px-3 py-1 text-xs font-semibold ${getPinpointStatusClass(
+          pinpoint.status
+        )}`}
+      >
+        {formatPinpointStatus(pinpoint.status)}
+      </span>
+    </div>
 
-                <span className="text-sm font-semibold text-gray-700">
-                  {openPinpoints[pinpoint.id] ? "−" : "+"}
-                </span>
-              </div>
-            </button>
+    <div className="mt-2 text-xs text-gray-700">
+      GPS: {pinpoint.latitude.toFixed(6)}, {pinpoint.longitude.toFixed(6)}
+    </div>
+
+    <div className="mt-2 grid gap-2 text-xs text-gray-800 sm:grid-cols-2">
+      <div className="rounded-lg bg-white/80 px-3 py-2">
+        🦌 Gesichert:{" "}
+        <span className="font-semibold">
+          {pinpoint.rehkitzeGesichert ?? 0}
+        </span>
+      </div>
+
+      <div className="rounded-lg bg-white/80 px-3 py-2">
+        🦌 Abgesprungen:{" "}
+        <span className="font-semibold">
+          {pinpoint.rehkitzeAbgesprungen ?? 0}
+        </span>
+      </div>
+
+      <div className="rounded-lg bg-white/80 px-3 py-2">
+        🌿 Wild gesichert:{" "}
+        <span className="font-semibold">
+          {pinpoint.sonstigesWildGesichert ?? 0}
+        </span>
+      </div>
+
+      <div className="rounded-lg bg-white/80 px-3 py-2">
+        🌿 Wild abgesprungen:{" "}
+        <span className="font-semibold">
+          {pinpoint.sonstigesWildAbgesprungen ?? 0}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-bold text-gray-700">
+    {openPinpoints[pinpoint.id] ? "−" : "+"}
+  </div>
+</button>
 
             {openPinpoints[pinpoint.id] && (
               <div className="mt-3">
