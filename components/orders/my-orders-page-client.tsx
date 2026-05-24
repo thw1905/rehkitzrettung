@@ -69,7 +69,12 @@ type Team = {
   name?: string | null;
 };
 
-;
+type OperationDayTeam = {
+  id: string;
+  actualStartTime?: string | null;
+  actualEndTime?: string | null;
+  team?: Team | null;
+};
 
 type Order = {
   id: string;
@@ -91,6 +96,7 @@ type Order = {
   owner?: Owner | null;
   field?: Field | null;
   team?: Team | null;
+  operationDayTeam?: OperationDayTeam | null;
   pinpoints?: Pinpoint[];
   reviere?: RevierAssignment[];
 };
@@ -184,6 +190,58 @@ function formatTime(dateString: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatDurationFromMs(durationMs: number) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return "0 min";
+  }
+
+  const totalMinutes = Math.floor(durationMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours <= 0) {
+    return `${minutes} min`;
+  }
+
+  return `${hours} h ${String(minutes).padStart(2, "0")} min`;
+}
+
+function getDurationLabel(
+  startTime: string | null | undefined,
+  endTime: string | null | undefined,
+  nowMs: number
+) {
+  if (!startTime) return "-";
+
+  const startMs = new Date(startTime).getTime();
+
+  if (!Number.isFinite(startMs)) return "-";
+
+  const endMs = endTime ? new Date(endTime).getTime() : nowMs;
+
+  if (!Number.isFinite(endMs) || endMs < startMs) return "-";
+
+  return formatDurationFromMs(endMs - startMs);
+}
+
+function getOrderDurationLabel(order: Order, nowMs: number) {
+  return getDurationLabel(
+    order.startTime,
+    order.endTime || (order.status === "IN_ARBEIT" ? undefined : null),
+    nowMs
+  );
+}
+
+function getTeamDayDurationLabel(order: Order, nowMs: number) {
+  const operationDayTeam = order.operationDayTeam;
+
+  return getDurationLabel(
+    operationDayTeam?.actualStartTime,
+    operationDayTeam?.actualEndTime || undefined,
+    nowMs
+  );
 }
 
 function getOwnerName(owner?: Owner | null) {
@@ -371,6 +429,7 @@ export default function MyOrdersPageClient({
   role: string;
 }) {
   const [selectedDate, setSelectedDate] = useState(getTodayDateInputValue());
+  const [nowMs, setNowMs] = useState(Date.now());
   const [orders, setOrders] = useState<Order[]>([]);
   const [drafts, setDrafts] = useState<Record<string, DraftValues>>({});
   const [pinpointDrafts, setPinpointDrafts] = useState<Record<string, PinpointDraft>>({});
@@ -397,6 +456,14 @@ export default function MyOrdersPageClient({
   const canControlOrder = isAdmin || role === "PILOT";
   const canScanQr = isAdmin || role === "PILOT" || role === "SUCHER";
   const qrScanLockedUntilRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   async function loadOrders() {
     setLoading(true);
@@ -947,6 +1014,8 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                   maulwurfhuegelFehlstelle:
                     manualTotals.maulwurfhuegelFehlstelle + pinpointTotals.maulwurfhuegelFehlstelle,
                 };
+                const orderDurationLabel = getOrderDurationLabel(order, nowMs);
+                const teamDayDurationLabel = getTeamDayDurationLabel(order, nowMs);
 
                 return (
                   <section key={order.id} className="page-card overflow-hidden">
@@ -976,6 +1045,16 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                           <div className="page-card-muted px-3 py-2 text-sm text-gray-900">
                             <span className="font-semibold">Team:</span>{" "}
                             {getTeamName(order.team)}
+                          </div>
+
+                          <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
+                            <span className="font-semibold">Auftragszeit:</span>{" "}
+                            {orderDurationLabel}
+                          </div>
+
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
+                            <span className="font-semibold">Team-Einsatzzeit heute:</span>{" "}
+                            {teamDayDurationLabel}
                           </div>
 
                           <div className="page-card-muted px-3 py-2 text-sm text-gray-900">

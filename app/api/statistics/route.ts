@@ -23,6 +23,17 @@ function safeNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function getPersonName(user?: {
+  firstName?: string | null;
+  lastName?: string | null;
+} | null) {
+  if (!user) return null;
+
+  const name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+
+  return name || null;
+}
+
 /**
  * Wichtig:
  * Die Wildzahlen kommen aus zwei Stellen:
@@ -133,6 +144,104 @@ function getMainRevierAssignment(order: any) {
   })[0];
 }
 
+function getOrCreateTeamEntry(
+  teamMap: Map<
+    string,
+    {
+      teamName: string;
+      pilotName: string | null;
+      searchersText: string | null;
+      orderCount: number;
+      totalAreaSqm: number;
+      totalMinutes: number;
+      teamDeploymentMinutes: number;
+      rehkitzeGesichert: number;
+      rehkitzeAbgesprungen: number;
+      sonstigesWildGesichert: number;
+      sonstigesWildAbgesprungen: number;
+      maulwurfhuegelFehlstelle: number;
+    }
+  >,
+  params: {
+    teamName: string;
+    pilotName?: string | null;
+    searchersText?: string | null;
+  }
+) {
+  const existing = teamMap.get(params.teamName);
+
+  if (existing) {
+    if (!existing.pilotName && params.pilotName) {
+      existing.pilotName = params.pilotName;
+    }
+
+    if (!existing.searchersText && params.searchersText) {
+      existing.searchersText = params.searchersText;
+    }
+
+    return existing;
+  }
+
+  const created = {
+    teamName: params.teamName,
+    pilotName: params.pilotName || null,
+    searchersText: params.searchersText || null,
+    orderCount: 0,
+    totalAreaSqm: 0,
+    totalMinutes: 0,
+    teamDeploymentMinutes: 0,
+    rehkitzeGesichert: 0,
+    rehkitzeAbgesprungen: 0,
+    sonstigesWildGesichert: 0,
+    sonstigesWildAbgesprungen: 0,
+    maulwurfhuegelFehlstelle: 0,
+  };
+
+  teamMap.set(params.teamName, created);
+
+  return created;
+}
+
+function getOrCreateDayEntry(
+  dayMap: Map<
+    string,
+    {
+      date: string;
+      orderCount: number;
+      totalAreaSqm: number;
+      totalMinutes: number;
+      teamDeploymentMinutes: number;
+      rehkitzeGesichert: number;
+      rehkitzeAbgesprungen: number;
+      sonstigesWildGesichert: number;
+      sonstigesWildAbgesprungen: number;
+      maulwurfhuegelFehlstelle: number;
+    }
+  >,
+  dateKey: string
+) {
+  const existing = dayMap.get(dateKey);
+
+  if (existing) return existing;
+
+  const created = {
+    date: dateKey,
+    orderCount: 0,
+    totalAreaSqm: 0,
+    totalMinutes: 0,
+    teamDeploymentMinutes: 0,
+    rehkitzeGesichert: 0,
+    rehkitzeAbgesprungen: 0,
+    sonstigesWildGesichert: 0,
+    sonstigesWildAbgesprungen: 0,
+    maulwurfhuegelFehlstelle: 0,
+  };
+
+  dayMap.set(dateKey, created);
+
+  return created;
+}
+
 export async function GET(req: NextRequest) {
   const authCheck = await requireAdminApi();
 
@@ -157,65 +266,125 @@ export async function GET(req: NextRequest) {
       ? getEndOfDay(new Date(toParam))
       : defaultToExclusive;
 
-    const orders = await db.order.findMany({
-      where: {
-        status: "ERLEDIGT",
-        executionDate: {
-          gte: from,
-          lt: toExclusive,
-        },
-      },
-      orderBy: {
-        executionDate: "asc",
-      },
-      select: {
-        id: true,
-        orderCode: true,
-        title: true,
-        executionDate: true,
-        executedTeamName: true,
-        executedPilotName: true,
-        executedSearchersText: true,
-        executedAreaSqm: true,
-        startTime: true,
-        endTime: true,
-
-        rehkitzeGesichert: true,
-        rehkitzeAbgesprungen: true,
-        sonstigesWildGesichert: true,
-        sonstigesWildAbgesprungen: true,
-        maulwurfhuegelFehlstelle: true,
-
-        pinpoints: {
-          select: {
-            rehkitzeGesichert: true,
-            rehkitzeAbgesprungen: true,
-            sonstigesWildGesichert: true,
-            sonstigesWildAbgesprungen: true,
-            maulwurfhuegelFehlstelle: true,
+    const [orders, operationDayTeams] = await Promise.all([
+      db.order.findMany({
+        where: {
+          status: "ERLEDIGT",
+          executionDate: {
+            gte: from,
+            lt: toExclusive,
           },
         },
+        orderBy: {
+          executionDate: "asc",
+        },
+        select: {
+          id: true,
+          orderCode: true,
+          title: true,
+          executionDate: true,
+          executedTeamName: true,
+          executedPilotName: true,
+          executedSearchersText: true,
+          executedAreaSqm: true,
+          startTime: true,
+          endTime: true,
 
-        reviere: {
-          select: {
-            overlapSqm: true,
-            overlapPercent: true,
-            revier: {
-              select: {
-                id: true,
-                name: true,
-                nummer: true,
+          rehkitzeGesichert: true,
+          rehkitzeAbgesprungen: true,
+          sonstigesWildGesichert: true,
+          sonstigesWildAbgesprungen: true,
+          maulwurfhuegelFehlstelle: true,
+
+          pinpoints: {
+            select: {
+              rehkitzeGesichert: true,
+              rehkitzeAbgesprungen: true,
+              sonstigesWildGesichert: true,
+              sonstigesWildAbgesprungen: true,
+              maulwurfhuegelFehlstelle: true,
+            },
+          },
+
+          reviere: {
+            select: {
+              overlapSqm: true,
+              overlapPercent: true,
+              revier: {
+                select: {
+                  id: true,
+                  name: true,
+                  nummer: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+
+      db.operationDayTeam.findMany({
+        where: {
+          operationDay: {
+            date: {
+              gte: from,
+              lt: toExclusive,
+            },
+          },
+          actualStartTime: {
+            not: null,
+          },
+        },
+        orderBy: [
+          {
+            operationDay: {
+              date: "asc",
+            },
+          },
+          {
+            team: {
+              name: "asc",
+            },
+          },
+        ],
+        include: {
+          operationDay: {
+            select: {
+              date: true,
+            },
+          },
+          team: {
+            select: {
+              name: true,
+            },
+          },
+          pilot: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+          members: {
+            include: {
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+        },
+      }),
+    ]);
 
     const totals = {
       totalOrders: 0,
       totalAreaSqm: 0,
       totalMinutes: 0,
+      teamDeploymentMinutes: 0,
       rehkitzeGesichert: 0,
       rehkitzeAbgesprungen: 0,
       sonstigesWildGesichert: 0,
@@ -232,6 +401,7 @@ export async function GET(req: NextRequest) {
         orderCount: number;
         totalAreaSqm: number;
         totalMinutes: number;
+        teamDeploymentMinutes: number;
         rehkitzeGesichert: number;
         rehkitzeAbgesprungen: number;
         sonstigesWildGesichert: number;
@@ -247,6 +417,7 @@ export async function GET(req: NextRequest) {
         orderCount: number;
         totalAreaSqm: number;
         totalMinutes: number;
+        teamDeploymentMinutes: number;
         rehkitzeGesichert: number;
         rehkitzeAbgesprungen: number;
         sonstigesWildGesichert: number;
@@ -289,19 +460,11 @@ export async function GET(req: NextRequest) {
       totals.sonstigesWildAbgesprungen += counts.sonstigesWildAbgesprungen;
       totals.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
 
-      const teamEntry = teamMap.get(teamName) || {
+      const teamEntry = getOrCreateTeamEntry(teamMap, {
         teamName,
         pilotName: order.executedPilotName || null,
         searchersText: order.executedSearchersText || null,
-        orderCount: 0,
-        totalAreaSqm: 0,
-        totalMinutes: 0,
-        rehkitzeGesichert: 0,
-        rehkitzeAbgesprungen: 0,
-        sonstigesWildGesichert: 0,
-        sonstigesWildAbgesprungen: 0,
-        maulwurfhuegelFehlstelle: 0,
-      };
+      });
 
       teamEntry.orderCount += 1;
       teamEntry.totalAreaSqm += areaSqm;
@@ -312,19 +475,7 @@ export async function GET(req: NextRequest) {
       teamEntry.sonstigesWildAbgesprungen += counts.sonstigesWildAbgesprungen;
       teamEntry.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
 
-      teamMap.set(teamName, teamEntry);
-
-      const dayEntry = dayMap.get(dateKey) || {
-        date: dateKey,
-        orderCount: 0,
-        totalAreaSqm: 0,
-        totalMinutes: 0,
-        rehkitzeGesichert: 0,
-        rehkitzeAbgesprungen: 0,
-        sonstigesWildGesichert: 0,
-        sonstigesWildAbgesprungen: 0,
-        maulwurfhuegelFehlstelle: 0,
-      };
+      const dayEntry = getOrCreateDayEntry(dayMap, dateKey);
 
       dayEntry.orderCount += 1;
       dayEntry.totalAreaSqm += areaSqm;
@@ -334,8 +485,6 @@ export async function GET(req: NextRequest) {
       dayEntry.sonstigesWildGesichert += counts.sonstigesWildGesichert;
       dayEntry.sonstigesWildAbgesprungen += counts.sonstigesWildAbgesprungen;
       dayEntry.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
-
-      dayMap.set(dateKey, dayEntry);
 
       const mainRevierAssignment = getMainRevierAssignment(order);
       const mainRevier = mainRevierAssignment?.revier || null;
@@ -376,8 +525,43 @@ export async function GET(req: NextRequest) {
       revierMap.set(revierId, revierEntry);
     }
 
+    for (const operationDayTeam of operationDayTeams) {
+      const startTime = operationDayTeam.actualStartTime;
+      const endTime = operationDayTeam.actualEndTime || new Date();
+      const minutes = diffMinutes(startTime, endTime);
+
+      if (minutes <= 0) continue;
+
+      const teamName = operationDayTeam.team?.name || "Unbekanntes Team";
+      const pilotName = getPersonName(operationDayTeam.pilot);
+      const searchersText =
+        operationDayTeam.members
+          ?.map((member) => getPersonName(member.user))
+          .filter(Boolean)
+          .join(", ") || null;
+
+      const dateKey = operationDayTeam.operationDay?.date
+        ? new Date(operationDayTeam.operationDay.date).toISOString().slice(0, 10)
+        : "ohne-datum";
+
+      totals.teamDeploymentMinutes += minutes;
+
+      const teamEntry = getOrCreateTeamEntry(teamMap, {
+        teamName,
+        pilotName,
+        searchersText,
+      });
+
+      teamEntry.teamDeploymentMinutes += minutes;
+
+      const dayEntry = getOrCreateDayEntry(dayMap, dateKey);
+      dayEntry.teamDeploymentMinutes += minutes;
+    }
+
     const totalHa = totals.totalAreaSqm / 10000;
     const avgMinPerHa = totalHa > 0 ? totals.totalMinutes / totalHa : 0;
+    const avgTeamDeploymentMinPerHa =
+      totalHa > 0 ? totals.teamDeploymentMinutes / totalHa : 0;
 
     const teams = Array.from(teamMap.values())
       .map((item) => {
@@ -387,6 +571,8 @@ export async function GET(req: NextRequest) {
           ...item,
           totalHa,
           avgMinPerHa: totalHa > 0 ? item.totalMinutes / totalHa : 0,
+          avgTeamDeploymentMinPerHa:
+            totalHa > 0 ? item.teamDeploymentMinutes / totalHa : 0,
         };
       })
       .sort((a, b) => a.teamName.localeCompare(b.teamName, "de"));
@@ -399,6 +585,8 @@ export async function GET(req: NextRequest) {
           ...item,
           totalHa,
           avgMinPerHa: totalHa > 0 ? item.totalMinutes / totalHa : 0,
+          avgTeamDeploymentMinPerHa:
+            totalHa > 0 ? item.teamDeploymentMinutes / totalHa : 0,
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -444,6 +632,7 @@ export async function GET(req: NextRequest) {
         ...totals,
         totalHa,
         avgMinPerHa,
+        avgTeamDeploymentMinPerHa,
       },
       teams,
       days,

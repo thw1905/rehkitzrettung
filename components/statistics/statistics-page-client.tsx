@@ -6,8 +6,10 @@ type Summary = {
   totalOrders: number;
   totalAreaSqm: number;
   totalMinutes: number;
+  teamDeploymentMinutes: number;
   totalHa: number;
   avgMinPerHa: number;
+  avgTeamDeploymentMinPerHa: number;
   rehkitzeGesichert: number;
   rehkitzeAbgesprungen: number;
   sonstigesWildGesichert: number;
@@ -22,8 +24,10 @@ type TeamStat = {
   orderCount: number;
   totalAreaSqm: number;
   totalMinutes: number;
+  teamDeploymentMinutes: number;
   totalHa: number;
   avgMinPerHa: number;
+  avgTeamDeploymentMinPerHa: number;
   rehkitzeGesichert: number;
   rehkitzeAbgesprungen: number;
   sonstigesWildGesichert: number;
@@ -36,8 +40,10 @@ type DayStat = {
   orderCount: number;
   totalAreaSqm: number;
   totalMinutes: number;
+  teamDeploymentMinutes: number;
   totalHa: number;
   avgMinPerHa: number;
+  avgTeamDeploymentMinPerHa: number;
   rehkitzeGesichert: number;
   rehkitzeAbgesprungen: number;
   sonstigesWildGesichert: number;
@@ -459,7 +465,7 @@ export default function StatisticsPageClient() {
               <section className="print-section space-y-3">
                 <h2 className="text-lg font-bold text-gray-900">Gesamtübersicht</h2>
 
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
                   <StatCard
                     label="Erledigte Einsätze"
                     value={data.summary.totalOrders}
@@ -471,13 +477,23 @@ export default function StatisticsPageClient() {
                     tone="blue"
                   />
                   <StatCard
-                    label="Zeit gesamt"
+                    label="Auftragszeit"
                     value={formatMinutes(data.summary.totalMinutes)}
                     tone="amber"
                   />
                   <StatCard
-                    label="Ø min / ha"
+                    label="Team-Einsatzzeit"
+                    value={formatMinutes(data.summary.teamDeploymentMinutes)}
+                    tone="amber"
+                  />
+                  <StatCard
+                    label="Ø Auftrag min/ha"
                     value={formatHa(data.summary.avgMinPerHa)}
+                    tone="green"
+                  />
+                  <StatCard
+                    label="Ø Einsatz min/ha"
+                    value={formatHa(data.summary.avgTeamDeploymentMinPerHa)}
                     tone="green"
                   />
                 </div>
@@ -613,7 +629,7 @@ export default function StatisticsPageClient() {
                 <div className="mb-4">
                   <h2 className="text-lg font-bold text-gray-900">Teams</h2>
                   <p className="mt-1 text-sm text-gray-700">
-                    Leistung und Wilddaten pro Team.
+                    Leistung, Auftragszeit, Team-Einsatzzeit und Wilddaten pro Team.
                   </p>
                 </div>
 
@@ -623,7 +639,7 @@ export default function StatisticsPageClient() {
                   </div>
                 ) : (
                   <PrintTable>
-                    <table className="w-full min-w-[980px] text-left text-sm">
+                    <table className="w-full min-w-[1180px] text-left text-sm">
                       <thead>
                         <tr>
                           <th className="px-3 py-2">Team</th>
@@ -631,8 +647,10 @@ export default function StatisticsPageClient() {
                           <th className="px-3 py-2">Sucher</th>
                           <th className="px-3 py-2 text-right">Einsätze</th>
                           <th className="px-3 py-2 text-right">Fläche</th>
-                          <th className="px-3 py-2 text-right">Zeit</th>
-                          <th className="px-3 py-2 text-right">Ø min/ha</th>
+                          <th className="px-3 py-2 text-right">Auftragszeit</th>
+                          <th className="px-3 py-2 text-right">Teamzeit</th>
+                          <th className="px-3 py-2 text-right">Ø Auftrag min/ha</th>
+                          <th className="px-3 py-2 text-right">Ø Einsatz min/ha</th>
                           <th className="px-3 py-2 text-right">RK ges.</th>
                           <th className="px-3 py-2 text-right">RK abg.</th>
                           <th className="px-3 py-2 text-right">SW ges.</th>
@@ -651,7 +669,9 @@ export default function StatisticsPageClient() {
                             <td className="px-3 py-2 text-right">{team.orderCount}</td>
                             <td className="px-3 py-2 text-right">{formatHa(team.totalHa)} ha</td>
                             <td className="px-3 py-2 text-right">{formatMinutes(team.totalMinutes)}</td>
+                            <td className="px-3 py-2 text-right">{formatMinutes(team.teamDeploymentMinutes)}</td>
                             <td className="px-3 py-2 text-right">{formatHa(team.avgMinPerHa)}</td>
+                            <td className="px-3 py-2 text-right">{formatHa(team.avgTeamDeploymentMinPerHa)}</td>
                             <td className="px-3 py-2 text-right">{team.rehkitzeGesichert}</td>
                             <td className="px-3 py-2 text-right">{team.rehkitzeAbgesprungen}</td>
                             <td className="px-3 py-2 text-right">{team.sonstigesWildGesichert}</td>
@@ -671,7 +691,7 @@ export default function StatisticsPageClient() {
                 <div className="mb-4">
                   <h2 className="text-lg font-bold text-gray-900">Einsatztage</h2>
                   <p className="mt-1 text-sm text-gray-700">
-                    Tagesübersicht im gewählten Zeitraum.
+                    Tagesübersicht mit Auftragszeit und Team-Einsatzzeit im gewählten Zeitraum.
                   </p>
                 </div>
 
@@ -681,14 +701,16 @@ export default function StatisticsPageClient() {
                   </div>
                 ) : (
                   <PrintTable>
-                    <table className="w-full min-w-[760px] text-left text-sm">
+                    <table className="w-full min-w-[980px] text-left text-sm">
                       <thead>
                         <tr>
                           <th className="px-3 py-2">Datum</th>
                           <th className="px-3 py-2 text-right">Einsätze</th>
                           <th className="px-3 py-2 text-right">Fläche</th>
-                          <th className="px-3 py-2 text-right">Zeit</th>
-                          <th className="px-3 py-2 text-right">Ø min/ha</th>
+                          <th className="px-3 py-2 text-right">Auftragszeit</th>
+                          <th className="px-3 py-2 text-right">Teamzeit</th>
+                          <th className="px-3 py-2 text-right">Ø Auftrag min/ha</th>
+                          <th className="px-3 py-2 text-right">Ø Einsatz min/ha</th>
                           <th className="px-3 py-2 text-right">RK ges.</th>
                           <th className="px-3 py-2 text-right">RK abg.</th>
                           <th className="px-3 py-2 text-right">SW ges.</th>
@@ -705,7 +727,9 @@ export default function StatisticsPageClient() {
                             <td className="px-3 py-2 text-right">{day.orderCount}</td>
                             <td className="px-3 py-2 text-right">{formatHa(day.totalHa)} ha</td>
                             <td className="px-3 py-2 text-right">{formatMinutes(day.totalMinutes)}</td>
+                            <td className="px-3 py-2 text-right">{formatMinutes(day.teamDeploymentMinutes)}</td>
                             <td className="px-3 py-2 text-right">{formatHa(day.avgMinPerHa)}</td>
+                            <td className="px-3 py-2 text-right">{formatHa(day.avgTeamDeploymentMinPerHa)}</td>
                             <td className="px-3 py-2 text-right">{day.rehkitzeGesichert}</td>
                             <td className="px-3 py-2 text-right">{day.rehkitzeAbgesprungen}</td>
                             <td className="px-3 py-2 text-right">{day.sonstigesWildGesichert}</td>

@@ -84,6 +84,7 @@ function buildExecutionSnapshot(order: any) {
 
 function parseOrderStatus(value: unknown): OrderStatus | undefined {
   if (value === undefined) return undefined;
+
   if (typeof value !== "string") {
     throw new Error("Ungültiger Auftragsstatus.");
   }
@@ -124,6 +125,59 @@ function normalizeOrderResponse(order: any) {
     ...order,
     team: order.operationDayTeam?.team || null,
   };
+}
+
+async function updateOperationDayTeamTimer(params: {
+  operationDayTeamId: string | null | undefined;
+  nextStatus: OrderStatus | undefined;
+  now: Date;
+}) {
+  const { operationDayTeamId, nextStatus, now } = params;
+
+  if (!operationDayTeamId || !nextStatus) return;
+
+  if (nextStatus === OrderStatus.IN_ARBEIT) {
+    await db.operationDayTeam.updateMany({
+      where: {
+        id: operationDayTeamId,
+        actualStartTime: null,
+      },
+      data: {
+        actualStartTime: now,
+      },
+    });
+
+    await db.operationDayTeam.update({
+      where: {
+        id: operationDayTeamId,
+      },
+      data: {
+        actualEndTime: null,
+      },
+    });
+  }
+
+  if (nextStatus === OrderStatus.ERLEDIGT) {
+    await db.operationDayTeam.update({
+      where: {
+        id: operationDayTeamId,
+      },
+      data: {
+        actualEndTime: now,
+      },
+    });
+  }
+
+  if (nextStatus === OrderStatus.OFFEN) {
+    await db.operationDayTeam.update({
+      where: {
+        id: operationDayTeamId,
+      },
+      data: {
+        actualEndTime: null,
+      },
+    });
+  }
 }
 
 async function findBestOperationDayTeamForOrder(params: {
@@ -272,24 +326,26 @@ export async function PATCH(
   }
 
   const userBelongsToThisOrder =
-  !!existingOrder.operationDayTeam &&
-  (existingOrder.operationDayTeam.pilotId === currentUser.id ||
-    existingOrder.operationDayTeam.members.some(
-      (member) => member.userId === currentUser.id
-    ));
+    !!existingOrder.operationDayTeam &&
+    (existingOrder.operationDayTeam.pilotId === currentUser.id ||
+      existingOrder.operationDayTeam.members.some(
+        (member) => member.userId === currentUser.id
+      ));
 
-if (!currentUser.isAdmin && !userBelongsToThisOrder) {
-  return NextResponse.json(
-    { error: "Keine Berechtigung für diesen Auftrag." },
-    { status: 403 }
-  );
-}
+  if (!currentUser.isAdmin && !userBelongsToThisOrder) {
+    return NextResponse.json(
+      { error: "Keine Berechtigung für diesen Auftrag." },
+      { status: 403 }
+    );
+  }
 
-const userIsPilotForThisOrder =
-  existingOrder.operationDayTeam?.pilotId === currentUser.id;
+  const userIsPilotForThisOrder =
+    existingOrder.operationDayTeam?.pilotId === currentUser.id;
 
   try {
     const nextStatus = parseOrderStatus(body.status);
+    const now = new Date();
+
     const wantsToFinish = nextStatus === OrderStatus.ERLEDIGT;
     const confirmWildData =
       body.confirmWildData === true || body.confirmWildData === "true";
@@ -375,8 +431,8 @@ const userIsPilotForThisOrder =
         const operationDay = await getOrCreateOperationDayFromMowingDate(
           mowingDate
         );
-        data.operationDayId = operationDay?.id || null;
 
+        data.operationDayId = operationDay?.id || null;
         data.operationDayTeamId = null;
         data.isManualTeamAssignment = false;
         shouldTryAutoReassign = true;
@@ -410,16 +466,17 @@ const userIsPilotForThisOrder =
 
       if (nextStatus && nextStatus !== existingOrder.status) {
         if (nextStatus === OrderStatus.IN_ARBEIT && !existingOrder.startTime) {
-          data.startTime = new Date();
+          data.startTime = now;
           Object.assign(data, buildExecutionSnapshot(existingOrder));
         }
 
         if (nextStatus === OrderStatus.ERLEDIGT) {
           if (!existingOrder.startTime) {
-            data.startTime = new Date();
+            data.startTime = now;
             Object.assign(data, buildExecutionSnapshot(existingOrder));
           }
-          data.endTime = new Date();
+
+          data.endTime = now;
         }
 
         if (nextStatus === OrderStatus.OFFEN) {
@@ -453,6 +510,14 @@ const userIsPilotForThisOrder =
           },
         },
       });
+
+      if (nextStatus && nextStatus !== existingOrder.status) {
+        await updateOperationDayTeamTimer({
+          operationDayTeamId: existingOrder.operationDayTeamId,
+          nextStatus,
+          now,
+        });
+      }
 
       if (
         shouldTryAutoReassign &&
@@ -500,94 +565,104 @@ const userIsPilotForThisOrder =
 
       return NextResponse.json(normalizeOrderResponse(order));
     }
+
     if (!userIsPilotForThisOrder) {
-  return NextResponse.json(
-    { error: "Nur Pilot oder Admin dürfen diesen Auftrag starten oder beenden." },
-    { status: 403 }
-  );
-}
-
-const data: any = {
-  status: nextStatus ?? existingOrder.status,
-  notes:
-    body.notes === undefined
-      ? existingOrder.notes
-      : body.notes === null
-        ? null
-        : String(body.notes),
-
-  rehkitzeGesichert: parseNonNegativeInt(
-    body.rehkitzeGesichert,
-    existingOrder.rehkitzeGesichert ?? 0
-  ),
-  rehkitzeAbgesprungen: parseNonNegativeInt(
-    body.rehkitzeAbgesprungen,
-    existingOrder.rehkitzeAbgesprungen ?? 0
-  ),
-  sonstigesWildGesichert: parseNonNegativeInt(
-    body.sonstigesWildGesichert,
-    existingOrder.sonstigesWildGesichert ?? 0
-  ),
-  sonstigesWildAbgesprungen: parseNonNegativeInt(
-    body.sonstigesWildAbgesprungen,
-    existingOrder.sonstigesWildAbgesprungen ?? 0
-  ),
-  maulwurfhuegelFehlstelle: parseNonNegativeInt(
-    body.maulwurfhuegelFehlstelle,
-    existingOrder.maulwurfhuegelFehlstelle ?? 0
-  ),
-};
-
-if (nextStatus && nextStatus !== existingOrder.status) {
-  if (nextStatus === OrderStatus.IN_ARBEIT && !existingOrder.startTime) {
-    data.startTime = new Date();
-    Object.assign(data, buildExecutionSnapshot(existingOrder));
-  }
-
-  if (nextStatus === OrderStatus.ERLEDIGT) {
-    if (!existingOrder.startTime) {
-      data.startTime = new Date();
-      Object.assign(data, buildExecutionSnapshot(existingOrder));
+      return NextResponse.json(
+        {
+          error:
+            "Nur Pilot oder Admin dürfen diesen Auftrag starten oder beenden.",
+        },
+        { status: 403 }
+      );
     }
 
-    data.endTime = new Date();
-  }
+    const data: any = {
+      status: nextStatus ?? existingOrder.status,
+      notes:
+        body.notes === undefined
+          ? existingOrder.notes
+          : body.notes === null
+            ? null
+            : String(body.notes),
 
-  if (nextStatus === OrderStatus.OFFEN) {
-    data.endTime = null;
-  }
-}
+      rehkitzeGesichert: parseNonNegativeInt(
+        body.rehkitzeGesichert,
+        existingOrder.rehkitzeGesichert ?? 0
+      ),
+      rehkitzeAbgesprungen: parseNonNegativeInt(
+        body.rehkitzeAbgesprungen,
+        existingOrder.rehkitzeAbgesprungen ?? 0
+      ),
+      sonstigesWildGesichert: parseNonNegativeInt(
+        body.sonstigesWildGesichert,
+        existingOrder.sonstigesWildGesichert ?? 0
+      ),
+      sonstigesWildAbgesprungen: parseNonNegativeInt(
+        body.sonstigesWildAbgesprungen,
+        existingOrder.sonstigesWildAbgesprungen ?? 0
+      ),
+      maulwurfhuegelFehlstelle: parseNonNegativeInt(
+        body.maulwurfhuegelFehlstelle,
+        existingOrder.maulwurfhuegelFehlstelle ?? 0
+      ),
+    };
 
-const order = await db.order.update({
-  where: { id },
-  data,
-  include: {
-    owner: true,
-    field: true,
-    operationDay: true,
-    operationDayTeam: {
+    if (nextStatus && nextStatus !== existingOrder.status) {
+      if (nextStatus === OrderStatus.IN_ARBEIT && !existingOrder.startTime) {
+        data.startTime = now;
+        Object.assign(data, buildExecutionSnapshot(existingOrder));
+      }
+
+      if (nextStatus === OrderStatus.ERLEDIGT) {
+        if (!existingOrder.startTime) {
+          data.startTime = now;
+          Object.assign(data, buildExecutionSnapshot(existingOrder));
+        }
+
+        data.endTime = now;
+      }
+
+      if (nextStatus === OrderStatus.OFFEN) {
+        data.endTime = null;
+      }
+    }
+
+    const order = await db.order.update({
+      where: { id },
+      data,
       include: {
-        team: true,
-        pilot: true,
-        members: {
+        owner: true,
+        field: true,
+        operationDay: true,
+        operationDayTeam: {
           include: {
-            user: true,
-          },
-          orderBy: {
-            createdAt: "asc",
+            team: true,
+            pilot: true,
+            members: {
+              include: {
+                user: true,
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
+            },
           },
         },
+        pinpoints: {
+          orderBy: { sequenceNumber: "asc" },
+        },
       },
-    },
-    pinpoints: {
-      orderBy: { sequenceNumber: "asc" },
-    },
-  },
-});
+    });
 
-return NextResponse.json(normalizeOrderResponse(order));
+    if (nextStatus && nextStatus !== existingOrder.status) {
+      await updateOperationDayTeamTimer({
+        operationDayTeamId: existingOrder.operationDayTeamId,
+        nextStatus,
+        now,
+      });
+    }
 
-   
+    return NextResponse.json(normalizeOrderResponse(order));
   } catch (error: any) {
     console.error("Fehler beim Aktualisieren des Auftrags:", error);
 
