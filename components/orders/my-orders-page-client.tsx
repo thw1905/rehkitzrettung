@@ -1456,40 +1456,7 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
       </span>
     </div>
 
-    <div className="mt-2 text-xs text-gray-700">
-      GPS: {pinpoint.latitude.toFixed(6)}, {pinpoint.longitude.toFixed(6)}
-    </div>
-
-    <div className="mt-2 grid gap-2 text-xs text-gray-800 sm:grid-cols-2">
-      <div className="rounded-lg bg-white/80 px-3 py-2">
-        🦌 Gesichert:{" "}
-        <span className="font-semibold">
-          {pinpoint.rehkitzeGesichert ?? 0}
-        </span>
-      </div>
-
-      <div className="rounded-lg bg-white/80 px-3 py-2">
-        🦌 Abgesprungen:{" "}
-        <span className="font-semibold">
-          {pinpoint.rehkitzeAbgesprungen ?? 0}
-        </span>
-      </div>
-
-      <div className="rounded-lg bg-white/80 px-3 py-2">
-        🌿 Wild gesichert:{" "}
-        <span className="font-semibold">
-          {pinpoint.sonstigesWildGesichert ?? 0}
-        </span>
-      </div>
-
-      <div className="rounded-lg bg-white/80 px-3 py-2">
-        🌿 Wild abgesprungen:{" "}
-        <span className="font-semibold">
-          {pinpoint.sonstigesWildAbgesprungen ?? 0}
-        </span>
-      </div>
-    </div>
-  </div>
+  </div>  
 
   <div className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-bold text-gray-700">
     {openPinpoints[pinpoint.id] ? "−" : "+"}

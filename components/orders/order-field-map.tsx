@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import {
   CircleMarker,
   MapContainer,
+  Marker,
   Polygon,
   Popup,
   TileLayer,
@@ -47,6 +48,52 @@ function getPinColor(status?: Pinpoint["status"]) {
   if (status === "ERLEDIGT") return "#16a34a";
   if (status === "ERREICHT") return "#eab308";
   return "#dc2626";
+}
+
+function getPinTextColor(status?: Pinpoint["status"]) {
+  if (status === "ERREICHT") return "#111827";
+  return "#ffffff";
+}
+
+function getPinpointIcon(pinpoint: Pinpoint) {
+  const backgroundColor = getPinColor(pinpoint.status);
+  const textColor = getPinTextColor(pinpoint.status);
+  const number =
+    typeof pinpoint.sequenceNumber === "number"
+      ? String(pinpoint.sequenceNumber)
+      : "?";
+
+  return L.divIcon({
+    className: "rehkitz-pinpoint-number-icon",
+    html: `
+      <div style="
+        width: 34px;
+        height: 34px;
+        border-radius: 9999px;
+        background: ${backgroundColor};
+        color: ${textColor};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 1;
+        border: 3px solid white;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.45);
+      ">
+        ${number}
+      </div>
+    `,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -18],
+  });
+}
+
+function formatPinpointStatus(status?: Pinpoint["status"]) {
+  if (status === "ERLEDIGT") return "Erledigt";
+  if (status === "ERREICHT") return "In Arbeit";
+  return "Offen";
 }
 
 function FitMapToData({
@@ -362,40 +409,80 @@ export default function OrderFieldMap({
             </CircleMarker>
           )}
 
-        {pinpoints.map((pinpoint) => (
-          <CircleMarker
-            key={pinpoint.id}
-            center={[pinpoint.latitude, pinpoint.longitude]}
-            radius={7}
-            pathOptions={{
-              color: getPinColor(pinpoint.status),
-              fillColor: getPinColor(pinpoint.status),
-              fillOpacity: 0.9,
-              weight: 2,
-            }}
-            eventHandlers={
-              onPinpointClick
-                ? {
-                    click: () => onPinpointClick(pinpoint),
-                  }
-                : undefined
-            }
-          >
-            <Popup>
-              <div className="text-sm">
-                <div className="font-semibold">
-                  PinPoint
-                  {typeof pinpoint.sequenceNumber === "number"
-                    ? ` ${pinpoint.sequenceNumber}`
-                    : ""}
+        {pinpoints
+          .filter(
+            (pinpoint) =>
+              Number.isFinite(pinpoint.latitude) &&
+              Number.isFinite(pinpoint.longitude)
+          )
+          .sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0))
+          .map((pinpoint) => (
+            <Marker
+              key={pinpoint.id}
+              position={[pinpoint.latitude, pinpoint.longitude]}
+              icon={getPinpointIcon(pinpoint)}
+              eventHandlers={
+                onPinpointClick
+                  ? {
+                      click: () => onPinpointClick(pinpoint),
+                    }
+                  : undefined
+              }
+            >
+              <Popup>
+                <div className="text-sm">
+                  <div className="font-semibold">
+                    PinPoint
+                    {typeof pinpoint.sequenceNumber === "number"
+                      ? ` ${pinpoint.sequenceNumber}`
+                      : ""}
+                  </div>
+
+                  <div className="mt-1">
+                    Status: {formatPinpointStatus(pinpoint.status)}
+                  </div>
+
+                  <div className="mt-1 text-xs text-gray-700">
+                    {pinpoint.latitude.toFixed(6)},{" "}
+                    {pinpoint.longitude.toFixed(6)}
+                  </div>
+
+                  {(pinpoint.note ||
+                    (pinpoint.rehkitzeGesichert ?? 0) > 0 ||
+                    (pinpoint.rehkitzeAbgesprungen ?? 0) > 0 ||
+                    (pinpoint.sonstigesWildGesichert ?? 0) > 0 ||
+                    (pinpoint.sonstigesWildAbgesprungen ?? 0) > 0 ||
+                    (pinpoint.maulwurfhuegelFehlstelle ?? 0) > 0) && (
+                    <div className="mt-2 border-t border-gray-200 pt-2 text-xs text-gray-700">
+                      <div>Rehkitze gesichert: {pinpoint.rehkitzeGesichert ?? 0}</div>
+                      <div>
+                        Rehkitze abgesprungen:{" "}
+                        {pinpoint.rehkitzeAbgesprungen ?? 0}
+                      </div>
+                      <div>
+                        Sonstiges Wild gesichert:{" "}
+                        {pinpoint.sonstigesWildGesichert ?? 0}
+                      </div>
+                      <div>
+                        Sonstiges Wild abgesprungen:{" "}
+                        {pinpoint.sonstigesWildAbgesprungen ?? 0}
+                      </div>
+                      <div>
+                        Maulwurfhügel / Fehlstelle:{" "}
+                        {pinpoint.maulwurfhuegelFehlstelle ?? 0}
+                      </div>
+                      {pinpoint.note ? (
+                        <div className="mt-1">
+                          <span className="font-semibold">Notiz:</span>{" "}
+                          {pinpoint.note}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
-                {pinpoint.status ? (
-                  <div className="mt-1">Status: {pinpoint.status}</div>
-                ) : null}
-              </div>
-            </Popup>
-          </CircleMarker>
-        ))}
+              </Popup>
+            </Marker>
+          ))}
       </MapContainer>
     </div>
   );
