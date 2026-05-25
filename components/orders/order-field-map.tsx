@@ -372,6 +372,7 @@ export default function OrderFieldMap({
   onPinpointClick,
 }: Props) {
   const [showPowerLayer, setShowPowerLayer] = useState(true);
+  const [showPowerLegend, setShowPowerLegend] = useState(false);
 
   const polygon = useMemo(() => {
     try {
@@ -428,24 +429,94 @@ export default function OrderFieldMap({
   return (
     <div className="space-y-2">
       <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="font-bold">⚡ Stromnetz-Kartenebene</div>
             <div className="mt-1 text-xs">
-              Blendet Stromleitungen aus OpenInfraMap als Vektor-Kartenebene ein.
-              Dafür muss einmalig das Paket leaflet.vectorgrid installiert sein.
+              Blendet Stromleitungen und Strom-Infrastruktur aus OpenInfraMap als
+              Vektor-Kartenebene ein.
+            </div>
+            <div className="mt-1 text-xs font-semibold text-amber-900">
+              Hinweis: Die Daten stammen aus OpenStreetMap/OpenInfraMap und
+              können unvollständig oder veraltet sein.
             </div>
           </div>
 
-          <label className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-950">
-            <input
-              type="checkbox"
-              checked={showPowerLayer}
-              onChange={(event) => setShowPowerLayer(event.target.checked)}
-            />
-            Stromnetz anzeigen
-          </label>
+          <div className="flex flex-wrap gap-2">
+            <label className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-950">
+              <input
+                type="checkbox"
+                checked={showPowerLayer}
+                onChange={(event) => setShowPowerLayer(event.target.checked)}
+              />
+              Stromnetz anzeigen
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setShowPowerLegend((prev) => !prev)}
+              className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-950"
+            >
+              {showPowerLegend ? "Legende ausblenden" : "Legende anzeigen"}
+            </button>
+          </div>
         </div>
+
+        {showPowerLegend && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3 text-xs text-gray-800">
+            <div className="mb-2 font-bold text-gray-900">
+              Legende Stromnetz / Infrastruktur
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-2">
+                <span className="font-semibold text-red-700">Rote Linien:</span>{" "}
+                sehr hohe Spannung, meist große Übertragungsleitung.
+              </div>
+
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-2">
+                <span className="font-semibold text-orange-700">
+                  Orange Linien:
+                </span>{" "}
+                Hochspannungs- oder Mittelspannungsleitung.
+              </div>
+
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-2">
+                <span className="font-semibold text-amber-700">
+                  Gelbe/gestrichelte Linien:
+                </span>{" "}
+                kleinere Leitung oder Leitung mit unbekannter Spannung.
+              </div>
+
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-2">
+                <span className="font-semibold text-orange-900">
+                  Punkte/Symbole:
+                </span>{" "}
+                Strommasten, Strompfähle oder sonstige Strom-Infrastruktur.
+              </div>
+
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-2">
+                <span className="font-semibold text-purple-700">
+                  Violette Flächen/Punkte:
+                </span>{" "}
+                Kraftwerke oder Generatoren, zum Beispiel Windräder.
+              </div>
+
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-2">
+                <span className="font-semibold text-yellow-700">
+                  Gelbe Flächen:
+                </span>{" "}
+                Umspannwerke, Schaltanlagen oder Trafostationen.
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2 font-semibold text-red-800">
+              Für den Drohneneinsatz nur als zusätzlicher Hinweis verwenden.
+              Der Pilot muss Leitung, Hindernisse und Luftraum weiterhin vor Ort
+              und in offiziellen Quellen prüfen.
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={`w-full overflow-hidden rounded-2xl border ${heightClassName}`}>
