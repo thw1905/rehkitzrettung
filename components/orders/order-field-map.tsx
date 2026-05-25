@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CircleMarker,
   MapContainer,
@@ -267,6 +267,101 @@ function LocateMeControl() {
   return null;
 }
 
+function OpenInfraMapPowerVectorLayer({ visible }: { visible: boolean }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!visible) return;
+
+    let layer: any = null;
+
+    try {
+      // Paket muss installiert sein: npm install leaflet.vectorgrid
+      require("leaflet.vectorgrid");
+
+      const vectorGrid = (L as any).vectorGrid;
+
+      if (!vectorGrid?.protobuf) {
+        console.error("leaflet.vectorgrid wurde geladen, aber vectorGrid.protobuf ist nicht verfügbar.");
+        return;
+      }
+
+      layer = vectorGrid.protobuf("https://openinframap.org/tiles/{z}/{x}/{y}.pbf", {
+        rendererFactory: (L as any).canvas.tile,
+        maxNativeZoom: 17,
+        maxZoom: 20,
+        pane: "overlayPane",
+        interactive: false,
+        vectorTileLayerStyles: {
+          power_line: (properties: any) => {
+            const rawVoltage = String(properties?.voltage || "").split(";")[0];
+            const voltage = Number(rawVoltage);
+
+            const isVeryHighVoltage = Number.isFinite(voltage) && voltage >= 220000;
+            const isHighVoltage = Number.isFinite(voltage) && voltage >= 110000;
+
+            return {
+              color: isVeryHighVoltage ? "#dc2626" : isHighVoltage ? "#f97316" : "#f59e0b",
+              weight: isVeryHighVoltage ? 5 : isHighVoltage ? 4 : 3,
+              opacity: 0.95,
+              dashArray: isHighVoltage ? undefined : "6 6",
+            };
+          },
+          power_tower: {
+            radius: 4,
+            color: "#7c2d12",
+            weight: 2,
+            fillColor: "#f97316",
+            fillOpacity: 0.95,
+          },
+          power_substation: {
+            color: "#7c2d12",
+            weight: 2,
+            fillColor: "#facc15",
+            fillOpacity: 0.35,
+          },
+          power_substation_point: {
+            radius: 5,
+            color: "#7c2d12",
+            weight: 2,
+            fillColor: "#facc15",
+            fillOpacity: 0.9,
+          },
+          power_plant: {
+            color: "#9333ea",
+            weight: 2,
+            fillColor: "#c084fc",
+            fillOpacity: 0.25,
+          },
+          power_plant_point: {
+            radius: 5,
+            color: "#9333ea",
+            weight: 2,
+            fillColor: "#c084fc",
+            fillOpacity: 0.9,
+          },
+        },
+      });
+
+      layer.addTo(map);
+      layer.bringToFront?.();
+    } catch (error) {
+      console.error(
+        "OpenInfraMap-Vektorlayer konnte nicht geladen werden. Bitte ausführen: npm install leaflet.vectorgrid",
+        error
+      );
+    }
+
+    return () => {
+      if (layer) {
+        map.removeLayer(layer);
+      }
+    };
+  }, [map, visible]);
+
+  return null;
+}
+
 export default function OrderFieldMap({
   areaGeoJson,
   pinpoints = [],
@@ -276,6 +371,8 @@ export default function OrderFieldMap({
   heightClassName = "h-[420px] sm:h-[520px] md:h-[650px]",
   onPinpointClick,
 }: Props) {
+  const [showPowerLayer, setShowPowerLayer] = useState(true);
+
   const polygon = useMemo(() => {
     try {
       const geometry = areaGeoJson?.geometry;
@@ -315,6 +412,7 @@ export default function OrderFieldMap({
     }
   }, [areaGeoJson]);
 
+
   const defaultCenter: [number, number] =
     typeof locationLatitude === "number" &&
     typeof locationLongitude === "number"
@@ -328,7 +426,29 @@ export default function OrderFieldMap({
   }, [polygon, pinpoints.length, locationLatitude, locationLongitude]);
 
   return (
-    <div className={`w-full overflow-hidden rounded-2xl border ${heightClassName}`}>
+    <div className="space-y-2">
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="font-bold">⚡ Stromnetz-Kartenebene</div>
+            <div className="mt-1 text-xs">
+              Blendet Stromleitungen aus OpenInfraMap als Vektor-Kartenebene ein.
+              Dafür muss einmalig das Paket leaflet.vectorgrid installiert sein.
+            </div>
+          </div>
+
+          <label className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-950">
+            <input
+              type="checkbox"
+              checked={showPowerLayer}
+              onChange={(event) => setShowPowerLayer(event.target.checked)}
+            />
+            Stromnetz anzeigen
+          </label>
+        </div>
+      </div>
+
+      <div className={`w-full overflow-hidden rounded-2xl border ${heightClassName}`}>
       <MapContainer
         key={mapKey}
         className="h-full w-full"
@@ -354,6 +474,8 @@ export default function OrderFieldMap({
           maxZoom={20}
           pane="overlayPane"
         />
+
+        <OpenInfraMapPowerVectorLayer visible={showPowerLayer} />
 
         <FitMapToData
           polygon={polygon}
@@ -484,6 +606,7 @@ export default function OrderFieldMap({
             </Marker>
           ))}
       </MapContainer>
+      </div>
     </div>
   );
 }
