@@ -444,6 +444,14 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                     location: fieldLocation,
                   }}
                   onChange={handleFieldEditorChange}
+                  existingFields={fields
+                    .filter((field) => field.id !== editingFieldId)
+                    .map((field) => ({
+                      id: field.id,
+                      name: field.name,
+                      displayName: field.displayName,
+                      areaGeoJson: field.areaGeoJson,
+                    }))}
                 />
               </div>
 

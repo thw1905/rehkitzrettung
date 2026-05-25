@@ -9,9 +9,17 @@ type FieldEditorValue = {
   location: { lat: number; lng: number } | null;
 };
 
+type ExistingField = {
+  id: string;
+  name?: string | null;
+  displayName?: string | null;
+  areaGeoJson?: GeoJSON.Feature<GeoJSON.Polygon> | null;
+};
+
 type Props = {
   value?: FieldEditorValue;
   onChange: (data: FieldEditorValue) => void;
+  existingFields?: ExistingField[];
 };
 
 const DEFAULT_CENTER: L.LatLngExpression = [53.3995, 10.0450]; // Seevetal
@@ -19,13 +27,14 @@ const DEFAULT_ZOOM = 13;
 const TAP_MOVE_THRESHOLD = 12;
 const IGNORE_CLICK_AFTER_TOUCH_MS = 700;
 
-export default function FieldEditor({ value, onChange }: Props) {
+export default function FieldEditor({ value, onChange, existingFields = [] }: Props) {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const polylineRef = useRef<L.Polyline | null>(null);
   const polygonLayerRef = useRef<L.Polygon | null>(null);
   const locationMarkerRef = useRef<L.Marker | null>(null);
+  const existingFieldsLayerRef = useRef<L.LayerGroup | null>(null);
 
   const pointsRef = useRef<L.LatLng[]>([]);
   const isApplyingValueRef = useRef(false);
@@ -86,6 +95,91 @@ export default function FieldEditor({ value, onChange }: Props) {
         coordinates: [ring],
       },
     };
+  }
+
+  function getExistingFieldLabel(field: ExistingField) {
+    const displayName = (field.displayName || "").trim();
+    const name = (field.name || "").trim();
+
+    if (displayName && name) return `${displayName} (${name})`;
+    if (displayName) return displayName;
+    if (name) return name;
+    return "Bestehende Fläche";
+  }
+
+  function polygonToLatLngs(
+    polygon?: GeoJSON.Feature<GeoJSON.Polygon> | null
+  ): L.LatLng[] {
+    const coords = polygon?.geometry?.coordinates?.[0];
+
+    if (!Array.isArray(coords) || coords.length < 3) {
+      return [];
+    }
+
+    const withoutClosingPoint =
+      coords.length > 1 &&
+      coords[0][0] === coords[coords.length - 1][0] &&
+      coords[0][1] === coords[coords.length - 1][1]
+        ? coords.slice(0, -1)
+        : coords;
+
+    return withoutClosingPoint
+      .map((coord) => {
+        if (!Array.isArray(coord) || coord.length < 2) return null;
+
+        const lng = Number(coord[0]);
+        const lat = Number(coord[1]);
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+        return L.latLng(lat, lng);
+      })
+      .filter((point): point is L.LatLng => point !== null);
+  }
+
+  function renderExistingFieldsOnMap(nextFields: ExistingField[]) {
+    if (!mapRef.current) return;
+
+    if (existingFieldsLayerRef.current) {
+      existingFieldsLayerRef.current.remove();
+      existingFieldsLayerRef.current = null;
+    }
+
+    const group = L.layerGroup();
+
+    for (const field of nextFields) {
+      const positions = polygonToLatLngs(field.areaGeoJson);
+
+      if (positions.length < 3) continue;
+
+      const polygon = L.polygon(positions, {
+        color: "#f97316",
+        weight: 2,
+        opacity: 0.9,
+        fillColor: "#f97316",
+        fillOpacity: 0.12,
+        dashArray: "6 6",
+        interactive: true,
+      });
+
+      polygon.bindPopup(`
+        <div style="font-size: 13px;">
+          <div style="font-weight: 700; margin-bottom: 4px;">
+            Bestehende Fläche
+          </div>
+          <div>${getExistingFieldLabel(field)}</div>
+        </div>
+      `);
+
+      group.addLayer(polygon);
+    }
+
+    group.addTo(mapRef.current);
+    existingFieldsLayerRef.current = group;
+
+    group.eachLayer((layer: any) => {
+      layer.bringToBack?.();
+    });
   }
 
   useEffect(() => {
@@ -383,6 +477,8 @@ export default function FieldEditor({ value, onChange }: Props) {
     container.addEventListener("touchmove", onTouchMove, { passive: true });
     container.addEventListener("touchend", onTouchEnd, { passive: true });
 
+    renderExistingFieldsOnMap(existingFields);
+
     setTimeout(() => {
       map.invalidateSize();
       applyValue(value);
@@ -392,10 +488,21 @@ export default function FieldEditor({ value, onChange }: Props) {
       container.removeEventListener("touchstart", onTouchStart);
       container.removeEventListener("touchmove", onTouchMove);
       container.removeEventListener("touchend", onTouchEnd);
+
+      if (existingFieldsLayerRef.current) {
+        existingFieldsLayerRef.current.remove();
+        existingFieldsLayerRef.current = null;
+      }
+
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    renderExistingFieldsOnMap(existingFields);
+  }, [existingFields]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -505,6 +612,13 @@ export default function FieldEditor({ value, onChange }: Props) {
       <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
         {statusText}
       </div>
+
+      {existingFields.length > 0 && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+          Bestehende Flächen werden als orange gestrichelte Umrisse angezeigt.
+          Sie dienen nur zur Orientierung und können hier nicht bearbeitet werden.
+        </div>
+      )}
 
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         <button
