@@ -13,6 +13,7 @@ const sections = [
       { href: "/owners", title: "Ansprechpartner", icon: "☎️" },
       { href: "/reviere", title: "Reviere", icon: "🐗"},
       { href: "/revier-paechter", title: "Revierpächter", icon: "🐗🧑‍💼"},
+      { href: "/revier-map", title: "Revier-Flächenübersicht", icon:"🐗🌽"},
       { href: "/admin/db-check", title: "DB-Check"},
     ],
   },

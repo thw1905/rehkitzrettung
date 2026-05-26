@@ -189,6 +189,7 @@ useEffect(() => {
   { href: "/owners", label: "Ansprechpartner" },
   { href: "/reviere", label: "Reviere"},
   { href: "/revier-paechter", label: "Revierpächter"},
+  { href: "/revier-map", label: "Revier/Flächenübersicht"},
   { href: "/admin/db-check", label: "DB-Check"},
 ];
 
