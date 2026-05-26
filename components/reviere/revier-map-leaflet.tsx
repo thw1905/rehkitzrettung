@@ -4,7 +4,6 @@ import { useEffect, useMemo } from "react";
 import {
   CircleMarker,
   MapContainer,
-  Marker,
   Polygon,
   Popup,
   TileLayer,
@@ -128,32 +127,6 @@ function getCenterFromRings(rings: [number, number][][]): [number, number] | nul
 
   const center = bounds.getCenter();
   return [center.lat, center.lng];
-}
-
-function createFieldLabelIcon(label: string) {
-  return L.divIcon({
-    className: "revier-field-label-icon",
-    html: `
-      <div style="
-        max-width: 150px;
-        border-radius: 9999px;
-        background: rgba(255,255,255,0.92);
-        border: 1px solid rgba(249,115,22,0.65);
-        color: #7c2d12;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.22);
-        padding: 3px 8px;
-        font-size: 11px;
-        font-weight: 800;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      ">
-        ${label.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
-      </div>
-    `,
-    iconSize: [150, 24],
-    iconAnchor: [75, 12],
-  });
 }
 
 function FitMapToData({
@@ -284,8 +257,6 @@ export default function RevierMapLeaflet({ revier, fields }: Props) {
           const field = fields.find((item) => item.id === fieldPolygon.id);
           if (!field) return null;
 
-          const center = getCenterFromRings(fieldPolygon.rings);
-
           return (
             <div key={fieldPolygon.id}>
               {fieldPolygon.rings.map((positions, index) => (
@@ -312,14 +283,6 @@ export default function RevierMapLeaflet({ revier, fields }: Props) {
                   </Popup>
                 </Polygon>
               ))}
-
-              {center ? (
-                <Marker
-                  position={center}
-                  icon={createFieldLabelIcon(getFieldLabel(field))}
-                  interactive={false}
-                />
-              ) : null}
             </div>
           );
         })}
