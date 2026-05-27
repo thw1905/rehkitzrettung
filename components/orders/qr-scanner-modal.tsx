@@ -33,18 +33,41 @@ const defaultCapabilities: CameraCapabilityState = {
   focusSupported: false,
 };
 
-function createScannerRegionId() {
-  return `qr-reader-region-${Math.random().toString(36).slice(2)}`;
+function getFriendlyCameraError(error: any) {
+  const rawMessage =
+    error?.message || error?.name || error?.toString?.() || "Unbekannter Fehler";
+
+  if (/permission|denied|NotAllowedError/i.test(rawMessage)) {
+    return "Kein Kamerazugriff. Bitte in Chrome die Kamera-Berechtigung für diese Seite erlauben.";
+  }
+
+  if (/NotFoundError|Requested device not found|not found/i.test(rawMessage)) {
+    return "Es wurde keine Kamera gefunden.";
+  }
+
+  if (/OverconstrainedError|constraint/i.test(rawMessage)) {
+    return "Die gewählte Kamera-Einstellung wird vom Handy nicht unterstützt. Bitte eine andere Kamera auswählen oder die Seite neu laden.";
+  }
+
+  if (/https|secure context/i.test(rawMessage)) {
+    return "Die Kamera funktioniert nur über HTTPS.";
+  }
+
+  if (/NotReadableError|Could not start video source|TrackStartError|in use/i.test(rawMessage)) {
+    return "Die Kamera konnte nicht gestartet werden. Sie wird eventuell von einer anderen App oder einem anderen Browser-Tab verwendet.";
+  }
+
+  return `Scanner konnte nicht gestartet werden: ${rawMessage}`;
 }
 
-function isSecureCameraContext() {
-  if (typeof window === "undefined") return false;
+function pickBackCamera(cameras: CameraInfo[]) {
+  if (cameras.length === 0) return "";
 
   return (
-    window.location.protocol === "https:" ||
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-  );
+    cameras.find((camera) =>
+      /back|rear|environment|rück|hinten|0, facing back/i.test(camera.label)
+    ) || cameras[cameras.length - 1]
+  ).deviceId;
 }
 
 export default function QrScannerModal({
@@ -53,17 +76,20 @@ export default function QrScannerModal({
   onClose,
   onScanSuccess,
 }: Props) {
-  const scannerRegionIdRef = useRef(createScannerRegionId());
+  const readerIdRef = useRef(
+    `qr-reader-region-${Math.random().toString(36).slice(2)}`
+  );
+
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
   const hasScannedRef = useRef(false);
-  const startRunIdRef = useRef(0);
-  const stoppingRef = useRef(false);
+  const startingRef = useRef(false);
+  const mountedRef = useRef(false);
   const onScanSuccessRef = useRef(onScanSuccess);
 
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [running, setRunning] = useState(false);
   const [scanningImage, setScanningImage] = useState(false);
   const [lastScanText, setLastScanText] = useState("");
   const [modeLabel, setModeLabel] = useState("");
@@ -99,7 +125,6 @@ export default function QrScannerModal({
 
       oscillator.type = "sine";
       oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
-
       gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
       gain.gain.exponentialRampToValueAtTime(
         0.15,
@@ -112,7 +137,6 @@ export default function QrScannerModal({
 
       oscillator.connect(gain);
       gain.connect(audioContext.destination);
-
       oscillator.start();
       oscillator.stop(audioContext.currentTime + 0.18);
 
@@ -136,58 +160,64 @@ export default function QrScannerModal({
     } catch (err) {
       console.error("Scan-Erfolg konnte nicht verarbeitet werden:", err);
       hasScannedRef.current = false;
-      setError("Der Code wurde erkannt, konnte aber nicht verarbeitet werden.");
     }
   }
 
-  async function loadCameras() {
+  async function stopScanner() {
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    videoTrackRef.current = null;
+    setTorchEnabled(false);
+    setCapabilities(defaultCapabilities);
+
+    if (!scanner) return;
+
     try {
-      let videoDevices: CameraInfo[] = [];
+      await scanner.stop();
+    } catch {
+      // Scanner war eventuell noch nicht gestartet.
+    }
 
-      try {
-        const html5Cameras = await Html5Qrcode.getCameras();
+    try {
+      scanner.clear();
+    } catch {
+      // nicht kritisch
+    }
+  }
 
-        videoDevices = html5Cameras.map((camera, index) => ({
-          deviceId: camera.id,
-          label: camera.label || `Kamera ${index + 1}`,
-        }));
-      } catch {
-        if (navigator.mediaDevices?.enumerateDevices) {
-          const devices = await navigator.mediaDevices.enumerateDevices();
+  async function loadCamerasViaHtml5Qrcode() {
+    try {
+      const devices = await Html5Qrcode.getCameras();
 
-          videoDevices = devices
-            .filter((device) => device.kind === "videoinput")
-            .map((device, index) => ({
-              deviceId: device.deviceId,
-              label: device.label || `Kamera ${index + 1}`,
-            }));
-        }
-      }
+      const videoDevices: CameraInfo[] = (devices || []).map((device, index) => ({
+        deviceId: device.id,
+        label: device.label || `Kamera ${index + 1}`,
+      }));
 
       setCameras(videoDevices);
 
-      if (!selectedCameraId && videoDevices.length > 0) {
-        const backCamera =
-          videoDevices.find((camera) =>
-            /back|rear|environment|rück|hinten/i.test(camera.label)
-          ) || videoDevices[videoDevices.length - 1];
-
-        setSelectedCameraId(backCamera.deviceId);
-      }
+      return videoDevices;
     } catch (err) {
       console.warn("Kameras konnten nicht geladen werden:", err);
+      return [];
     }
   }
 
-  function readRunningCapabilities(scanner: Html5Qrcode | null) {
-    if (!scanner) {
-      setCapabilities(defaultCapabilities);
-      return;
-    }
-
+  async function applyCameraEnhancementsFromVideoElement() {
     try {
-      const rawCapabilities =
-        (scanner as any).getRunningTrackCapabilities?.() || null;
+      const readerElement = document.getElementById(readerIdRef.current);
+      const video = readerElement?.querySelector("video") as HTMLVideoElement | null;
+      const stream = video?.srcObject as MediaStream | null;
+      const track = stream?.getVideoTracks?.()[0] || null;
+
+      if (!track) {
+        setCapabilities(defaultCapabilities);
+        return;
+      }
+
+      videoTrackRef.current = track;
+
+      const rawCapabilities = track.getCapabilities?.() as any;
 
       const zoomSupported = !!rawCapabilities?.zoom;
       const minZoom = zoomSupported ? rawCapabilities.zoom.min ?? 1 : 1;
@@ -209,62 +239,31 @@ export default function QrScannerModal({
         focusSupported,
       });
 
+      const advanced: any[] = [];
+
+      if (focusSupported) {
+        advanced.push({ focusMode: "continuous" });
+      }
+
       if (zoomSupported) {
         const preferredZoom = Math.min(Math.max(2, minZoom), maxZoom);
         setZoomValue(preferredZoom);
-
-        (scanner as any)
-          .applyVideoConstraints?.({
-            advanced: [{ zoom: preferredZoom }],
-          })
-          .catch?.(() => {});
+        advanced.push({ zoom: preferredZoom });
       }
 
-      if (focusSupported) {
-        (scanner as any)
-          .applyVideoConstraints?.({
-            advanced: [{ focusMode: "continuous" }],
-          })
-          .catch?.(() => {});
+      if (advanced.length > 0) {
+        await (track as any).applyConstraints({ advanced });
       }
     } catch (err) {
-      console.warn("Kamera-Fähigkeiten konnten nicht gelesen werden:", err);
+      console.warn("Kamera-Optimierung nicht verfügbar:", err);
       setCapabilities(defaultCapabilities);
     }
   }
 
-  async function stopScanner() {
-    const scanner = scannerRef.current;
-    scannerRef.current = null;
-    setRunning(false);
-    setModeLabel("");
-    setCapabilities(defaultCapabilities);
-    setTorchEnabled(false);
+  async function startScanner(preferredCameraId?: string) {
+    if (!open || startingRef.current) return;
 
-    if (!scanner || stoppingRef.current) return;
-
-    stoppingRef.current = true;
-
-    try {
-      try {
-        await scanner.stop();
-      } catch {
-        // Scanner war eventuell noch nicht vollständig gestartet.
-      }
-
-      try {
-        scanner.clear();
-      } catch {
-        // nicht kritisch
-      }
-    } finally {
-      stoppingRef.current = false;
-    }
-  }
-
-  async function startScanner() {
-    const runId = ++startRunIdRef.current;
-
+    startingRef.current = true;
     setStarting(true);
     setError(null);
     setLastScanText("");
@@ -274,8 +273,12 @@ export default function QrScannerModal({
     hasScannedRef.current = false;
 
     try {
-      if (!isSecureCameraContext()) {
-        throw new Error("Die Kamera funktioniert nur mit HTTPS oder localhost.");
+      if (
+        window.location.protocol !== "https:" &&
+        window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1"
+      ) {
+        throw new Error("Die Kamera funktioniert nur mit HTTPS.");
       }
 
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -284,9 +287,26 @@ export default function QrScannerModal({
 
       await stopScanner();
 
-      if (!open || runId !== startRunIdRef.current) return;
+      /*
+        Wichtig:
+        Erst die Kameras laden, dann Html5Qrcode direkt mit der deviceId starten.
+        Die vorherige Variante mit constraints/deviceId exact erzeugt auf manchen
+        Android-Geräten ein schwarzes Bild oder OverconstrainedError.
+      */
+      const availableCameras = await loadCamerasViaHtml5Qrcode();
 
-      const scanner = new Html5Qrcode(scannerRegionIdRef.current, {
+      const cameraId =
+        preferredCameraId ||
+        selectedCameraId ||
+        pickBackCamera(availableCameras);
+
+      if (!cameraId) {
+        throw new Error("Keine Kamera verfügbar.");
+      }
+
+      setSelectedCameraId(cameraId);
+
+      const scanner = new Html5Qrcode(readerIdRef.current, {
         formatsToSupport: [
           Html5QrcodeSupportedFormats.QR_CODE,
           Html5QrcodeSupportedFormats.DATA_MATRIX,
@@ -297,100 +317,55 @@ export default function QrScannerModal({
 
       scannerRef.current = scanner;
 
-      const cameraConfig: string | MediaTrackConstraints = selectedCameraId
-        ? selectedCameraId
-        : {
-            facingMode: { ideal: "environment" },
-          };
-
       await scanner.start(
-        cameraConfig,
+        cameraId,
         {
           fps: 10,
-          qrbox: { width: 260, height: 260 },
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const size = Math.max(220, Math.floor(minEdge * 0.72));
+
+            return {
+              width: size,
+              height: size,
+            };
+          },
           disableFlip: false,
         },
         async (decodedText) => {
-          if (runId !== startRunIdRef.current || hasScannedRef.current) return;
           await handleDetectedText(decodedText);
         },
         () => {
-          // fortlaufende Fehlscans ignorieren
+          // Scan-Fehlschläge pro Frame ignorieren.
         }
       );
 
-      if (runId !== startRunIdRef.current) {
-        await stopScanner();
-        return;
-      }
-
-      setRunning(true);
       setModeLabel("Live-Scan aktiv");
 
-      await loadCameras();
-      readRunningCapabilities(scanner);
+      // Nach dem Start kurz warten, damit html5-qrcode das Video einhängen kann.
+      window.setTimeout(() => {
+        applyCameraEnhancementsFromVideoElement();
+      }, 400);
     } catch (err: any) {
       console.error("QR Scanner Startfehler:", err);
-
-      const rawMessage =
-        err?.message ||
-        err?.name ||
-        err?.toString?.() ||
-        "Kamera konnte nicht gestartet werden.";
-
-      let friendlyMessage = rawMessage;
-
-      if (/permission|denied|NotAllowedError/i.test(rawMessage)) {
-        friendlyMessage =
-          "Kein Kamerazugriff. Bitte Browser-Berechtigung für die Kamera erlauben.";
-      } else if (/NotFoundError|Requested device not found/i.test(rawMessage)) {
-        friendlyMessage = "Es wurde keine Kamera gefunden.";
-      } else if (/https|secure context/i.test(rawMessage)) {
-        friendlyMessage =
-          "Die Kamera funktioniert nur mit HTTPS oder auf localhost.";
-      } else if (
-        /NotReadableError|Could not start video source|TrackStartError/i.test(
-          rawMessage
-        )
-      ) {
-        friendlyMessage =
-          "Die Kamera wird bereits von einer anderen App oder Browser-Registerkarte verwendet.";
-      } else if (/OverconstrainedError|constraint/i.test(rawMessage)) {
-        friendlyMessage =
-          "Die gewählte Kamera konnte nicht gestartet werden. Bitte eine andere Kamera auswählen oder die Seite neu laden.";
-      }
-
-      setError(friendlyMessage);
       await stopScanner();
+
+      setError(getFriendlyCameraError(err));
+      setModeLabel("");
     } finally {
-      if (runId === startRunIdRef.current) {
-        setStarting(false);
-      }
+      startingRef.current = false;
+      setStarting(false);
     }
   }
 
-  useEffect(() => {
-    if (!open) {
-      startRunIdRef.current += 1;
-      stopScanner();
-      return;
-    }
-
-    startScanner();
-
-    return () => {
-      startRunIdRef.current += 1;
-      stopScanner();
-    };
-    // Wichtig: selectedCameraId steht hier absichtlich nicht in den Dependencies.
-    // Sonst startet der Scanner direkt nach dem Laden der Kameraliste erneut
-    // und bleibt auf manchen Android-Geräten schwarz.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  async function restartWithCamera(cameraId: string) {
+    setSelectedCameraId(cameraId);
+    await startScanner(cameraId);
+  }
 
   async function changeZoom(value: number) {
-    const scanner = scannerRef.current;
-    if (!scanner) return;
+    const track = videoTrackRef.current;
+    if (!track) return;
 
     const nextZoom = Math.min(
       Math.max(value, capabilities.minZoom),
@@ -400,7 +375,7 @@ export default function QrScannerModal({
     setZoomValue(nextZoom);
 
     try {
-      await (scanner as any).applyVideoConstraints?.({
+      await (track as any).applyConstraints({
         advanced: [{ zoom: nextZoom }],
       });
     } catch (err) {
@@ -409,13 +384,13 @@ export default function QrScannerModal({
   }
 
   async function toggleTorch() {
-    const scanner = scannerRef.current;
-    if (!scanner) return;
+    const track = videoTrackRef.current;
+    if (!track) return;
 
     const nextValue = !torchEnabled;
 
     try {
-      await (scanner as any).applyVideoConstraints?.({
+      await (track as any).applyConstraints({
         advanced: [{ torch: nextValue }],
       });
 
@@ -426,25 +401,38 @@ export default function QrScannerModal({
     }
   }
 
+  useEffect(() => {
+    mountedRef.current = true;
+
+    if (!open) return;
+
+    // Warten bis das Modal und der Reader-Div wirklich im DOM gerendert sind.
+    const timer = window.setTimeout(() => {
+      if (mountedRef.current) {
+        startScanner();
+      }
+    }, 350);
+
+    return () => {
+      mountedRef.current = false;
+      window.clearTimeout(timer);
+      hasScannedRef.current = false;
+      stopScanner();
+    };
+    // selectedCameraId absichtlich nicht als Dependency:
+    // Kamerawechsel wird manuell über restartWithCamera ausgelöst.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   async function handleImageFile(file: File) {
     setScanningImage(true);
     setError(null);
 
     try {
-      await stopScanner();
+      const tempScanner =
+        scannerRef.current ?? new Html5Qrcode(readerIdRef.current);
 
-      const scanner = new Html5Qrcode(scannerRegionIdRef.current, {
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.DATA_MATRIX,
-          Html5QrcodeSupportedFormats.AZTEC,
-        ],
-        verbose: false,
-      });
-
-      scannerRef.current = scanner;
-
-      const decodedText = await scanner.scanFile(file, true);
+      const decodedText = await tempScanner.scanFile(file, true);
 
       if (decodedText) {
         await handleDetectedText(decodedText);
@@ -457,12 +445,6 @@ export default function QrScannerModal({
       setError(
         "Der Code konnte aus dem Foto nicht gelesen werden. Live-Scan ist auf diesem Gerät meist zuverlässiger."
       );
-
-      hasScannedRef.current = false;
-
-      if (open) {
-        await startScanner();
-      }
     } finally {
       setScanningImage(false);
 
@@ -474,29 +456,40 @@ export default function QrScannerModal({
 
   if (!open) return null;
 
+  const readerId = readerIdRef.current;
+
   return (
-    <div className="fixed inset-0 z-[120] overflow-y-auto bg-black/60 p-3 md:p-4">
+    <div className="fixed inset-0 z-[120] bg-black/60 p-3 md:p-4">
       <style jsx global>{`
-        .qr-scanner-region {
+        #${readerId} {
           width: 100% !important;
           min-height: 360px !important;
           background: #000 !important;
         }
 
-        .qr-scanner-region video,
-        .qr-scanner-region canvas {
+        #${readerId} video {
           width: 100% !important;
-          min-height: 360px !important;
+          height: 360px !important;
           object-fit: cover !important;
+          display: block !important;
           background: #000 !important;
         }
 
-        .qr-scanner-region div {
-          box-sizing: border-box;
+        #${readerId} canvas {
+          display: none !important;
+        }
+
+        #${readerId} > div {
+          border: 0 !important;
+        }
+
+        #${readerId}__dashboard_section {
+          display: none !important;
         }
       `}</style>
-      <div className="flex min-h-full items-center justify-center">
-        <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+
+      <div className="flex h-full items-center justify-center">
+        <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl">
           <div className="border-b border-gray-200 px-4 py-4 md:px-5">
             <h2 className="text-xl font-bold text-gray-900">{title}</h2>
             <p className="mt-2 text-sm text-gray-700">
@@ -506,10 +499,7 @@ export default function QrScannerModal({
 
           <div className="px-4 py-4 md:px-5">
             <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-black">
-              <div
-                id={scannerRegionIdRef.current}
-                className="qr-scanner-region min-h-[360px] bg-black"
-              />
+              <div id={readerId} className="bg-black" />
 
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <div className="relative h-64 w-64 rounded-2xl border-4 border-green-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.2)]">
@@ -524,11 +514,7 @@ export default function QrScannerModal({
             <div className="mt-3 text-sm text-gray-700">
               {starting
                 ? "Kamera wird gestartet..."
-                : running
-                  ? modeLabel || "Live-Scan aktiv"
-                  : error
-                    ? "Scanner konnte nicht gestartet werden."
-                    : "Scanner bereit"}
+                : modeLabel || "Scanner bereit"}
             </div>
 
             {cameras.length > 0 && (
@@ -538,13 +524,7 @@ export default function QrScannerModal({
                 </label>
                 <select
                   value={selectedCameraId}
-                  onChange={(e) => {
-                    const nextCameraId = e.target.value;
-                    setSelectedCameraId(nextCameraId);
-                    window.setTimeout(() => {
-                      startScanner();
-                    }, 150);
-                  }}
+                  onChange={(e) => restartWithCamera(e.target.value)}
                   className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm"
                 >
                   {cameras.map((camera) => (
@@ -631,21 +611,12 @@ export default function QrScannerModal({
               </div>
             )}
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => startScanner()}
-                disabled={starting}
-                className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 disabled:opacity-50"
-              >
-                Scanner neu starten
-              </button>
-
+            <div className="mt-4">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={scanningImage}
-                className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 disabled:opacity-50"
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 disabled:opacity-50"
               >
                 {scanningImage
                   ? "Bild wird geprüft..."
@@ -681,9 +652,9 @@ export default function QrScannerModal({
             )}
 
             <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Tipp M3T/M4T: Wenn der QR-Code unscharf ist, Zoom auf 2x oder 3x
-              stellen und das Handy etwas weiter weg halten. Nicht zu nah an
-              den Controller gehen.
+              Tipp: Wenn der QR-Code unscharf ist, Zoom auf 2x oder 3x stellen
+              und das Handy etwas weiter weg halten. Nicht zu nah an den
+              Controller gehen.
             </div>
           </div>
 
