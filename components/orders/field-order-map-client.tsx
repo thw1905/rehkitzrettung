@@ -40,6 +40,16 @@ type FieldItem = {
   locationNote?: string | null;
 };
 
+type CreatedOrder = {
+  id: string;
+  title?: string | null;
+  orderCode?: string | null;
+  mowingDate?: string | null;
+  notes?: string | null;
+  owner?: Owner | null;
+  field?: FieldItem | null;
+};
+
 function getTodayDateInputValue() {
   const now = new Date();
   const y = now.getFullYear();
@@ -72,10 +82,33 @@ export default function FieldOrderMapClient() {
   const [loading, setLoading] = useState(true);
   const [reviere, setReviere] = useState<RevierItem[]>([]);
   const [creating, setCreating] = useState(false);
+  const [createdOrders, setCreatedOrders] = useState<CreatedOrder[]>([]);
+  const [createdOrdersSearch, setCreatedOrdersSearch] = useState("");
+
   const selectedFields = useMemo(() => {
     const selected = new Set(selectedFieldIds);
     return fields.filter((field) => selected.has(field.id));
   }, [fields, selectedFieldIds]);
+
+  const filteredCreatedOrders = useMemo(() => {
+    const term = createdOrdersSearch.trim().toLowerCase();
+
+    if (!term) return createdOrders;
+
+    return createdOrders.filter((order) =>
+      [
+        order.orderCode || "",
+        order.title || "",
+        order.field?.displayName || "",
+        order.field?.name || "",
+        order.owner ? getOwnerLabel(order.owner) : "",
+        order.notes || "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [createdOrders, createdOrdersSearch]);
 
   function toggleField(fieldId: string) {
     setSelectedFieldIds((prev) => {
@@ -155,6 +188,9 @@ export default function FieldOrderMapClient() {
     if (!confirmed) return;
 
     setCreating(true);
+    setCreatedOrders([]);
+    setCreatedOrdersSearch("");
+
     try {
       const res = await fetch("/api/orders/bulk-create-from-fields", {
         method: "POST",
@@ -175,6 +211,11 @@ export default function FieldOrderMapClient() {
         throw new Error(data?.error || "Aufträge konnten nicht erstellt werden.");
       }
 
+      const nextCreatedOrders = Array.isArray(data?.createdOrders)
+        ? data.createdOrders
+        : [];
+
+      setCreatedOrders(nextCreatedOrders);
       alert(data?.message || "Aufträge wurden erstellt.");
       clearSelection();
       setNotes("");
@@ -313,6 +354,80 @@ export default function FieldOrderMapClient() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {createdOrders.length > 0 && (
+              <div className="mt-6 rounded-2xl border border-green-300 bg-green-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-green-950">
+                      Erstellte Aufträge
+                    </h3>
+                    <div className="mt-1 text-xs font-medium text-green-900">
+                      {createdOrders.length} Auftrag/Aufträge wurden erstellt.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreatedOrders([]);
+                      setCreatedOrdersSearch("");
+                    }}
+                    className="rounded-xl border border-green-300 bg-white px-3 py-2 text-xs font-semibold text-green-900"
+                  >
+                    Ausblenden
+                  </button>
+                </div>
+
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-semibold text-green-950">
+                    Aufträge suchen
+                  </label>
+                  <input
+                    type="text"
+                    value={createdOrdersSearch}
+                    onChange={(event) => setCreatedOrdersSearch(event.target.value)}
+                    placeholder="Auftragsnummer, Fläche, Ansprechpartner..."
+                    className="w-full rounded-xl border border-green-300 bg-white px-3 py-2 text-sm text-gray-900"
+                  />
+                </div>
+
+                {filteredCreatedOrders.length === 0 ? (
+                  <div className="mt-3 rounded-xl border border-green-200 bg-white px-3 py-3 text-sm text-green-900">
+                    Keine erstellten Aufträge zur Suche gefunden.
+                  </div>
+                ) : (
+                  <div className="mt-3 max-h-80 space-y-2 overflow-auto pr-1">
+                    {filteredCreatedOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        className="rounded-xl border border-green-200 bg-white px-3 py-3 text-sm text-gray-800"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate font-bold text-gray-950">
+                              {order.orderCode || order.title || "Ohne Auftragsnummer"}
+                            </div>
+                            <div className="mt-1 text-gray-700">
+                              Fläche: {order.field ? getFieldLabel(order.field) : "-"}
+                            </div>
+                            <div className="mt-1 text-gray-700">
+                              Ansprechpartner:{" "}
+                              {order.owner ? getOwnerLabel(order.owner) : "-"}
+                            </div>
+                            {order.notes ? (
+                              <div className="mt-1 text-xs text-gray-600">
+                                Notiz: {order.notes}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </aside>

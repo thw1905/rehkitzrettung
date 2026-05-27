@@ -38,6 +38,25 @@ async function getOrCreateOperationDay(date: Date) {
   });
 }
 
+async function getNextOrderNumberParts() {
+  const now = new Date();
+  const year = now.getFullYear();
+
+  const lastOrder = await db.order.findFirst({
+    where: { orderYear: year },
+    orderBy: { orderSequence: "desc" },
+    select: { orderSequence: true },
+  });
+
+  const nextSequence = (lastOrder?.orderSequence || 0) + 1;
+
+  return {
+    year,
+    sequence: nextSequence,
+    orderCode: `${year}-${String(nextSequence).padStart(3, "0")}`,
+  };
+}
+
 function getFeatureAreaSqm(feature: any) {
   try {
     return area(feature);
@@ -68,7 +87,7 @@ function getOverlapForRevier(params: {
     }
 
     const intersection = intersect(
-      featureCollection([fieldGeoJson, revierGeoJson])
+      featureCollection([fieldGeoJson as any, revierGeoJson as any]) as any
     );
 
     if (!intersection) {
@@ -211,10 +230,14 @@ export async function POST(req: NextRequest) {
 
     for (const field of fields) {
       const matchingReviere = await findMatchingReviere(field.areaGeoJson);
+      const { year, sequence, orderCode } = await getNextOrderNumberParts();
 
       const order = await db.order.create({
         data: {
-          title: field.displayName || field.name,
+          title: orderCode,
+          orderCode,
+          orderYear: year,
+          orderSequence: sequence,
           ownerId,
           fieldId: field.id,
           mowingDate,
