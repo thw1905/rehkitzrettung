@@ -8,6 +8,10 @@ const RevierMapLeaflet = dynamic(
   { ssr: false }
 );
 
+type AreaFeature =
+  | GeoJSON.Feature<GeoJSON.Polygon>
+  | GeoJSON.Feature<GeoJSON.MultiPolygon>;
+
 type Pachter = {
   id: string;
   firstName?: string | null;
@@ -22,7 +26,7 @@ type Revier = {
   name: string;
   nummer?: string | null;
   label: string;
-  areaGeoJson: GeoJSON.Feature<GeoJSON.Polygon>;
+  areaGeoJson: AreaFeature;
   paechter?: {
     id: string;
     pachter: Pachter;
@@ -33,7 +37,7 @@ type FieldItem = {
   id: string;
   name: string;
   displayName?: string | null;
-  areaGeoJson: GeoJSON.Feature<GeoJSON.Polygon>;
+  areaGeoJson: AreaFeature;
   areaSqm: number;
   areaHa: number;
   overlapSqm: number;
@@ -100,6 +104,10 @@ function getPachterName(pachter?: Pachter | null) {
   );
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export default function RevierMapPageClient() {
   const [selectedRevierId, setSelectedRevierId] = useState("");
   const [data, setData] = useState<RevierMapResponse>({
@@ -109,6 +117,7 @@ export default function RevierMapPageClient() {
   });
   const [loading, setLoading] = useState(true);
   const [loadingMap, setLoadingMap] = useState(false);
+  const [preparingPrint, setPreparingPrint] = useState(false);
 
   const generatedAt = useMemo(() => formatDateTime(new Date()), []);
 
@@ -169,8 +178,25 @@ export default function RevierMapPageClient() {
     }
   }
 
-  function printPage() {
-    window.print();
+  async function printPage() {
+    if (!data.selectedRevier || loading || loadingMap || preparingPrint) return;
+
+    setPreparingPrint(true);
+
+    try {
+      window.dispatchEvent(new Event("prepare-revier-print"));
+
+      // Leaflet braucht kurz Zeit, um nach dem fitBounds die Kacheln und Größe
+      // für das Drucklayout neu zu berechnen. Ohne diese Pause übernimmt der
+      // Browser manchmal den alten Bildschirm-Zoom.
+      await wait(900);
+
+      window.print();
+    } finally {
+      window.setTimeout(() => {
+        setPreparingPrint(false);
+      }, 800);
+    }
   }
 
   const totalFieldAreaHa = data.fields.reduce(
@@ -234,6 +260,12 @@ export default function RevierMapPageClient() {
           .leaflet-control-container {
             display: none !important;
           }
+
+          .revier-print-map {
+            height: 145mm !important;
+            width: 100% !important;
+            border-radius: 0 !important;
+          }
         }
       `}</style>
 
@@ -256,10 +288,10 @@ export default function RevierMapPageClient() {
             <button
               type="button"
               onClick={printPage}
-              disabled={!data.selectedRevier || loading || loadingMap}
+              disabled={!data.selectedRevier || loading || loadingMap || preparingPrint}
               className="no-print rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
             >
-              Drucken / als PDF speichern
+              {preparingPrint ? "Druck wird vorbereitet..." : "Drucken / als PDF speichern"}
             </button>
           </div>
         </section>
@@ -306,13 +338,13 @@ export default function RevierMapPageClient() {
                   </h2>
 
                   <div className="mt-2 text-sm text-gray-700">
-                    Flächen im Revier: {data.fields.length} · Fläche gesamt: {" "}
-                    {formatHa(totalFieldAreaHa)} ha · Anteil im Revier: {" "}
+                    Flächen im Revier: {data.fields.length} · Fläche gesamt:{" "}
+                    {formatHa(totalFieldAreaHa)} ha · Anteil im Revier:{" "}
                     {formatHa(totalOverlapHa)} ha
                   </div>
 
                   <div className="mt-2 text-sm text-gray-700">
-                    Pächter: {" "}
+                    Pächter:{" "}
                     {data.selectedRevier.paechter &&
                     data.selectedRevier.paechter.length > 0
                       ? data.selectedRevier.paechter

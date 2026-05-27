@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   CircleMarker,
   MapContainer,
@@ -129,6 +129,39 @@ function getCenterFromRings(rings: [number, number][][]): [number, number] | nul
   return [center.lat, center.lng];
 }
 
+function buildBounds(params: {
+  revierRings: [number, number][][];
+  fieldPolygons: PreparedPolygon[];
+  fields: FieldItem[];
+}) {
+  const bounds = L.latLngBounds([]);
+
+  for (const ring of params.revierRings) {
+    for (const pos of ring) {
+      bounds.extend(pos);
+    }
+  }
+
+  for (const polygon of params.fieldPolygons) {
+    for (const ring of polygon.rings) {
+      for (const pos of ring) {
+        bounds.extend(pos);
+      }
+    }
+  }
+
+  for (const field of params.fields) {
+    if (
+      typeof field.locationLatitude === "number" &&
+      typeof field.locationLongitude === "number"
+    ) {
+      bounds.extend([field.locationLatitude, field.locationLongitude]);
+    }
+  }
+
+  return bounds;
+}
+
 function FitMapToData({
   revierRings,
   fieldPolygons,
@@ -141,36 +174,90 @@ function FitMapToData({
   const map = useMap();
 
   useEffect(() => {
-    const bounds = L.latLngBounds([]);
-
-    for (const ring of revierRings) {
-      for (const pos of ring) {
-        bounds.extend(pos);
-      }
-    }
-
-    for (const polygon of fieldPolygons) {
-      for (const ring of polygon.rings) {
-        for (const pos of ring) {
-          bounds.extend(pos);
-        }
-      }
-    }
-
-    for (const field of fields) {
-      if (
-        typeof field.locationLatitude === "number" &&
-        typeof field.locationLongitude === "number"
-      ) {
-        bounds.extend([field.locationLatitude, field.locationLongitude]);
-      }
-    }
+    const bounds = buildBounds({ revierRings, fieldPolygons, fields });
 
     if (bounds.isValid()) {
       map.fitBounds(bounds, {
         padding: [24, 24],
       });
     }
+  }, [map, revierRings, fieldPolygons, fields]);
+
+  return null;
+}
+
+function PrintFitController({
+  revierRings,
+  fieldPolygons,
+  fields,
+}: {
+  revierRings: [number, number][][];
+  fieldPolygons: PreparedPolygon[];
+  fields: FieldItem[];
+}) {
+  const map = useMap();
+  const previousViewRef = useRef<{
+    center: L.LatLng;
+    zoom: number;
+  } | null>(null);
+
+  useEffect(() => {
+    function fitForPrint() {
+      const bounds = buildBounds({ revierRings, fieldPolygons, fields });
+
+      if (!bounds.isValid()) return;
+
+      previousViewRef.current = {
+        center: map.getCenter(),
+        zoom: map.getZoom(),
+      };
+
+      map.invalidateSize();
+
+      map.fitBounds(bounds, {
+        padding: [18, 18],
+        maxZoom: 17,
+        animate: false,
+      });
+
+      window.setTimeout(() => {
+        map.invalidateSize();
+
+        map.fitBounds(bounds, {
+          padding: [18, 18],
+          maxZoom: 17,
+          animate: false,
+        });
+      }, 250);
+
+      window.setTimeout(() => {
+        map.invalidateSize();
+      }, 650);
+    }
+
+    function restoreAfterPrint() {
+      const previous = previousViewRef.current;
+
+      if (!previous) return;
+
+      map.setView(previous.center, previous.zoom, {
+        animate: false,
+      });
+
+      previousViewRef.current = null;
+
+      window.setTimeout(() => {
+        map.invalidateSize();
+      }, 200);
+    }
+
+    window.addEventListener("prepare-revier-print", fitForPrint);
+    window.addEventListener("afterprint", restoreAfterPrint);
+
+    return () => {
+      window.removeEventListener("prepare-revier-print", fitForPrint);
+      window.removeEventListener("afterprint", restoreAfterPrint);
+    };
   }, [map, revierRings, fieldPolygons, fields]);
 
   return null;
@@ -200,7 +287,7 @@ export default function RevierMapLeaflet({ revier, fields }: Props) {
   const mapKey = `revier-map-${revier.id}-${fields.length}`;
 
   return (
-    <div className="h-[520px] w-full overflow-hidden rounded-2xl border border-gray-200 print:h-[145mm] print:rounded-none print:border-gray-400">
+    <div className="revier-print-map h-[520px] w-full overflow-hidden rounded-2xl border border-gray-200 print:h-[145mm] print:rounded-none print:border-gray-400">
       <MapContainer
         key={mapKey}
         className="h-full w-full"
@@ -228,6 +315,12 @@ export default function RevierMapLeaflet({ revier, fields }: Props) {
         />
 
         <FitMapToData
+          revierRings={revierRings}
+          fieldPolygons={fieldPolygons}
+          fields={fields}
+        />
+
+        <PrintFitController
           revierRings={revierRings}
           fieldPolygons={fieldPolygons}
           fields={fields}
