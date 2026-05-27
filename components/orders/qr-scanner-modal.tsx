@@ -308,7 +308,6 @@ export default function QrScannerModal({
         {
           fps: 10,
           qrbox: { width: 260, height: 260 },
-          aspectRatio: 1.333334,
           disableFlip: false,
         },
         async (decodedText) => {
@@ -383,9 +382,11 @@ export default function QrScannerModal({
       startRunIdRef.current += 1;
       stopScanner();
     };
-    // selectedCameraId darf neu starten, wenn der Nutzer die Kamera wechselt.
+    // Wichtig: selectedCameraId steht hier absichtlich nicht in den Dependencies.
+    // Sonst startet der Scanner direkt nach dem Laden der Kameraliste erneut
+    // und bleibt auf manchen Android-Geräten schwarz.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectedCameraId]);
+  }, [open]);
 
   async function changeZoom(value: number) {
     const scanner = scannerRef.current;
@@ -475,6 +476,25 @@ export default function QrScannerModal({
 
   return (
     <div className="fixed inset-0 z-[120] overflow-y-auto bg-black/60 p-3 md:p-4">
+      <style jsx global>{`
+        .qr-scanner-region {
+          width: 100% !important;
+          min-height: 360px !important;
+          background: #000 !important;
+        }
+
+        .qr-scanner-region video,
+        .qr-scanner-region canvas {
+          width: 100% !important;
+          min-height: 360px !important;
+          object-fit: cover !important;
+          background: #000 !important;
+        }
+
+        .qr-scanner-region div {
+          box-sizing: border-box;
+        }
+      `}</style>
       <div className="flex min-h-full items-center justify-center">
         <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
           <div className="border-b border-gray-200 px-4 py-4 md:px-5">
@@ -488,7 +508,7 @@ export default function QrScannerModal({
             <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-black">
               <div
                 id={scannerRegionIdRef.current}
-                className="min-h-[360px] bg-black"
+                className="qr-scanner-region min-h-[360px] bg-black"
               />
 
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -518,7 +538,13 @@ export default function QrScannerModal({
                 </label>
                 <select
                   value={selectedCameraId}
-                  onChange={(e) => setSelectedCameraId(e.target.value)}
+                  onChange={(e) => {
+                    const nextCameraId = e.target.value;
+                    setSelectedCameraId(nextCameraId);
+                    window.setTimeout(() => {
+                      startScanner();
+                    }, 150);
+                  }}
                   className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm"
                 >
                   {cameras.map((camera) => (
