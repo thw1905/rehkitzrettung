@@ -3,8 +3,14 @@ import { db } from "@/lib/db";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 import { buildTeamsByDistance } from "@/lib/team-clustering";
 import { assignOrdersToTeams } from "@/lib/order-assignment";
+import { haversineDistanceKm } from "@/lib/geo";
 
 type AvailabilityStatus = "OFFEN" | "ZUGESAGT" | "ABGESAGT" | "VIELLEICHT";
+
+type PlanningPoint = {
+  lat: number;
+  lng: number;
+};
 
 function parseDateOnlyToUtc(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number);
@@ -83,6 +89,149 @@ function compareUsers(
     `${b.lastName} ${b.firstName}`,
     "de"
   );
+}
+
+function getUserHomePoint(user: {
+  homeLatitude: number | null;
+  homeLongitude: number | null;
+}): PlanningPoint | null {
+  if (
+    typeof user.homeLatitude !== "number" ||
+    typeof user.homeLongitude !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    lat: user.homeLatitude,
+    lng: user.homeLongitude,
+  };
+}
+
+function getOrderFieldPoint(order: {
+  field: {
+    locationLatitude: number | null;
+    locationLongitude: number | null;
+  } | null;
+}): PlanningPoint | null {
+  if (
+    !order.field ||
+    typeof order.field.locationLatitude !== "number" ||
+    typeof order.field.locationLongitude !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    lat: order.field.locationLatitude,
+    lng: order.field.locationLongitude,
+  };
+}
+
+function averagePoints(points: PlanningPoint[]): PlanningPoint | null {
+  if (points.length === 0) return null;
+
+  const sum = points.reduce(
+    (acc, point) => ({
+      lat: acc.lat + point.lat,
+      lng: acc.lng + point.lng,
+    }),
+    { lat: 0, lng: 0 }
+  );
+
+  return {
+    lat: sum.lat / points.length,
+    lng: sum.lng / points.length,
+  };
+}
+
+function buildTeamFocusPointsForPilots(
+  users: Array<{
+    id: string;
+    role: string;
+    homeLatitude: number | null;
+    homeLongitude: number | null;
+    autoAssignPriority?: number;
+    isPrimaryPilot?: boolean;
+  }>,
+  orders: Array<{
+    id: string;
+    field: {
+      locationLatitude: number | null;
+      locationLongitude: number | null;
+    } | null;
+  }>
+) {
+  const pilots = users
+    .filter((user) => user.role === "PILOT")
+    .sort((a, b) => {
+      const aPrimary = a.isPrimaryPilot ? 1 : 0;
+      const bPrimary = b.isPrimaryPilot ? 1 : 0;
+
+      if (aPrimary !== bPrimary) {
+        return bPrimary - aPrimary;
+      }
+
+      return (b.autoAssignPriority || 0) - (a.autoAssignPriority || 0);
+    });
+
+  const orderPoints = orders
+    .map((order) => ({
+      orderId: order.id,
+      point: getOrderFieldPoint(order),
+    }))
+    .filter(
+      (item): item is { orderId: string; point: PlanningPoint } =>
+        item.point !== null
+    );
+
+  if (pilots.length === 0 || orderPoints.length === 0) {
+    return [];
+  }
+
+  const pointsByPilotId = new Map<string, PlanningPoint[]>();
+
+  for (const pilot of pilots) {
+    pointsByPilotId.set(pilot.id, []);
+  }
+
+  for (const orderPoint of orderPoints) {
+    let bestPilotId: string | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const pilot of pilots) {
+      const pilotPoint = getUserHomePoint(pilot);
+      if (!pilotPoint) continue;
+
+      const distance = haversineDistanceKm(pilotPoint, orderPoint.point);
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestPilotId = pilot.id;
+      }
+    }
+
+    if (bestPilotId) {
+      pointsByPilotId.get(bestPilotId)?.push(orderPoint.point);
+    }
+  }
+
+  return pilots
+    .map((pilot) => {
+      const points = pointsByPilotId.get(pilot.id) || [];
+      const point = averagePoints(points);
+
+      if (!point) return null;
+
+      return {
+        pilotId: pilot.id,
+        point,
+      };
+    })
+    .filter(
+      (item): item is { pilotId: string; point: PlanningPoint } =>
+        item !== null
+    );
 }
 
 export async function POST(req: NextRequest) {
@@ -205,9 +354,15 @@ export async function POST(req: NextRequest) {
       })
       .sort(compareUsers);
 
+    const teamFocusPoints = buildTeamFocusPointsForPilots(
+      eligibleUsers,
+      openOrders
+    );
+
     const builtTeamsRaw = buildTeamsByDistance(
       eligibleUsers,
-      maxSearchersPerTeam
+      maxSearchersPerTeam,
+      teamFocusPoints
     );
 
     const builtTeams = builtTeamsRaw
@@ -403,6 +558,7 @@ export async function POST(req: NextRequest) {
       createdCount: savedAssignments.length,
       assignments: savedAssignments,
       orderAssignments,
+      teamFocusPoints,
       summary: {
         totalEligibleUsers: eligibleUsers.length,
         totalAssignedUsers: assignedUserIds.size,

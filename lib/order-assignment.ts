@@ -27,7 +27,25 @@ type AssignmentResult = {
   distanceKm: number;
 };
 
-function getPilotPoint(pilot: TeamClusterUser | undefined) {
+type Point = {
+  lat: number;
+  lng: number;
+};
+
+type AssignedOrder = {
+  order: OrderForAssignment;
+  fieldPoint: Point;
+  distanceKm: number;
+};
+
+type TeamRouteState = {
+  team: BuiltTeam;
+  pilotPoint: Point | null;
+  currentPoint: Point | null;
+  assignedOrders: AssignedOrder[];
+};
+
+function getPilotPoint(pilot: TeamClusterUser | undefined): Point | null {
   if (
     !pilot ||
     pilot.homeLatitude == null ||
@@ -42,7 +60,7 @@ function getPilotPoint(pilot: TeamClusterUser | undefined) {
   };
 }
 
-function getFieldPoint(order: OrderForAssignment) {
+function getFieldPoint(order: OrderForAssignment): Point | null {
   if (
     !order.field ||
     order.field.locationLatitude == null ||
@@ -57,14 +75,93 @@ function getFieldPoint(order: OrderForAssignment) {
   };
 }
 
-function scoreOrderDistanceWithBalance(params: {
-  distanceKm: number;
-  currentOrderCount: number;
-  teamSize: number;
-}) {
-  const { distanceKm, currentOrderCount, teamSize } = params;
+function getTeamSize(team: BuiltTeam) {
+  return (team.pilotId ? 1 : 0) + team.searcherIds.length;
+}
 
-  return distanceKm + currentOrderCount * 10 - teamSize * 1.5;
+function scoreOrderForTeam(params: {
+  teamState: TeamRouteState;
+  fieldPoint: Point;
+}) {
+  const { teamState, fieldPoint } = params;
+
+  const currentOrderCount = teamState.assignedOrders.length;
+  const teamSize = getTeamSize(teamState.team);
+
+  const distanceFromCurrentPoint = teamState.currentPoint
+    ? haversineDistanceKm(teamState.currentPoint, fieldPoint)
+    : Number.POSITIVE_INFINITY;
+
+  const distanceFromPilot = teamState.pilotPoint
+    ? haversineDistanceKm(teamState.pilotPoint, fieldPoint)
+    : Number.POSITIVE_INFINITY;
+
+  /*
+    Ziel:
+    - Teams sollen räumlich zusammenhängende Aufträge bekommen.
+    - Teams sollen trotzdem halbwegs gleichmäßig belastet werden.
+    - Größere Teams dürfen leicht bevorzugt werden.
+    - Der Pilot-Wohnort bleibt wichtig, aber nicht mehr allein entscheidend.
+  */
+  const routeDistance =
+    Number.isFinite(distanceFromCurrentPoint) && distanceFromCurrentPoint !== Number.POSITIVE_INFINITY
+      ? distanceFromCurrentPoint
+      : distanceFromPilot;
+
+  if (!Number.isFinite(routeDistance)) {
+    return currentOrderCount * 100 - teamSize * 2;
+  }
+
+  return (
+    routeDistance +
+    currentOrderCount * 8 +
+    (Number.isFinite(distanceFromPilot) ? distanceFromPilot * 0.25 : 0) -
+    teamSize * 1.5
+  );
+}
+
+function optimizeOrderSequenceForTeam(
+  teamState: TeamRouteState
+): AssignmentResult[] {
+  const remaining = [...teamState.assignedOrders];
+  const result: AssignmentResult[] = [];
+
+  let currentPoint =
+    teamState.pilotPoint ||
+    remaining[0]?.fieldPoint ||
+    null;
+
+  while (remaining.length > 0) {
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < remaining.length; index += 1) {
+      const candidate = remaining[index];
+
+      const distance = currentPoint
+        ? haversineDistanceKm(currentPoint, candidate.fieldPoint)
+        : 0;
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+
+    const [nextOrder] = remaining.splice(bestIndex, 1);
+
+    result.push({
+      orderId: nextOrder.order.id,
+      teamId: teamState.team.teamId,
+      distanceKm: Number.isFinite(bestDistance)
+        ? bestDistance
+        : nextOrder.distanceKm,
+    });
+
+    currentPoint = nextOrder.fieldPoint;
+  }
+
+  return result;
 }
 
 export function assignOrdersToTeams(
@@ -72,58 +169,96 @@ export function assignOrdersToTeams(
   users: TeamClusterUser[],
   orders: OrderForAssignment[]
 ): AssignmentResult[] {
-  const results: AssignmentResult[] = [];
-  const orderCountByTeamId = new Map<string, number>();
+  const usableTeams = teams.filter((team) => !!team.pilotId);
 
-  for (const team of teams) {
-    orderCountByTeamId.set(team.teamId, 0);
+  if (usableTeams.length === 0) {
+    return [];
   }
 
-  for (const order of orders) {
-    const fieldPoint = getFieldPoint(order);
-    if (!fieldPoint) continue;
+  const teamStates: TeamRouteState[] = usableTeams.map((team) => {
+    const pilot = users.find((user) => user.id === team.pilotId);
+    const pilotPoint = getPilotPoint(pilot);
 
-    let bestTeam: BuiltTeam | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
+    return {
+      team,
+      pilotPoint,
+      currentPoint: pilotPoint,
+      assignedOrders: [],
+    };
+  });
+
+  const assignableOrders = orders
+    .map((order) => ({
+      order,
+      fieldPoint: getFieldPoint(order),
+    }))
+    .filter(
+      (
+        item
+      ): item is {
+        order: OrderForAssignment;
+        fieldPoint: Point;
+      } => item.fieldPoint !== null
+    );
+
+  /*
+    Erste Verteilung:
+    Jeder Auftrag wird dem Team zugeordnet, für das er nach aktueller Route,
+    Pilotentfernung, Teamgröße und bisheriger Auftragsanzahl am besten passt.
+  */
+  for (const item of assignableOrders) {
+    let bestTeamState: TeamRouteState | null = null;
     let bestScore = Number.POSITIVE_INFINITY;
+    let bestDistanceFromPilot = Number.POSITIVE_INFINITY;
 
-    for (const team of teams) {
-      if (!team.pilotId) continue;
-
-      const pilot = users.find((u) => u.id === team.pilotId);
-      const pilotPoint = getPilotPoint(pilot);
-      if (!pilotPoint) continue;
-
-      const distanceKm = haversineDistanceKm(pilotPoint, fieldPoint);
-      const currentOrderCount = orderCountByTeamId.get(team.teamId) || 0;
-      const teamSize = (team.pilotId ? 1 : 0) + team.searcherIds.length;
-
-      const score = scoreOrderDistanceWithBalance({
-        distanceKm,
-        currentOrderCount,
-        teamSize,
+    for (const teamState of teamStates) {
+      const score = scoreOrderForTeam({
+        teamState,
+        fieldPoint: item.fieldPoint,
       });
+
+      const distanceFromPilot = teamState.pilotPoint
+        ? haversineDistanceKm(teamState.pilotPoint, item.fieldPoint)
+        : Number.POSITIVE_INFINITY;
 
       if (score < bestScore) {
         bestScore = score;
-        bestDistance = distanceKm;
-        bestTeam = team;
+        bestTeamState = teamState;
+        bestDistanceFromPilot = distanceFromPilot;
       }
     }
 
-    if (!bestTeam) continue;
+    if (!bestTeamState) {
+      continue;
+    }
 
-    results.push({
-      orderId: order.id,
-      teamId: bestTeam.teamId,
-      distanceKm: bestDistance,
+    bestTeamState.assignedOrders.push({
+      order: item.order,
+      fieldPoint: item.fieldPoint,
+      distanceKm: Number.isFinite(bestDistanceFromPilot)
+        ? bestDistanceFromPilot
+        : 0,
     });
 
-    orderCountByTeamId.set(
-      bestTeam.teamId,
-      (orderCountByTeamId.get(bestTeam.teamId) || 0) + 1
-    );
+    /*
+      Wichtig:
+      currentPoint wird direkt auf diesen Auftrag gesetzt.
+      Dadurch bevorzugt der nächste Auftrag räumliche Nähe zur aktuellen Route.
+    */
+    bestTeamState.currentPoint = item.fieldPoint;
   }
 
-  return results;
+  /*
+    Zweite Optimierung:
+    Innerhalb jedes Teams wird die Reihenfolge nochmal nach
+    "nächstgelegener Auftrag zuerst" sortiert.
+  */
+  const optimizedAssignments: AssignmentResult[] = [];
+
+  for (const teamState of teamStates) {
+    const optimizedForTeam = optimizeOrderSequenceForTeam(teamState);
+    optimizedAssignments.push(...optimizedForTeam);
+  }
+
+  return optimizedAssignments;
 }

@@ -1,5 +1,10 @@
 import { haversineDistanceKm } from "@/lib/geo";
 
+type Point = {
+  lat: number;
+  lng: number;
+};
+
 type User = {
   id: string;
   role: string;
@@ -14,7 +19,12 @@ type Team = {
   members: string[];
 };
 
-function getPoint(user: User) {
+type TeamFocusPoint = {
+  pilotId: string;
+  point: Point;
+};
+
+function getPoint(user: User): Point | null {
   if (
     typeof user.homeLatitude !== "number" ||
     typeof user.homeLongitude !== "number"
@@ -28,6 +38,19 @@ function getPoint(user: User) {
   };
 }
 
+function getTeamFocusPoint(
+  team: Team,
+  teamFocusPoints: TeamFocusPoint[]
+): Point | null {
+  if (!team.pilotId) return null;
+
+  const focusPoint = teamFocusPoints.find(
+    (item) => item.pilotId === team.pilotId
+  );
+
+  return focusPoint?.point || null;
+}
+
 function scoreDistanceWithBalance(params: {
   distanceKm: number;
   teamMemberCount: number;
@@ -35,12 +58,33 @@ function scoreDistanceWithBalance(params: {
 }) {
   const { distanceKm, teamMemberCount, priority } = params;
 
+  /*
+    Bewertung:
+    - kurze Entfernung zum Einsatzgebiet/Piloten ist gut
+    - volle Teams werden unattraktiver
+    - hohe Priorität verbessert den Score
+  */
   return distanceKm + teamMemberCount * 12 - priority * 3;
+}
+
+function scoreFallback(params: {
+  teamMemberCount: number;
+  priority: number;
+}) {
+  const { teamMemberCount, priority } = params;
+
+  /*
+    Wenn Koordinaten fehlen:
+    - möglichst gleichmäßige Teamgrößen
+    - Priorität trotzdem berücksichtigen
+  */
+  return teamMemberCount * 100 - priority;
 }
 
 export function buildTeamsByDistance(
   users: User[],
-  maxSearchersPerTeam: number
+  maxSearchersPerTeam: number,
+  teamFocusPoints: TeamFocusPoint[] = []
 ): Team[] {
   const pilots = users
     .filter((u) => u.role === "PILOT")
@@ -93,19 +137,34 @@ export function buildTeamsByDistance(
       if (!pilot) continue;
 
       const pilotPoint = getPoint(pilot);
+      const focusPoint = getTeamFocusPoint(team, teamFocusPoints);
 
-      if (!searcherPoint || !pilotPoint) {
-        const fallbackScore =
-          team.members.length * 100 - (searcher.autoAssignPriority || 0);
+      /*
+        Neu:
+        Wenn für das Team ein Einsatzgebiet-Mittelpunkt existiert,
+        wird der Sucher nach Entfernung zu diesem Einsatzgebiet eingeplant.
+
+        Fallback:
+        Wenn kein Einsatzgebiet vorhanden ist, wird wie bisher nach
+        Entfernung zum Pilot-Wohnort geplant.
+      */
+      const targetPoint = focusPoint || pilotPoint;
+
+      if (!searcherPoint || !targetPoint) {
+        const fallbackScore = scoreFallback({
+          teamMemberCount: team.members.length,
+          priority: searcher.autoAssignPriority || 0,
+        });
 
         if (fallbackScore < bestScore) {
           bestScore = fallbackScore;
           bestTeam = team;
         }
+
         continue;
       }
 
-      const distanceKm = haversineDistanceKm(pilotPoint, searcherPoint);
+      const distanceKm = haversineDistanceKm(searcherPoint, targetPoint);
 
       const score = scoreDistanceWithBalance({
         distanceKm,
