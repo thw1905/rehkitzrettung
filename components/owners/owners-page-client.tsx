@@ -55,17 +55,22 @@ export default function OwnersPage() {
   const [ownerLinks, setOwnerLinks] = useState<Record<string, OwnerLinkState>>({});
 
   function setOwnerLinkState(ownerId: string, changes: Partial<OwnerLinkState>) {
-    setOwnerLinks((prev) => ({
-      ...prev,
-      [ownerId]: {
+    setOwnerLinks((prev) => {
+      const current: OwnerLinkState = prev[ownerId] ?? {
         loading: false,
         url: null,
         error: null,
         copied: false,
-        ...(prev[ownerId] || {}),
-        ...changes,
-      },
-    }));
+      };
+
+      return {
+        ...prev,
+        [ownerId]: {
+          ...current,
+          ...changes,
+        },
+      };
+    });
   }
 
   async function loadOwners() {
