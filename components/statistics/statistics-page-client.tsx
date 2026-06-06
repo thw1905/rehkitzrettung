@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Summary = {
   totalOrders: number;
@@ -69,20 +69,61 @@ type RevierStat = {
   wildGesamtPerHa: number;
 };
 
+type DetailRow = {
+  id: string;
+  date: string;
+  orderCode?: string | null;
+  title?: string | null;
+  fieldLabel: string;
+  ownerName: string;
+  revierName: string;
+  teamName: string;
+  pilotName?: string | null;
+  areaSqm: number;
+  areaHa: number;
+  minutes: number;
+  wildGesamt: number;
+  rehkitzeGesichert: number;
+  rehkitzeAbgesprungen: number;
+  sonstigesWildGesichert: number;
+  sonstigesWildAbgesprungen: number;
+  maulwurfhuegelFehlstelle: number;
+};
+
+type FilterOption = {
+  id: string;
+  label: string;
+};
+
 type StatisticsResponse = {
   range: {
     from: string;
     to: string;
   };
+  filters?: {
+    ownerId?: string;
+    revierId?: string;
+    teamId?: string;
+    pilotId?: string;
+    fundFilter?: string;
+  };
+  filterOptions?: {
+    owners: FilterOption[];
+    reviere: FilterOption[];
+    teams: FilterOption[];
+    pilots: FilterOption[];
+  };
   summary: Summary;
   teams: TeamStat[];
   days: DayStat[];
   reviere: RevierStat[];
+  rows?: DetailRow[];
 };
 
 type PrintSections = {
   summary: boolean;
   wild: boolean;
+  details: boolean;
   reviere: boolean;
   teams: boolean;
   days: boolean;
@@ -186,14 +227,21 @@ function PrintTable({ children }: { children: React.ReactNode }) {
 
 export default function StatisticsPageClient() {
   const defaultSeason = useMemo(() => getDefaultSeasonRange(), []);
+  const initialLoadDoneRef = useRef(false);
 
   const [from, setFrom] = useState(defaultSeason.from);
   const [to, setTo] = useState(defaultSeason.to);
+  const [ownerId, setOwnerId] = useState("");
+  const [revierId, setRevierId] = useState("");
+  const [teamId, setTeamId] = useState("");
+  const [pilotId, setPilotId] = useState("");
+  const [fundFilter, setFundFilter] = useState("ALLE");
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<StatisticsResponse | null>(null);
   const [sections, setSections] = useState<PrintSections>({
     summary: true,
     wild: true,
+    details: true,
     reviere: true,
     teams: true,
     days: true,
@@ -218,12 +266,22 @@ export default function StatisticsPageClient() {
     setLoading(true);
 
     try {
-      const res = await fetch(
-        `/api/statistics?from=${encodeURIComponent(
-          fromValue
-        )}&to=${encodeURIComponent(toValue)}`,
-        { cache: "no-store" }
-      );
+      const params = new URLSearchParams({
+        from: fromValue,
+        to: toValue,
+      });
+
+      if (ownerId) params.set("ownerId", ownerId);
+      if (revierId) params.set("revierId", revierId);
+      if (teamId) params.set("teamId", teamId);
+      if (pilotId) params.set("pilotId", pilotId);
+      if (fundFilter && fundFilter !== "ALLE") {
+        params.set("fundFilter", fundFilter);
+      }
+
+      const res = await fetch(`/api/statistics?${params.toString()}`, {
+        cache: "no-store",
+      });
 
       const json = await res.json();
 
@@ -241,9 +299,30 @@ export default function StatisticsPageClient() {
   }
 
   useEffect(() => {
-    loadStats(defaultSeason.from, defaultSeason.to);
+    initialLoadDoneRef.current = false;
+
+    loadStats(defaultSeason.from, defaultSeason.to).finally(() => {
+      initialLoadDoneRef.current = true;
+    });
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!initialLoadDoneRef.current) return;
+    if (!from || !to) return;
+    if (from > to) return;
+
+    const timeout = window.setTimeout(() => {
+      loadStats();
+    }, 400);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, ownerId, revierId, teamId, pilotId, fundFilter]);
 
   function toggleSection(key: keyof PrintSections) {
     setSections((prev) => ({
@@ -259,86 +338,121 @@ export default function StatisticsPageClient() {
     loadStats(nextRange.from, nextRange.to);
   }
 
+  function resetFilters() {
+    setOwnerId("");
+    setRevierId("");
+    setTeamId("");
+    setPilotId("");
+    setFundFilter("ALLE");
+  }
+
   function printPage() {
     window.print();
   }
 
   const hasAnySection = Object.values(sections).some(Boolean);
+  const filterOptions = data?.filterOptions || {
+    owners: [],
+    reviere: [],
+    teams: [],
+    pilots: [],
+  };
+  const rows = data?.rows || [];
 
   return (
     <main className="min-h-screen bg-gray-50 p-3 md:p-6 print:bg-white print:p-0">
       <style jsx global>{`
+        @media screen and (max-width: 768px) {
+          .print-page table,
+          .print-page thead,
+          .print-page tbody,
+          .print-page tr,
+          .print-page th,
+          .print-page td {
+            color: #111827 !important;
+          }
+
+          .print-page td {
+            font-weight: 500 !important;
+          }
+
+          .print-page th {
+            background: #f3f4f6 !important;
+            font-weight: 800 !important;
+          }
+        }
+
         @media print {
-  @page {
-    size: A4 landscape;
-    margin: 10mm;
-  }
+          @page {
+            size: A4 landscape;
+            margin: 10mm;
+          }
 
-  html,
-  body {
-    background: white !important;
-    font-size: 13px !important;
-  }
+          html,
+          body {
+            background: white !important;
+            font-size: 13px !important;
+          }
 
-  .no-print {
-    display: none !important;
-  }
+          .no-print {
+            display: none !important;
+          }
 
-  .print-page {
-    max-width: none !important;
-    width: 100% !important;
-    margin: 0 !important;
-  }
+          .print-page {
+            max-width: none !important;
+            width: 100% !important;
+            margin: 0 !important;
+          }
 
-  .print-card {
-    break-inside: avoid;
-    box-shadow: none !important;
-    border: 1px solid #d1d5db !important;
-  }
+          .print-card {
+            break-inside: avoid;
+            box-shadow: none !important;
+            border: 1px solid #d1d5db !important;
+          }
 
-  .print-section {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
+          .print-section {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
 
-  h1 {
-    font-size: 24px !important;
-  }
+          h1 {
+            font-size: 24px !important;
+          }
 
-  h2 {
-    font-size: 18px !important;
-    margin-top: 14px !important;
-    margin-bottom: 8px !important;
-  }
+          h2 {
+            font-size: 18px !important;
+            margin-top: 14px !important;
+            margin-bottom: 8px !important;
+          }
 
-  p {
-    font-size: 13px !important;
-  }
+          p {
+            font-size: 13px !important;
+          }
 
-  table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    font-size: 13px !important;
-  }
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            font-size: 13px !important;
+          }
 
-  th,
-  td {
-    border: 1px solid #d1d5db !important;
-    padding: 7px !important;
-    vertical-align: top !important;
-    line-height: 1.35 !important;
-  }
+          th,
+          td {
+            border: 1px solid #d1d5db !important;
+            padding: 7px !important;
+            vertical-align: top !important;
+            line-height: 1.35 !important;
+          }
 
-  th {
-    background: #f3f4f6 !important;
-    font-weight: 700 !important;
-  }
+          th {
+            background: #f3f4f6 !important;
+            font-weight: 700 !important;
+          }
 
-  tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-}
+          tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+        }
       `}</style>
 
       <div className="print-page mx-auto max-w-7xl space-y-4 md:space-y-5">
@@ -349,7 +463,7 @@ export default function StatisticsPageClient() {
                 Saisonstatistik Rehkitzrettung
               </h1>
               <p className="mt-2 text-sm text-gray-700">
-                Auswertung von Einsätzen, Fläche, Zeit, Teams und Wilddaten.
+                Auswertung von Einsätzen, Fläche, Zeit, Teams, Wilddaten und Detailfunden.
               </p>
               <p className="mt-2 text-sm font-medium text-gray-900">
                 Zeitraum: {formatDate(from)} bis {formatDate(to)} · Erstellt am: {generatedAt}
@@ -368,7 +482,7 @@ export default function StatisticsPageClient() {
         </section>
 
         <section className="no-print page-card p-4">
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 xl:items-end">
             <div>
               <label className="mb-2 block text-sm font-semibold text-gray-900">
                 Von
@@ -393,6 +507,95 @@ export default function StatisticsPageClient() {
               />
             </div>
 
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-900">
+                Besitzer
+              </label>
+              <select
+                value={ownerId}
+                onChange={(e) => setOwnerId(e.target.value)}
+                className="w-full rounded-xl border px-3 py-3"
+              >
+                <option value="">Alle</option>
+                {filterOptions.owners.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-900">
+                Revier
+              </label>
+              <select
+                value={revierId}
+                onChange={(e) => setRevierId(e.target.value)}
+                className="w-full rounded-xl border px-3 py-3"
+              >
+                <option value="">Alle</option>
+                {filterOptions.reviere.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-900">
+                Team
+              </label>
+              <select
+                value={teamId}
+                onChange={(e) => setTeamId(e.target.value)}
+                className="w-full rounded-xl border px-3 py-3"
+              >
+                <option value="">Alle</option>
+                {filterOptions.teams.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-900">
+                Pilot
+              </label>
+              <select
+                value={pilotId}
+                onChange={(e) => setPilotId(e.target.value)}
+                className="w-full rounded-xl border px-3 py-3"
+              >
+                <option value="">Alle</option>
+                {filterOptions.pilots.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-900">
+                Fund
+              </label>
+              <select
+                value={fundFilter}
+                onChange={(e) => setFundFilter(e.target.value)}
+                className="w-full rounded-xl border px-3 py-3"
+              >
+                <option value="ALLE">Alle</option>
+                <option value="MIT_FUND">Nur mit Fund</option>
+                <option value="OHNE_FUND">Nur ohne Fund</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <button
               type="button"
               onClick={() => loadStats()}
@@ -408,6 +611,14 @@ export default function StatisticsPageClient() {
             >
               Saison wählen
             </button>
+
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+            >
+              Filter zurücksetzen
+            </button>
           </div>
         </section>
 
@@ -416,7 +627,7 @@ export default function StatisticsPageClient() {
             Was soll gedruckt werden?
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
             <SectionCheckbox
               label="Gesamtübersicht"
               checked={sections.summary}
@@ -426,6 +637,11 @@ export default function StatisticsPageClient() {
               label="Wilddaten"
               checked={sections.wild}
               onChange={() => toggleSection("wild")}
+            />
+            <SectionCheckbox
+              label="Details"
+              checked={sections.details}
+              onChange={() => toggleSection("details")}
             />
             <SectionCheckbox
               label="Reviere / Wild pro ha"
@@ -472,7 +688,7 @@ export default function StatisticsPageClient() {
                     tone="slate"
                   />
                   <StatCard
-                    label="Fläche gesamt"
+                    label="Abgesuchte Fläche"
                     value={`${formatHa(data.summary.totalHa)} ha`}
                     tone="blue"
                   />
@@ -553,6 +769,74 @@ export default function StatisticsPageClient() {
               </section>
             )}
 
+            {sections.details && (
+              <section className="page-card print-card print-section p-4 md:p-5">
+                <div className="mb-4">
+                  <h2 className="text-lg font-bold text-gray-900">
+                    Detailauswertung Fläche und Funde
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-700">
+                    Einzelne erledigte Aufträge im gewählten Filter. Wildzahlen aus Direktfunden und PinPoints werden zusammengezählt.
+                  </p>
+                </div>
+
+                {rows.length === 0 ? (
+                  <div className="text-sm text-gray-700">
+                    Keine erledigten Aufträge im gewählten Filter.
+                  </div>
+                ) : (
+                  <PrintTable>
+                    <table className="w-full min-w-[1280px] text-left text-sm">
+                      <thead>
+                        <tr>
+                          <th className="px-3 py-2">Datum</th>
+                          <th className="px-3 py-2">Auftrag</th>
+                          <th className="px-3 py-2">Fläche</th>
+                          <th className="px-3 py-2">Besitzer</th>
+                          <th className="px-3 py-2">Revier</th>
+                          <th className="px-3 py-2">Team</th>
+                          <th className="px-3 py-2">Pilot</th>
+                          <th className="px-3 py-2 text-right">ha</th>
+                          <th className="px-3 py-2 text-right">Zeit</th>
+                          <th className="px-3 py-2 text-right">RK ges.</th>
+                          <th className="px-3 py-2 text-right">RK abg.</th>
+                          <th className="px-3 py-2 text-right">SW ges.</th>
+                          <th className="px-3 py-2 text-right">SW abg.</th>
+                          <th className="px-3 py-2 text-right">Wild gesamt</th>
+                          <th className="px-3 py-2 text-right">Maulw.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row) => (
+                          <tr key={row.id} className="border-t border-gray-200">
+                            <td className="px-3 py-2 font-semibold text-gray-900">
+                              {formatDate(row.date)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.orderCode || row.title || "-"}
+                            </td>
+                            <td className="px-3 py-2">{row.fieldLabel}</td>
+                            <td className="px-3 py-2">{row.ownerName}</td>
+                            <td className="px-3 py-2">{row.revierName}</td>
+                            <td className="px-3 py-2">{row.teamName}</td>
+                            <td className="px-3 py-2">{row.pilotName || "-"}</td>
+                            <td className="px-3 py-2 text-right">{formatHa(row.areaHa)}</td>
+                            <td className="px-3 py-2 text-right">{formatMinutes(row.minutes)}</td>
+                            <td className="px-3 py-2 text-right">{formatNumber(row.rehkitzeGesichert)}</td>
+                            <td className="px-3 py-2 text-right">{formatNumber(row.rehkitzeAbgesprungen)}</td>
+                            <td className="px-3 py-2 text-right">{formatNumber(row.sonstigesWildGesichert)}</td>
+                            <td className="px-3 py-2 text-right">{formatNumber(row.sonstigesWildAbgesprungen)}</td>
+                            <td className="px-3 py-2 text-right">{formatNumber(row.wildGesamt)}</td>
+                            <td className="px-3 py-2 text-right">{formatNumber(row.maulwurfhuegelFehlstelle)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </PrintTable>
+                )}
+              </section>
+            )}
+
             {sections.reviere && (
               <section className="page-card print-card print-section p-4 md:p-5">
                 <div className="mb-4">
@@ -560,9 +844,7 @@ export default function StatisticsPageClient() {
                     Reviere / Wild pro Hektar
                   </h2>
                   <p className="mt-1 text-sm text-gray-700">
-                    Durchschnittliche Wildzahlen je Revier bezogen auf die
-                    abgesuchte Fläche. Wildzahlen aus Direktfunden und PinPoints
-                    werden zusammengezählt.
+                    Durchschnittliche Wildzahlen je Revier bezogen auf die abgesuchte Fläche. Wildzahlen aus Direktfunden und PinPoints werden zusammengezählt.
                   </p>
                 </div>
 
@@ -614,13 +896,6 @@ export default function StatisticsPageClient() {
                     </table>
                   </PrintTable>
                 )}
-
-                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
-                  Hinweis: Wenn ein Auftrag mehrere Reviere überschneidet,
-                  werden die Wildzahlen nur dem Revier mit der größten
-                  Überschneidung zugerechnet, damit die Gesamtzahlen nicht
-                  doppelt gezählt werden.
-                </div>
               </section>
             )}
 
@@ -748,4 +1023,4 @@ export default function StatisticsPageClient() {
       </div>
     </main>
   );
-}
+};

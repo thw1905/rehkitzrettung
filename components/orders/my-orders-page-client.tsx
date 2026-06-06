@@ -252,12 +252,20 @@ function getOwnerName(owner?: Owner | null) {
   );
 }
 
+function getFieldDisplayName(field?: Field | null) {
+  return (field?.displayName || "").trim() || "-";
+}
+
+function getFieldName(field?: Field | null) {
+  return (field?.name || "").trim() || "-";
+}
+
 function getFieldLabel(field?: Field | null) {
   if (!field) return "Unbekannte Fläche";
   const displayName = (field.displayName || "").trim();
   const name = (field.name || "").trim();
 
-  if (displayName && name) return `${displayName} (${name})`;
+  if (displayName && name) return `${displayName} · ${name}`;
   if (displayName) return displayName;
   if (name) return name;
   return "Unbekannte Fläche";
@@ -1047,6 +1055,16 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                             {getTeamName(order.team)}
                           </div>
 
+                          <div className="page-card-muted px-3 py-2 text-sm text-gray-900">
+                            <span className="font-semibold">Anzeigename:</span>{" "}
+                            {getFieldDisplayName(order.field)}
+                          </div>
+
+                          <div className="page-card-muted px-3 py-2 text-sm text-gray-900 sm:col-span-2">
+                            <span className="font-semibold">Flächenbezeichnung:</span>{" "}
+                            {getFieldName(order.field)}
+                          </div>
+
                           <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
                             <span className="font-semibold">Auftragszeit:</span>{" "}
                             {orderDurationLabel}
@@ -1207,6 +1225,16 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
   </div>
 )}
                               </div>
+
+                              <InfoCard
+                                label="Anzeigename"
+                                value={getFieldDisplayName(order.field)}
+                              />
+
+                              <InfoCard
+                                label="Flächenbezeichnung"
+                                value={getFieldName(order.field)}
+                              />
 
                               <InfoCard
                                 label="Fläche"

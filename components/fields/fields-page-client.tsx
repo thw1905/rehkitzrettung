@@ -14,6 +14,14 @@ type Team = {
   name: string;
 };
 
+type Owner = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone?: string | null;
+  email?: string | null;
+};
+
 type FieldOrder = {
   id: string;
   teamId?: string | null;
@@ -26,6 +34,7 @@ type FieldItem = {
   name: string;
   displayName: string;
   ownerId?: string | null;
+  owner?: Owner | null;
   areaGeoJson: GeoJSON.Feature<GeoJSON.Polygon>;
   notes?: string | null;
   locationLatitude?: number | null;
@@ -72,6 +81,10 @@ function getFieldLabel(field: Pick<FieldItem, "displayName" | "name">) {
   return "Unbekannte Fläche";
 }
 
+function getOwnerLabel(owner: Owner) {
+  return `${owner.firstName} ${owner.lastName}`.trim();
+}
+
 function hasMeetingPoint(field: {
   locationLatitude?: number | null;
   locationLongitude?: number | null;
@@ -111,9 +124,11 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
   const [locationNote, setLocationNote] = useState("");
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [ownerId, setOwnerId] = useState("");
   const [notes, setNotes] = useState("");
 
   const [fields, setFields] = useState<FieldItem[]>([]);
+  const [owners, setOwners] = useState<Owner[]>([]);
   const [loadingFields, setLoadingFields] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -125,13 +140,29 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
 
   async function loadFields() {
     setLoadingFields(true);
+
     try {
-      const res = await fetch("/api/fields");
-      const data = await res.json();
-      setFields(Array.isArray(data) ? data : []);
-    } catch (error) {
+      const [fieldsRes, ownersRes] = await Promise.all([
+        fetch("/api/fields", { cache: "no-store" }),
+        fetch("/api/owners", { cache: "no-store" }),
+      ]);
+
+      const fieldsData = await fieldsRes.json();
+      const ownersData = await ownersRes.json();
+
+      if (!fieldsRes.ok) {
+        throw new Error(fieldsData?.error || "Flächen konnten nicht geladen werden.");
+      }
+
+      if (!ownersRes.ok) {
+        throw new Error(ownersData?.error || "Besitzer konnten nicht geladen werden.");
+      }
+
+      setFields(Array.isArray(fieldsData) ? fieldsData : []);
+      setOwners(Array.isArray(ownersData) ? ownersData : []);
+    } catch (error: any) {
       console.error("Flächen konnten nicht geladen werden:", error);
-      alert("Flächen konnten nicht geladen werden.");
+      alert(error?.message || "Flächen konnten nicht geladen werden.");
     } finally {
       setLoadingFields(false);
     }
@@ -196,6 +227,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
         field.displayName,
         field.notes || "",
         field.locationNote || "",
+        field.owner ? getOwnerLabel(field.owner) : "",
         field.orders.map((o) => o.team?.name || "").join(" "),
         hasMeetingPoint(field) ? "treffpunkt gesetzt" : "treffpunkt fehlt",
       ]
@@ -217,6 +249,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
     setLocationNote("");
     setName("");
     setDisplayName("");
+    setOwnerId("");
     setNotes("");
   }
 
@@ -235,6 +268,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
     setLocationNote(field.locationNote || "");
     setName(field.name || "");
     setDisplayName(field.displayName || "");
+    setOwnerId(field.ownerId || "");
     setNotes(field.notes || "");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -274,8 +308,8 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
 }
 
   async function saveField() {
-    if (!displayName.trim()) {
-      alert("Bitte einen Anzeigenamen für die Fläche eingeben.");
+    if (!ownerId) {
+      alert("Bitte einen Besitzer für die Fläche auswählen.");
       return;
     }
 
@@ -308,6 +342,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
         body: JSON.stringify({
           name,
           displayName,
+          ownerId,
           notes,
           areaGeoJson: geoJson,
           locationLatitude: fieldLocation.lat,
@@ -376,8 +411,8 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                     </h2>
                     <p className="text-sm text-gray-600">
                       {editingFieldId
-                        ? "Bearbeite die bestehende Fläche."
-                        : "Vergib zuerst einen Anzeigenamen und den internen Flächennamen."}
+                        ? "Bearbeite die bestehende Fläche. Die FL-Nummer bleibt erhalten."
+                        : "Wähle den Besitzer aus und trage den Flächennamen ein. Die FL-Nummer wird automatisch vergeben."}
                     </p>
                   </div>
 
@@ -395,22 +430,28 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <label className="mt-1 text-sm text-gray-700">
-                      Anzeigename
+                      Besitzer
                     </label>
-                    <input
-                      placeholder="z. B. Meyer Nord"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
+                    <select
+                      value={ownerId}
+                      onChange={(e) => setOwnerId(e.target.value)}
                       className="w-full rounded-xl border px-3 py-2"
-                    />
+                    >
+                      <option value="">Bitte auswählen</option>
+                      {owners.map((owner) => (
+                        <option key={owner.id} value={owner.id}>
+                          {getOwnerLabel(owner)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
                     <label className="mt-1 text-sm text-gray-700">
-                      Flächenname
+                      Flächenname / Landwirt-Bezeichnung
                     </label>
                     <input
-                      placeholder="z. B. Schlag 12"
+                      placeholder="z. B. Schlag 12 / Hinterm Bäcker links"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       className="w-full rounded-xl border px-3 py-2"
@@ -506,8 +547,16 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                       Anzeige
                     </div>
                     <div className="mt-1 text-base font-medium text-gray-900">
-                      {displayName || "-"}
-                      {name ? ` (${name})` : ""}
+                      {editingFieldId
+                        ? displayName || "Noch nicht nummeriert"
+                        : "wird automatisch vergeben"}
+                      {name ? ` · ${name}` : ""}
+                    </div>
+                    <div className="mt-2 text-sm text-gray-700">
+                      Besitzer:{" "}
+                      {owners.find((owner) => owner.id === ownerId)
+                        ? getOwnerLabel(owners.find((owner) => owner.id === ownerId)!)
+                        : "-"}
                     </div>
                   </div>
 
@@ -588,8 +637,8 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
               <div className="mt-1 text-sm text-gray-700">
                 <h2 className="text-lg font-semibold">Hinweis</h2>
                 <p className="mt-2 text-sm text-gray-600">
-                  Der Anzeigename wird später überall zuerst angezeigt, der
-                  Flächenname steht in Klammern dahinter.
+                  Die FL-Nummer wird automatisch als Anzeigename vergeben.
+                  Der Flächenname ist die Bezeichnung des Landwirts oder eure Beschreibung.
                 </p>
               </div>
             </div>
@@ -601,7 +650,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
             <label className="mb-2 block text-sm font-medium">Suche</label>
             <input
               type="text"
-              placeholder="Fläche, Anzeigename, Team, Treffpunkt ..."
+              placeholder="FL-Nummer, Fläche, Besitzer, Team, Treffpunkt ..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-xl border px-3 py-2"
@@ -726,6 +775,9 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                             </div>
                             <div className="mt-1 text-sm text-gray-900">
                               {getFieldLabel(field)}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-700">
+                              Besitzer: {field.owner ? getOwnerLabel(field.owner) : "-"}
                             </div>
                           </div>
 

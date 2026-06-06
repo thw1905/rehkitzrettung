@@ -58,15 +58,15 @@ model Availability {
 }
 
 model OperationDay {
-  id        String             @id @default(cuid())
-  date      DateTime           @unique
-  status    OperationDayStatus @default(PLANUNG)
-  note      String?
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
- meetingTime String?
-  orders    Order[]
-  teams     OperationDayTeam[]
+  id          String             @id @default(cuid())
+  date        DateTime           @unique
+  status      OperationDayStatus @default(PLANUNG)
+  note        String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  meetingTime String?
+  orders      Order[]
+  teams       OperationDayTeam[]
 }
 
 model Owner {
@@ -81,50 +81,52 @@ model Owner {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  fields    Field[]
-  orders    Order[]
+  fields          Field[]
+  orders          Order[]
+  accessTokens    OwnerAccessToken[]
+  mowingRequests  MowingRequest[]
 }
 
 model User {
-  id                       String                   @id @default(cuid())
-  firstName                String
-  lastName                 String
-  street                   String
-  zip                      String
-  city                     String
-  phone                    String
-  email                    String                   @unique
-  passwordHash             String
-  role                     Role                     @default(SUCHER)
-  isAdmin                  Boolean                  @default(false)
-  isApproved               Boolean                  @default(false)
-  DrohneLicense   DrohneLicense   @default(NONE)
-  createdAt                DateTime                 @default(now())
-  updatedAt                DateTime                 @updatedAt
-  webPushSubscriptions     WebPushSubscription[]
-  availabilities           Availability[]
-  operationDayTeamPilots   OperationDayTeam[]       @relation("OperationDayTeamPilot")
-  operationDayTeamMembers  OperationDayTeamMember[]
-pushDevices PushDevice[]
-  homeLatitude   Float?
-homeLongitude  Float?
-autoAssignPriority Int @default(0)
-isPrimaryPilot Boolean @default(false)
-lastSeenAt      DateTime?
-sessionVersion   Int  @default(0)
-notificationAcknowledgements NotificationAcknowledgement[]
-notificationRecipients NotificationRecipient[]
+  id                              String                        @id @default(cuid())
+  firstName                       String
+  lastName                        String
+  street                          String
+  zip                             String
+  city                            String
+  phone                           String
+  email                           String                        @unique
+  passwordHash                    String
+  role                            Role                          @default(SUCHER)
+  isAdmin                         Boolean                       @default(false)
+  isApproved                      Boolean                       @default(false)
+  DrohneLicense                   DrohneLicense                 @default(NONE)
+  createdAt                       DateTime                      @default(now())
+  updatedAt                       DateTime                      @updatedAt
+  webPushSubscriptions            WebPushSubscription[]
+  availabilities                  Availability[]
+  operationDayTeamPilots          OperationDayTeam[]            @relation("OperationDayTeamPilot")
+  operationDayTeamMembers         OperationDayTeamMember[]
+  pushDevices                     PushDevice[]
+  homeLatitude                    Float?
+  homeLongitude                   Float?
+  autoAssignPriority              Int                           @default(0)
+  isPrimaryPilot                  Boolean                       @default(false)
+  lastSeenAt                      DateTime?
+  sessionVersion                  Int                           @default(0)
+  notificationAcknowledgements    NotificationAcknowledgement[]
+  notificationRecipients          NotificationRecipient[]
 }
 
 model NotificationMessage {
-  id        String   @id @default(cuid())
-  title     String
-  body      String
-  url       String?
-  type      String
-  date      DateTime?
-  createdAt DateTime @default(now())
-  recipients NotificationRecipient[]
+  id               String                           @id @default(cuid())
+  title            String
+  body             String
+  url              String?
+  type             String
+  date             DateTime?
+  createdAt        DateTime                         @default(now())
+  recipients       NotificationRecipient[]
   acknowledgements NotificationAcknowledgement[]
 }
 
@@ -135,7 +137,7 @@ model NotificationRecipient {
   createdAt      DateTime @default(now())
 
   notification NotificationMessage @relation(fields: [notificationId], references: [id], onDelete: Cascade)
-  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([notificationId, userId])
 }
@@ -147,21 +149,21 @@ model NotificationAcknowledgement {
   acknowledgedAt DateTime @default(now())
 
   notification NotificationMessage @relation(fields: [notificationId], references: [id], onDelete: Cascade)
-  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([notificationId, userId])
 }
 
 model WebPushSubscription {
-  id        String   @id @default(cuid())
-  userId    String
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  userAgent String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
   lastSeenAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -198,22 +200,22 @@ model Team {
 }
 
 model OperationDayTeam {
-  id             String                   @id @default(cuid())
-  operationDayId String
-  teamId         String
-  pilotId        String?
-  note           String?
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @updatedAt
+  id              String                   @id @default(cuid())
+  operationDayId  String
+  teamId          String
+  pilotId         String?
+  note            String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
   actualStartTime DateTime?
   actualEndTime   DateTime?
 
-  operationDay   OperationDay             @relation(fields: [operationDayId], references: [id], onDelete: Cascade)
-  team           Team                     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  pilot          User?                    @relation("OperationDayTeamPilot", fields: [pilotId], references: [id])
+  operationDay    OperationDay             @relation(fields: [operationDayId], references: [id], onDelete: Cascade)
+  team            Team                     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  pilot           User?                    @relation("OperationDayTeamPilot", fields: [pilotId], references: [id])
 
-  members        OperationDayTeamMember[]
-  orders         Order[]
+  members         OperationDayTeamMember[]
+  orders          Order[]
 
   @@unique([operationDayId, teamId])
 }
@@ -240,12 +242,13 @@ model Field {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  owner       Owner?   @relation(fields: [ownerId], references: [id])
-  orders      Order[]
+  owner                Owner?                @relation(fields: [ownerId], references: [id])
+  orders               Order[]
+  mowingRequestFields  MowingRequestField[]
 
   locationLatitude   Float?
-locationLongitude  Float?
-locationNote       String?
+  locationLongitude  Float?
+  locationNote       String?
 }
 
 model RevierPachter {
@@ -339,7 +342,7 @@ model Order {
   owner                     Owner             @relation(fields: [ownerId], references: [id])
   field                     Field             @relation(fields: [fieldId], references: [id])
   pinpoints                 OrderPinpoint[]
-  isManualTeamAssignment Boolean @default(false)
+  isManualTeamAssignment    Boolean           @default(false)
   reviere                   OrderRevier[]
   sortOrder                 Int               @default(0)
 }
@@ -364,5 +367,47 @@ model OrderPinpoint {
   updatedAt                 DateTime       @updatedAt
 
   order                     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model OwnerAccessToken {
+  id        String   @id @default(cuid())
+  ownerId   String
+  token     String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner     Owner    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+model MowingRequest {
+  id          String   @id @default(cuid())
+  ownerId     String
+  mowingDate  DateTime
+  timeText    String?
+  note        String?
+  status      String   @default("OFFEN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       Owner    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  fields      MowingRequestField[]
+
+  @@index([ownerId])
+  @@index([mowingDate])
+}
+
+model MowingRequestField {
+  id              String @id @default(cuid())
+  mowingRequestId String
+  fieldId         String
+
+  mowingRequest   MowingRequest @relation(fields: [mowingRequestId], references: [id], onDelete: Cascade)
+  field           Field         @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([mowingRequestId, fieldId])
+  @@index([fieldId])
 }
 

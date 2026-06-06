@@ -59,6 +59,8 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
         pathname.startsWith("/helpers") ||
         pathname.startsWith("/fields") ||
         pathname.startsWith("/owners") ||
+        pathname.startsWith("/owner-field-map") ||
+        pathname.startsWith("/admin/mowing-requests") ||
         pathname.startsWith("/reviere") ||
         pathname.startsWith("/revier-paechter")||
         pathname.startsWith("/revier-map") ||
@@ -70,8 +72,8 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
       return (
         pathname.startsWith("/operations") ||
         pathname.startsWith("/dashboard") ||
-        pathname.startsWith("/team-planning") ||
         pathname.startsWith("/day-assignments") ||
+        pathname.startsWith("/team-planning") ||
         pathname.startsWith("/notifications") ||
         pathname.startsWith("/availability/admin") ||
         pathname.startsWith("/team-slots") ||

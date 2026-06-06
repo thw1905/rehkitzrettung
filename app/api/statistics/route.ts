@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { area as turfArea } from "@turf/turf";
 import { requireAdminApi } from "@/lib/admin";
 import { db } from "@/lib/db";
 
@@ -23,6 +24,14 @@ function safeNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function safeAreaSqm(feature: any) {
+  try {
+    return turfArea(feature);
+  } catch {
+    return 0;
+  }
+}
+
 function getPersonName(user?: {
   firstName?: string | null;
   lastName?: string | null;
@@ -32,6 +41,28 @@ function getPersonName(user?: {
   const name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
 
   return name || null;
+}
+
+function getOwnerName(owner?: {
+  firstName?: string | null;
+  lastName?: string | null;
+} | null) {
+  return getPersonName(owner) || "-";
+}
+
+function getFieldLabel(field?: {
+  displayName?: string | null;
+  name?: string | null;
+} | null) {
+  if (!field) return "-";
+
+  const displayName = (field.displayName || "").trim();
+  const name = (field.name || "").trim();
+
+  if (displayName && name) return `${displayName} · ${name}`;
+  if (displayName) return displayName;
+  if (name) return name;
+  return "Unbekannte Fläche";
 }
 
 /**
@@ -108,6 +139,12 @@ function getWildTotal(counts: {
   );
 }
 
+function hasAnyWild(counts: ReturnType<typeof getWildCounts>) {
+  return (
+    getWildTotal(counts) + safeNumber(counts.maulwurfhuegelFehlstelle) > 0
+  );
+}
+
 function getRevierName(revier?: {
   name?: string | null;
   nummer?: string | null;
@@ -142,6 +179,14 @@ function getMainRevierAssignment(order: any) {
 
     return areaB - areaA;
   })[0];
+}
+
+function getOrderAreaSqm(order: any) {
+  const executedAreaSqm = safeNumber(order.executedAreaSqm);
+
+  if (executedAreaSqm > 0) return executedAreaSqm;
+
+  return safeAreaSqm(order.field?.areaGeoJson);
 }
 
 function getOrCreateTeamEntry(
@@ -242,6 +287,10 @@ function getOrCreateDayEntry(
   return created;
 }
 
+function toOptionLabelUser(user: { firstName: string; lastName: string }) {
+  return `${user.firstName} ${user.lastName}`.trim();
+}
+
 export async function GET(req: NextRequest) {
   const authCheck = await requireAdminApi();
 
@@ -256,6 +305,11 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const fromParam = searchParams.get("from");
     const toParam = searchParams.get("to");
+    const ownerId = searchParams.get("ownerId") || "";
+    const revierId = searchParams.get("revierId") || "";
+    const teamId = searchParams.get("teamId") || "";
+    const pilotId = searchParams.get("pilotId") || "";
+    const fundFilter = searchParams.get("fundFilter") || "ALLE";
 
     const today = new Date();
     const defaultFrom = getStartOfDay(today);
@@ -266,119 +320,245 @@ export async function GET(req: NextRequest) {
       ? getEndOfDay(new Date(toParam))
       : defaultToExclusive;
 
-    const [orders, operationDayTeams] = await Promise.all([
-      db.order.findMany({
-        where: {
-          status: "ERLEDIGT",
-          executionDate: {
-            gte: from,
-            lt: toExclusive,
+    const orderWhere: any = {
+      status: "ERLEDIGT",
+      executionDate: {
+        gte: from,
+        lt: toExclusive,
+      },
+    };
+
+    if (ownerId) {
+      orderWhere.ownerId = ownerId;
+    }
+
+    if (revierId) {
+      orderWhere.reviere = {
+        some: {
+          revierId,
+        },
+      };
+    }
+
+    if (teamId || pilotId) {
+      orderWhere.operationDayTeam = {
+        is: {
+          ...(teamId ? { teamId } : {}),
+          ...(pilotId ? { pilotId } : {}),
+        },
+      };
+    }
+
+    const operationDayTeamWhere: any = {
+      operationDay: {
+        date: {
+          gte: from,
+          lt: toExclusive,
+        },
+      },
+      actualStartTime: {
+        not: null,
+      },
+    };
+
+    if (teamId) {
+      operationDayTeamWhere.teamId = teamId;
+    }
+
+    if (pilotId) {
+      operationDayTeamWhere.pilotId = pilotId;
+    }
+
+    const [ordersRaw, operationDayTeams, owners, reviereOptions, teamsOptions, pilotsOptions] =
+      await Promise.all([
+        db.order.findMany({
+          where: orderWhere,
+          orderBy: {
+            executionDate: "asc",
           },
-        },
-        orderBy: {
-          executionDate: "asc",
-        },
-        select: {
-          id: true,
-          orderCode: true,
-          title: true,
-          executionDate: true,
-          executedTeamName: true,
-          executedPilotName: true,
-          executedSearchersText: true,
-          executedAreaSqm: true,
-          startTime: true,
-          endTime: true,
+          select: {
+            id: true,
+            orderCode: true,
+            title: true,
+            executionDate: true,
+            executedTeamName: true,
+            executedPilotName: true,
+            executedSearchersText: true,
+            executedAreaSqm: true,
+            startTime: true,
+            endTime: true,
+            ownerId: true,
 
-          rehkitzeGesichert: true,
-          rehkitzeAbgesprungen: true,
-          sonstigesWildGesichert: true,
-          sonstigesWildAbgesprungen: true,
-          maulwurfhuegelFehlstelle: true,
+            rehkitzeGesichert: true,
+            rehkitzeAbgesprungen: true,
+            sonstigesWildGesichert: true,
+            sonstigesWildAbgesprungen: true,
+            maulwurfhuegelFehlstelle: true,
 
-          pinpoints: {
-            select: {
-              rehkitzeGesichert: true,
-              rehkitzeAbgesprungen: true,
-              sonstigesWildGesichert: true,
-              sonstigesWildAbgesprungen: true,
-              maulwurfhuegelFehlstelle: true,
+            owner: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
             },
-          },
 
-          reviere: {
-            select: {
-              overlapSqm: true,
-              overlapPercent: true,
-              revier: {
-                select: {
-                  id: true,
-                  name: true,
-                  nummer: true,
+            field: {
+              select: {
+                id: true,
+                name: true,
+                displayName: true,
+                areaGeoJson: true,
+              },
+            },
+
+            operationDayTeam: {
+              select: {
+                id: true,
+                teamId: true,
+                pilotId: true,
+                team: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+                pilot: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+
+            pinpoints: {
+              select: {
+                rehkitzeGesichert: true,
+                rehkitzeAbgesprungen: true,
+                sonstigesWildGesichert: true,
+                sonstigesWildAbgesprungen: true,
+                maulwurfhuegelFehlstelle: true,
+              },
+            },
+
+            reviere: {
+              select: {
+                overlapSqm: true,
+                overlapPercent: true,
+                revier: {
+                  select: {
+                    id: true,
+                    name: true,
+                    nummer: true,
+                  },
                 },
               },
             },
           },
-        },
-      }),
+        }),
 
-      db.operationDayTeam.findMany({
-        where: {
-          operationDay: {
-            date: {
-              gte: from,
-              lt: toExclusive,
+        db.operationDayTeam.findMany({
+          where: operationDayTeamWhere,
+          orderBy: [
+            {
+              operationDay: {
+                date: "asc",
+              },
             },
-          },
-          actualStartTime: {
-            not: null,
-          },
-        },
-        orderBy: [
-          {
+            {
+              team: {
+                name: "asc",
+              },
+            },
+          ],
+          include: {
             operationDay: {
-              date: "asc",
-            },
-          },
-          {
-            team: {
-              name: "asc",
-            },
-          },
-        ],
-        include: {
-          operationDay: {
-            select: {
-              date: true,
-            },
-          },
-          team: {
-            select: {
-              name: true,
-            },
-          },
-          pilot: {
-            select: {
-              firstName: true,
-              lastName: true,
-            },
-          },
-          members: {
-            include: {
-              user: {
-                select: {
-                  firstName: true,
-                  lastName: true,
-                },
+              select: {
+                date: true,
               },
             },
-            orderBy: {
-              createdAt: "asc",
+            team: {
+              select: {
+                name: true,
+              },
+            },
+            pilot: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+            members: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
             },
           },
-        },
-      }),
-    ]);
+        }),
+
+        db.owner.findMany({
+          orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        }),
+
+        db.revier.findMany({
+          orderBy: [{ nummer: "asc" }, { name: "asc" }],
+          select: {
+            id: true,
+            name: true,
+            nummer: true,
+          },
+        }),
+
+        db.team.findMany({
+          where: {
+            isActive: true,
+          },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: {
+            id: true,
+            name: true,
+          },
+        }),
+
+        db.user.findMany({
+          where: {
+            role: "PILOT",
+          },
+          orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        }),
+      ]);
+
+    const orders = ordersRaw.filter((order) => {
+      if (fundFilter === "ALLE") return true;
+
+      const counts = getWildCounts(order);
+      const foundSomething = hasAnyWild(counts);
+
+      if (fundFilter === "MIT_FUND") return foundSomething;
+      if (fundFilter === "OHNE_FUND") return !foundSomething;
+
+      return true;
+    });
 
     const totals = {
       totalOrders: 0,
@@ -441,10 +621,15 @@ export async function GET(req: NextRequest) {
       }
     >();
 
+    const rows: any[] = [];
+
     for (const order of orders) {
       const minutes = diffMinutes(order.startTime, order.endTime);
-      const areaSqm = safeNumber(order.executedAreaSqm);
-      const teamName = order.executedTeamName || "Unbekanntes Team";
+      const areaSqm = getOrderAreaSqm(order);
+      const teamName =
+        order.executedTeamName || order.operationDayTeam?.team?.name || "Unbekanntes Team";
+      const pilotName =
+        order.executedPilotName || getPersonName(order.operationDayTeam?.pilot) || null;
       const dateKey = order.executionDate
         ? new Date(order.executionDate).toISOString().slice(0, 10)
         : "ohne-datum";
@@ -462,7 +647,7 @@ export async function GET(req: NextRequest) {
 
       const teamEntry = getOrCreateTeamEntry(teamMap, {
         teamName,
-        pilotName: order.executedPilotName || null,
+        pilotName,
         searchersText: order.executedSearchersText || null,
       });
 
@@ -489,7 +674,7 @@ export async function GET(req: NextRequest) {
       const mainRevierAssignment = getMainRevierAssignment(order);
       const mainRevier = mainRevierAssignment?.revier || null;
 
-      const revierId = mainRevier?.id || "ohne-revier";
+      const revierIdForRow = mainRevier?.id || "ohne-revier";
       const revierName = getRevierName(mainRevier);
 
       /**
@@ -502,8 +687,8 @@ export async function GET(req: NextRequest) {
           ? safeNumber(mainRevierAssignment?.overlapSqm)
           : areaSqm;
 
-      const revierEntry = revierMap.get(revierId) || {
-        revierId,
+      const revierEntry = revierMap.get(revierIdForRow) || {
+        revierId: revierIdForRow,
         revierName,
         orderCount: 0,
         totalAreaSqm: 0,
@@ -522,7 +707,30 @@ export async function GET(req: NextRequest) {
       revierEntry.sonstigesWildAbgesprungen += counts.sonstigesWildAbgesprungen;
       revierEntry.maulwurfhuegelFehlstelle += counts.maulwurfhuegelFehlstelle;
 
-      revierMap.set(revierId, revierEntry);
+      revierMap.set(revierIdForRow, revierEntry);
+
+      const wildGesamt = getWildTotal(counts);
+
+      rows.push({
+        id: order.id,
+        date: dateKey,
+        orderCode: order.orderCode,
+        title: order.title,
+        fieldLabel: getFieldLabel(order.field),
+        ownerName: getOwnerName(order.owner),
+        revierName,
+        teamName,
+        pilotName,
+        areaSqm,
+        areaHa: areaSqm / 10000,
+        minutes,
+        wildGesamt,
+        rehkitzeGesichert: counts.rehkitzeGesichert,
+        rehkitzeAbgesprungen: counts.rehkitzeAbgesprungen,
+        sonstigesWildGesichert: counts.sonstigesWildGesichert,
+        sonstigesWildAbgesprungen: counts.sonstigesWildAbgesprungen,
+        maulwurfhuegelFehlstelle: counts.maulwurfhuegelFehlstelle,
+      });
     }
 
     for (const operationDayTeam of operationDayTeams) {
@@ -628,6 +836,31 @@ export async function GET(req: NextRequest) {
         from: from.toISOString().slice(0, 10),
         to: new Date(toExclusive.getTime() - 1).toISOString().slice(0, 10),
       },
+      filters: {
+        ownerId,
+        revierId,
+        teamId,
+        pilotId,
+        fundFilter,
+      },
+      filterOptions: {
+        owners: owners.map((owner) => ({
+          id: owner.id,
+          label: getOwnerName(owner),
+        })),
+        reviere: reviereOptions.map((revier) => ({
+          id: revier.id,
+          label: getRevierName(revier),
+        })),
+        teams: teamsOptions.map((team) => ({
+          id: team.id,
+          label: team.name,
+        })),
+        pilots: pilotsOptions.map((pilot) => ({
+          id: pilot.id,
+          label: toOptionLabelUser(pilot),
+        })),
+      },
       summary: {
         ...totals,
         totalHa,
@@ -637,6 +870,7 @@ export async function GET(req: NextRequest) {
       teams,
       days,
       reviere,
+      rows,
     });
   } catch (error: any) {
     console.error("Fehler beim Laden der Statistik:", error);

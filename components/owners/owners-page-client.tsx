@@ -23,6 +23,13 @@ type EditableOwner = Owner & {
   editedEmail: string;
 };
 
+type OwnerLinkState = {
+  loading: boolean;
+  url: string | null;
+  error: string | null;
+  copied: boolean;
+};
+
 const emptyForm = {
   firstName: "",
   lastName: "",
@@ -33,6 +40,10 @@ const emptyForm = {
   email: "",
 };
 
+function getOwnerFullName(owner: Pick<Owner, "firstName" | "lastName">) {
+  return `${owner.firstName} ${owner.lastName}`.trim();
+}
+
 export default function OwnersPage() {
   const [owners, setOwners] = useState<EditableOwner[]>([]);
   const [search, setSearch] = useState("");
@@ -41,6 +52,21 @@ export default function OwnersPage() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [openOwnerId, setOpenOwnerId] = useState<string | null>(null);
+  const [ownerLinks, setOwnerLinks] = useState<Record<string, OwnerLinkState>>({});
+
+  function setOwnerLinkState(ownerId: string, changes: Partial<OwnerLinkState>) {
+    setOwnerLinks((prev) => ({
+      ...prev,
+      [ownerId]: {
+        loading: false,
+        url: null,
+        error: null,
+        copied: false,
+        ...(prev[ownerId] || {}),
+        ...changes,
+      },
+    }));
+  }
 
   async function loadOwners() {
     setLoading(true);
@@ -169,9 +195,7 @@ export default function OwnersPage() {
   }
 
   async function deleteOwner(id: string, name: string) {
-    const confirmed = window.confirm(
-      `Möchtest du ${name} wirklich löschen?`
-    );
+    const confirmed = window.confirm(`Möchtest du ${name} wirklich löschen?`);
 
     if (!confirmed) return;
 
@@ -192,6 +216,130 @@ export default function OwnersPage() {
       alert("Ansprechpartner konnte nicht gelöscht werden.");
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function loadOwnerLink(ownerId: string) {
+    setOwnerLinkState(ownerId, {
+      loading: true,
+      error: null,
+      copied: false,
+    });
+
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/access-token`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Landwirt-Link konnte nicht geladen werden.");
+      }
+
+      setOwnerLinkState(ownerId, {
+        loading: false,
+        url: data?.url || null,
+        error: null,
+        copied: false,
+      });
+    } catch (error: any) {
+      setOwnerLinkState(ownerId, {
+        loading: false,
+        error: error?.message || "Landwirt-Link konnte nicht geladen werden.",
+      });
+    }
+  }
+
+  async function createOrLoadOwnerLink(ownerId: string, regenerate = false) {
+    if (regenerate) {
+      const ok = window.confirm(
+        "Soll ein neuer Landwirt-Link erzeugt werden? Der bisherige Link wird deaktiviert."
+      );
+
+      if (!ok) return;
+    }
+
+    setOwnerLinkState(ownerId, {
+      loading: true,
+      error: null,
+      copied: false,
+    });
+
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/access-token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ regenerate }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Landwirt-Link konnte nicht erzeugt werden.");
+      }
+
+      setOwnerLinkState(ownerId, {
+        loading: false,
+        url: data.url || null,
+        error: null,
+        copied: false,
+      });
+    } catch (error: any) {
+      setOwnerLinkState(ownerId, {
+        loading: false,
+        error: error?.message || "Landwirt-Link konnte nicht erzeugt werden.",
+      });
+    }
+  }
+
+  async function deactivateOwnerLink(ownerId: string) {
+    const ok = window.confirm(
+      "Landwirt-Link wirklich deaktivieren? Der Landwirt kann ihn danach nicht mehr nutzen."
+    );
+
+    if (!ok) return;
+
+    setOwnerLinkState(ownerId, {
+      loading: true,
+      error: null,
+      copied: false,
+    });
+
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/access-token`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Landwirt-Link konnte nicht deaktiviert werden.");
+      }
+
+      setOwnerLinkState(ownerId, {
+        loading: false,
+        url: null,
+        error: null,
+        copied: false,
+      });
+    } catch (error: any) {
+      setOwnerLinkState(ownerId, {
+        loading: false,
+        error: error?.message || "Landwirt-Link konnte nicht deaktiviert werden.",
+      });
+    }
+  }
+
+  async function copyOwnerLink(ownerId: string, url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setOwnerLinkState(ownerId, {
+        copied: true,
+      });
+    } catch {
+      window.prompt("Link kopieren:", url);
     }
   }
 
@@ -331,7 +479,7 @@ export default function OwnersPage() {
         ) : (
           <div className="space-y-3 sm:space-y-4">
             {filteredOwners.map((owner) => {
-              const fullName = `${owner.firstName} ${owner.lastName}`;
+              const fullName = getOwnerFullName(owner);
 
               const hasChanges =
                 owner.firstName !== owner.editedFirstName ||
@@ -343,6 +491,7 @@ export default function OwnersPage() {
                 (owner.email || "") !== owner.editedEmail;
 
               const isOpen = openOwnerId === owner.id;
+              const ownerLink = ownerLinks[owner.id];
 
               return (
                 <div
@@ -351,9 +500,14 @@ export default function OwnersPage() {
                 >
                   <button
                     type="button"
-                    onClick={() =>
-                      setOpenOwnerId((prev) => (prev === owner.id ? null : owner.id))
-                    }
+                    onClick={() => {
+                      const nextOpen = openOwnerId === owner.id ? null : owner.id;
+                      setOpenOwnerId(nextOpen);
+
+                      if (nextOpen === owner.id && !ownerLinks[owner.id]) {
+                        loadOwnerLink(owner.id);
+                      }
+                    }}
                     className="flex w-full items-start justify-between gap-3 p-4 text-left sm:items-center sm:p-5"
                   >
                     <div className="min-w-0 flex-1">
@@ -485,6 +639,81 @@ export default function OwnersPage() {
                             className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:text-sm"
                           />
                         </div>
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4">
+                        <div className="text-base font-bold text-green-950">
+                          Landwirt-Link
+                        </div>
+                        <p className="mt-1 text-sm text-green-900">
+                          Dieser Link zeigt nur die Flächen dieses Ansprechpartners und wird später für Mähanfragen genutzt.
+                        </p>
+
+                        {ownerLink?.loading && (
+                          <div className="mt-3 text-sm text-green-900">
+                            Landwirt-Link wird geladen...
+                          </div>
+                        )}
+
+                        {ownerLink?.error && (
+                          <div className="mt-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+                            {ownerLink.error}
+                          </div>
+                        )}
+
+                        {ownerLink?.url ? (
+                          <div className="mt-3 space-y-3">
+                            <input
+                              readOnly
+                              value={ownerLink.url}
+                              className="w-full rounded-xl border border-green-300 bg-white px-3 py-2 text-sm text-gray-900"
+                              onFocus={(event) => event.target.select()}
+                            />
+
+                            {ownerLink.copied && (
+                              <div className="rounded-xl border border-green-300 bg-white px-3 py-2 text-sm font-semibold text-green-900">
+                                Link wurde kopiert.
+                              </div>
+                            )}
+
+                            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => copyOwnerLink(owner.id, ownerLink.url!)}
+                                className="min-h-11 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white"
+                              >
+                                Link kopieren
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => createOrLoadOwnerLink(owner.id, true)}
+                                className="min-h-11 rounded-xl border border-green-400 bg-white px-4 py-2.5 text-sm font-semibold text-green-900"
+                              >
+                                Neuen Link erzeugen
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => deactivateOwnerLink(owner.id)}
+                                className="min-h-11 rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700"
+                              >
+                                Link deaktivieren
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              onClick={() => createOrLoadOwnerLink(owner.id, false)}
+                              className="min-h-11 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                              disabled={ownerLink?.loading}
+                            >
+                              Landwirt-Link erzeugen
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">

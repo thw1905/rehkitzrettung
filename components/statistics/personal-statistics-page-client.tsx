@@ -287,8 +287,8 @@ if (loading) {
           ) : (
             <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[780px] text-left text-sm">
-                    <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <table className="w-full min-w-[780px] text-left text-sm text-gray-900">
+                    <thead className="bg-gray-100 text-xs uppercase tracking-wide text-gray-800">
                     <tr>
                       <th className="px-4 py-3">Datum</th>
                       <th className="px-4 py-3">Auftrag</th>
@@ -300,10 +300,10 @@ if (loading) {
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-gray-200 bg-white">
+                  <tbody className="divide-y divide-gray-200 bg-white text-gray-900">
                     {data.myOrders.map((order) => (
-                      <tr key={order.id}>
-                        <td className="px-4 py-3">
+                      <tr key={order.id} className="bg-white text-gray-900">
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {formatDate(order.executionDate || order.mowingDate)}
                         </td>
 
@@ -311,24 +311,24 @@ if (loading) {
                           {order.orderCode || order.title}
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {order.fieldName}
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {formatNumber(order.areaSqm / 10000, 1)}
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {formatMinutes(order.durationMinutes)}
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {order.rehkitzeGesichert} gesichert /{" "}
                           {order.rehkitzeAbgesprungen} abgesprungen
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-medium text-gray-900">
                           {order.sonstigesWildGesichert} gesichert /{" "}
                           {order.sonstigesWildAbgesprungen} abgesprungen
                         </td>

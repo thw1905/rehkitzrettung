@@ -20,6 +20,40 @@ function normalizeOptionalNumber(value: unknown) {
   return n;
 }
 
+function parseFieldDisplayNameSequence(displayName: string | null) {
+  const match = String(displayName || "")
+    .trim()
+    .match(/^FL-(\d+)$/i);
+
+  if (!match) return null;
+
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+async function getNextFieldDisplayName() {
+  const fields = await db.field.findMany({
+    select: {
+      displayName: true,
+    },
+  });
+
+  let maxSequence = 0;
+
+  for (const field of fields) {
+    const sequence = parseFieldDisplayNameSequence(field.displayName);
+
+    if (sequence !== null && sequence > maxSequence) {
+      maxSequence = sequence;
+    }
+  }
+
+  const nextSequence = maxSequence + 1;
+
+  return `FL-${String(nextSequence).padStart(4, "0")}`;
+}
+
+
 export async function GET() {
   try {
     const currentUser = await getCurrentUserWithTeams();
@@ -195,13 +229,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!body.displayName?.trim()) {
-      return NextResponse.json(
-        { error: "Anzeigename fehlt." },
-        { status: 400 }
-      );
-    }
-
     if (!body.areaGeoJson) {
       return NextResponse.json(
         { error: "Fläche wurde nicht gezeichnet." },
@@ -222,24 +249,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (ownerId) {
-      const ownerExists = await db.owner.findUnique({
-        where: { id: ownerId },
-        select: { id: true },
-      });
-
-      if (!ownerExists) {
-        return NextResponse.json(
-          { error: "Der ausgewählte Ansprechpartner wurde nicht gefunden." },
-          { status: 400 }
-        );
-      }
+    if (!ownerId) {
+      return NextResponse.json(
+        { error: "Besitzer fehlt." },
+        { status: 400 }
+      );
     }
+
+    const ownerExists = await db.owner.findUnique({
+      where: { id: ownerId },
+      select: { id: true },
+    });
+
+    if (!ownerExists) {
+      return NextResponse.json(
+        { error: "Der ausgewählte Besitzer wurde nicht gefunden." },
+        { status: 400 }
+      );
+    }
+
+    const nextDisplayName = await getNextFieldDisplayName();
 
     const field = await db.field.create({
       data: {
         name: body.name.trim(),
-        displayName: body.displayName.trim(),
+        displayName: nextDisplayName,
         notes,
         areaGeoJson: body.areaGeoJson,
         ownerId,
