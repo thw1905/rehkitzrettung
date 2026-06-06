@@ -166,6 +166,7 @@ async function findMatchingReviere(fieldGeoJson: any) {
 
 const orderInclude = {
   owner: true,
+  contactOwner: true,
   field: true,
   operationDay: true,
   operationDayTeam: {
@@ -208,6 +209,13 @@ const orderInclude = {
   },
 };
 
+function normalizeOptionalId(value: unknown) {
+  if (value === undefined || value === null) return null;
+
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+}
+
 export async function GET(req: NextRequest) {
   const currentUser = await getCurrentUserWithTeams();
 
@@ -219,10 +227,12 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const dateParam = searchParams.get("date");
 
-    let dateFilter: {
-      gte: Date;
-      lt: Date;
-    } | undefined = undefined;
+    let dateFilter:
+      | {
+          gte: Date;
+          lt: Date;
+        }
+      | undefined = undefined;
 
     if (dateParam) {
       const selectedDate = parseDateOnlyToUtc(dateParam);
@@ -303,16 +313,49 @@ export async function POST(req: NextRequest) {
 
     if (!body.ownerId) {
       return NextResponse.json(
-        { error: "Ansprechpartner fehlt." },
+        { error: "Besitzer fehlt." },
         { status: 400 }
       );
     }
 
     if (!body.fieldId) {
+      return NextResponse.json({ error: "Fläche fehlt." }, { status: 400 });
+    }
+
+    const owner = await db.owner.findUnique({
+      where: {
+        id: String(body.ownerId),
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!owner) {
       return NextResponse.json(
-        { error: "Fläche fehlt." },
+        { error: "Der ausgewählte Besitzer wurde nicht gefunden." },
         { status: 400 }
       );
+    }
+
+    const contactOwnerId = normalizeOptionalId(body.contactOwnerId);
+
+    if (contactOwnerId) {
+      const contactOwner = await db.owner.findUnique({
+        where: {
+          id: contactOwnerId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!contactOwner) {
+        return NextResponse.json(
+          { error: "Der ausgewählte Ansprechpartner wurde nicht gefunden." },
+          { status: 400 }
+        );
+      }
     }
 
     const field = await db.field.findUnique({
@@ -356,8 +399,9 @@ export async function POST(req: NextRequest) {
         sonstigesWildAbgesprungen: Number(body.sonstigesWildAbgesprungen || 0),
         maulwurfhuegelFehlstelle: Number(body.maulwurfhuegelFehlstelle || 0),
 
-        ownerId: body.ownerId,
-        fieldId: body.fieldId,
+        ownerId: String(body.ownerId),
+        contactOwnerId,
+        fieldId: String(body.fieldId),
         operationDayId: operationDay?.id || null,
         operationDayTeamId: body.operationDayTeamId || null,
 

@@ -218,10 +218,10 @@ export default function OwnerFieldMapPageClient() {
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                Besitzer-Flächenkarte
+                Landwirt-Flächenkarte
               </h1>
               <p className="mt-2 text-sm text-gray-700">
-                Besitzer auswählen, Flächenkarte prüfen und als PDF oder Papierkarte
+                Landwirt auswählen, Flächenkarte prüfen und als PDF oder Papierkarte
                 drucken.
               </p>
               <p className="mt-2 text-sm font-medium text-gray-900">
@@ -242,14 +242,14 @@ export default function OwnerFieldMapPageClient() {
 
         <section className="no-print rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-100 md:p-5">
           <label className="mb-2 block text-sm font-semibold text-gray-900">
-            Besitzer auswählen
+            Landwirt auswählen
           </label>
 
           {loading ? (
-            <div className="text-sm text-gray-700">Besitzer werden geladen...</div>
+            <div className="text-sm text-gray-700">Landwirt werden geladen...</div>
           ) : data.owners.length === 0 ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Noch keine Besitzer vorhanden.
+              Noch keine Landwirt vorhanden.
             </div>
           ) : (
             <select
@@ -257,7 +257,7 @@ export default function OwnerFieldMapPageClient() {
               onChange={(event) => handleSelectOwner(event.target.value)}
               className="w-full max-w-xl rounded-xl border border-gray-300 bg-white px-3 py-3"
             >
-              <option value="">Bitte Besitzer auswählen</option>
+              <option value="">Bitte Landwirt auswählen</option>
               {data.owners.map((owner) => (
                 <option key={owner.id} value={owner.id}>
                   {owner.label}
@@ -272,13 +272,13 @@ export default function OwnerFieldMapPageClient() {
 
         {!data.selectedOwner && !loading && !loadingMap && (
           <section className="rounded-3xl bg-white p-5 text-sm text-gray-700 shadow-sm ring-1 ring-gray-100">
-            Bitte zuerst einen Besitzer auswählen. Danach werden Karte und Flächenliste angezeigt.
+            Bitte zuerst einen Landwirt auswählen. Danach werden Karte und Flächenliste angezeigt.
           </section>
         )}
 
         {loadingMap && (
           <section className="rounded-3xl bg-white p-5 text-sm text-gray-700 shadow-sm ring-1 ring-gray-100">
-            Besitzer-Flächenkarte wird geladen...
+            Landwirt-Flächenkarte wird geladen...
           </section>
         )}
 
@@ -318,7 +318,7 @@ export default function OwnerFieldMapPageClient() {
             <section className="print-card rounded-3xl bg-white p-3 shadow-sm ring-1 ring-gray-100 md:p-4">
               {data.fields.length === 0 ? (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
-                  Für diesen Besitzer sind keine Flächen vorhanden.
+                  Für diesen Landwirt sind keine Flächen vorhanden.
                 </div>
               ) : (
                 <OwnerFieldMapLeaflet fields={data.fields} />
@@ -327,7 +327,7 @@ export default function OwnerFieldMapPageClient() {
 
             <section className="print-card rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-100 md:p-5">
               <h2 className="text-lg font-bold text-gray-900">
-                Flächen des Besitzers
+                Flächen des Landwirts
               </h2>
 
               {data.fields.length === 0 ? (

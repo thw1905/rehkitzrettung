@@ -186,7 +186,7 @@ function buildOrderNote(request: {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -200,6 +200,12 @@ export async function POST(
     }
 
     const { id } = await context.params;
+    const body = await req.json().catch(() => ({}));
+
+    const contactOwnerId =
+      body?.contactOwnerId && String(body.contactOwnerId).trim()
+        ? String(body.contactOwnerId).trim()
+        : null;
 
     const mowingRequest = await db.mowingRequest.findUnique({
       where: {
@@ -238,6 +244,24 @@ export async function POST(
       );
     }
 
+    if (contactOwnerId) {
+      const contactOwner = await db.owner.findUnique({
+        where: {
+          id: contactOwnerId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!contactOwner) {
+        return NextResponse.json(
+          { error: "Der ausgewählte Ansprechpartner wurde nicht gefunden." },
+          { status: 404 }
+        );
+      }
+    }
+
     const existingOrders = await db.order.findMany({
       where: {
         ownerId: mowingRequest.ownerId,
@@ -257,7 +281,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Für mindestens eine Fläche dieser Anfrage existiert bereits ein Auftrag mit demselben Besitzer und Mähdatum.",
+            "Für mindestens eine Fläche dieser Anfrage existiert bereits ein Auftrag mit demselben Landwirt und Mähdatum.",
           existingOrders,
         },
         { status: 409 }
@@ -286,7 +310,8 @@ export async function POST(
 
       for (const requestField of mowingRequest.fields) {
         const { year, sequence, orderCode } = await getNextOrderNumberParts(tx);
-        const matchingReviere = revierMatchesByFieldId.get(requestField.fieldId) || [];
+        const matchingReviere =
+          revierMatchesByFieldId.get(requestField.fieldId) || [];
 
         const order = await tx.order.create({
           data: {
@@ -298,6 +323,7 @@ export async function POST(
             notes: orderNote,
             mowingDate,
             ownerId: mowingRequest.ownerId,
+            contactOwnerId,
             fieldId: requestField.fieldId,
             operationDayId: operationDay.id,
             reviere: {
@@ -310,6 +336,7 @@ export async function POST(
           },
           include: {
             owner: true,
+            contactOwner: true,
             field: true,
             reviere: {
               include: {
@@ -346,7 +373,8 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          error?.message || "Aufträge konnten nicht aus der Mähanfrage erzeugt werden.",
+          error?.message ||
+          "Aufträge konnten nicht aus der Mähanfrage erzeugt werden.",
       },
       { status: 500 }
     );

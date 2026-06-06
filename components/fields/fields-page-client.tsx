@@ -155,7 +155,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
       }
 
       if (!ownersRes.ok) {
-        throw new Error(ownersData?.error || "Besitzer konnten nicht geladen werden.");
+        throw new Error(ownersData?.error || "Landwirt konnten nicht geladen werden.");
       }
 
       setFields(Array.isArray(fieldsData) ? fieldsData : []);
@@ -309,7 +309,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
 
   async function saveField() {
     if (!ownerId) {
-      alert("Bitte einen Besitzer für die Fläche auswählen.");
+      alert("Bitte einen Landwirt für die Fläche auswählen.");
       return;
     }
 
@@ -412,7 +412,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
                     <p className="text-sm text-gray-600">
                       {editingFieldId
                         ? "Bearbeite die bestehende Fläche. Die FL-Nummer bleibt erhalten."
-                        : "Wähle den Besitzer aus und trage den Flächennamen ein. Die FL-Nummer wird automatisch vergeben."}
+                        : "Wähle den Landwirt aus und trage den Flächennamen ein. Die FL-Nummer wird automatisch vergeben."}
                     </p>
                   </div>
 
@@ -650,7 +650,7 @@ export default function FieldsPageClient({ isAdmin }: { isAdmin: boolean }) {
             <label className="mb-2 block text-sm font-medium">Suche</label>
             <input
               type="text"
-              placeholder="FL-Nummer, Fläche, Besitzer, Team, Treffpunkt ..."
+              placeholder="FL-Nummer, Fläche, Landwirt, Team, Treffpunkt ..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-xl border px-3 py-2"

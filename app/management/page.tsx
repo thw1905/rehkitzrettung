@@ -10,7 +10,7 @@ const sections = [
       { href: "/field-order-map", title: "Aufträge per Karte", icon: "🗺️" },
       { href: "/helpers", title: "Helfer", icon: "👥" },
       { href: "/fields", title: "Flächen", icon: "🌾" },
-      { href: "/owners", title: "Ansprechpartner/Landwirt", icon: "☎️" },
+      { href: "/owners", title: "Landwirt", icon: "👨‍🌾" },
       { href: "/owner-field-map", title: "Landwirt-Flächenkarte", icon: "👨‍🌾🗺️"},
       { href: "/admin/mowing-requests", title: "Suchanfragen", icon: "🔍"},
       { href: "/reviere", title: "Reviere", icon: "🐗"},

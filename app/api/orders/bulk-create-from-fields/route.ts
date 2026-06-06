@@ -167,6 +167,11 @@ export async function POST(req: NextRequest) {
       : [];
 
     const ownerId = String(body.ownerId || "").trim();
+    const contactOwnerId =
+      body.contactOwnerId && String(body.contactOwnerId).trim()
+        ? String(body.contactOwnerId).trim()
+        : null;
+
     const mowingDateString = String(body.mowingDate || "").trim();
     const notes = body.notes ? String(body.notes).trim() : null;
 
@@ -179,7 +184,7 @@ export async function POST(req: NextRequest) {
 
     if (!ownerId) {
       return NextResponse.json(
-        { error: "Ansprechpartner fehlt." },
+        { error: "Landwirt fehlt." },
         { status: 400 }
       );
     }
@@ -198,18 +203,34 @@ export async function POST(req: NextRequest) {
 
     if (!owner) {
       return NextResponse.json(
-        { error: "Ansprechpartner wurde nicht gefunden." },
+        { error: "Landwirt wurde nicht gefunden." },
         { status: 404 }
       );
+    }
+
+    if (contactOwnerId) {
+      const contactOwner = await db.owner.findUnique({
+        where: { id: contactOwnerId },
+        select: { id: true },
+      });
+
+      if (!contactOwner) {
+        return NextResponse.json(
+          { error: "Ansprechpartner wurde nicht gefunden." },
+          { status: 404 }
+        );
+      }
     }
 
     const mowingDate = parseDateOnlyToUtc(mowingDateString);
     const operationDay = await getOrCreateOperationDay(mowingDate);
 
+    const uniqueFieldIds = Array.from(new Set(fieldIds));
+
     const fields = await db.field.findMany({
       where: {
         id: {
-          in: fieldIds,
+          in: uniqueFieldIds,
         },
       },
       select: {
@@ -221,7 +242,7 @@ export async function POST(req: NextRequest) {
     });
 
     const foundFieldIds = new Set(fields.map((field) => field.id));
-    const missingFieldIds = fieldIds.filter(
+    const missingFieldIds = uniqueFieldIds.filter(
       (id: string) => !foundFieldIds.has(id)
     );
 
@@ -238,12 +259,16 @@ export async function POST(req: NextRequest) {
           orderCode,
           orderYear: year,
           orderSequence: sequence,
+
           ownerId,
+          contactOwnerId,
           fieldId: field.id,
+
           mowingDate,
           operationDayId: operationDay.id,
           status: "OFFEN",
           notes,
+
           reviere: {
             create: matchingReviere.map((match) => ({
               revierId: match.revierId,
@@ -254,6 +279,7 @@ export async function POST(req: NextRequest) {
         },
         include: {
           owner: true,
+          contactOwner: true,
           field: true,
           reviere: {
             include: {

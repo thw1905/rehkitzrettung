@@ -49,14 +49,6 @@ type ApiResponse = {
   error?: string;
 };
 
-function getTodayDateInputValue() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function formatDate(value: string | Date | null | undefined) {
   if (!value) return "-";
 
@@ -119,6 +111,7 @@ function statusBadgeClass(status: string) {
 
 export default function MowingRequestsAdminPageClient() {
   const [requests, setRequests] = useState<MowingRequest[]>([]);
+  const [owners, setOwners] = useState<Owner[]>([]);
   const [summary, setSummary] = useState<ApiResponse["summary"] | null>(null);
   const [statusFilter, setStatusFilter] = useState<RequestStatus>("OFFEN");
   const [dateFilter, setDateFilter] = useState("");
@@ -127,6 +120,10 @@ export default function MowingRequestsAdminPageClient() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creatingOrdersId, setCreatingOrdersId] = useState<string | null>(null);
   const [openRequestId, setOpenRequestId] = useState<string | null>(null);
+  const [contactIsLandwirtByRequestId, setContactIsLandwirtByRequestId] =
+    useState<Record<string, boolean>>({});
+  const [contactOwnerIdByRequestId, setContactOwnerIdByRequestId] =
+    useState<Record<string, string>>({});
 
   async function loadRequests() {
     setLoading(true);
@@ -142,19 +139,47 @@ export default function MowingRequestsAdminPageClient() {
         params.set("date", dateFilter);
       }
 
-      const res = await fetch(`/api/admin/mowing-requests?${params.toString()}`, {
-        cache: "no-store",
-      });
+      const [requestsRes, ownersRes] = await Promise.all([
+        fetch(`/api/admin/mowing-requests?${params.toString()}`, {
+          cache: "no-store",
+        }),
+        fetch("/api/owners", {
+          cache: "no-store",
+        }),
+      ]);
 
-      const json: ApiResponse = await res.json();
+      const requestsJson: ApiResponse = await requestsRes.json();
+      const ownersJson: Owner[] = await ownersRes.json();
 
-      if (!res.ok) {
-        throw new Error(json?.error || "Mähanfragen konnten nicht geladen werden.");
+      if (!requestsRes.ok) {
+        throw new Error(
+          requestsJson?.error || "Mähanfragen konnten nicht geladen werden."
+        );
       }
 
-      const nextRequests = Array.isArray(json.requests) ? json.requests : [];
+      if (!ownersRes.ok) {
+        throw new Error("Landwirte/Ansprechpartner konnten nicht geladen werden.");
+      }
+
+      const nextRequests = Array.isArray(requestsJson.requests)
+        ? requestsJson.requests
+        : [];
+
       setRequests(nextRequests);
-      setSummary(json.summary || null);
+      setOwners(Array.isArray(ownersJson) ? ownersJson : []);
+      setSummary(requestsJson.summary || null);
+
+      setContactIsLandwirtByRequestId((prev) => {
+        const next = { ...prev };
+
+        for (const request of nextRequests) {
+          if (next[request.id] === undefined) {
+            next[request.id] = true;
+          }
+        }
+
+        return next;
+      });
 
       setOpenRequestId((prev) => {
         if (prev && nextRequests.some((request) => request.id === prev)) {
@@ -207,8 +232,24 @@ export default function MowingRequestsAdminPageClient() {
   }
 
   async function createOrdersFromRequest(request: MowingRequest) {
+    const contactIsLandwirt =
+      contactIsLandwirtByRequestId[request.id] !== false;
+
+    const contactOwnerId = contactIsLandwirt
+      ? ""
+      : (contactOwnerIdByRequestId[request.id] || "").trim();
+
+    if (!contactIsLandwirt && !contactOwnerId) {
+      alert("Bitte einen Ansprechpartner auswählen oder den Haken bei 'Ansprechpartner ist der Landwirt' setzen.");
+      return;
+    }
+
+    const contactOwner = contactOwnerId
+      ? owners.find((owner) => owner.id === contactOwnerId)
+      : null;
+
     const confirmed = window.confirm(
-      `Aus dieser Mähanfrage ${request.fields.length} Auftrag/Aufträge erzeugen?\n\nBesitzer: ${getOwnerName(request.owner)}\nMähdatum: ${formatDate(request.mowingDate)}\nGesamtfläche: ${formatHa(request.totalAreaHa)} ha`
+      `Aus dieser Mähanfrage ${request.fields.length} Auftrag/Aufträge erzeugen?\n\nLandwirt: ${getOwnerName(request.owner)}\nAnsprechpartner: ${contactOwner ? getOwnerName(contactOwner) : getOwnerName(request.owner)}\nMähdatum: ${formatDate(request.mowingDate)}\nGesamtfläche: ${formatHa(request.totalAreaHa)} ha`
     );
 
     if (!confirmed) return;
@@ -216,9 +257,18 @@ export default function MowingRequestsAdminPageClient() {
     setCreatingOrdersId(request.id);
 
     try {
-      const res = await fetch(`/api/admin/mowing-requests/${request.id}/create-orders`, {
-        method: "POST",
-      });
+      const res = await fetch(
+        `/api/admin/mowing-requests/${request.id}/create-orders`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contactOwnerId: contactIsLandwirt ? null : contactOwnerId,
+          }),
+        }
+      );
 
       const json = await res.json();
 
@@ -258,7 +308,9 @@ export default function MowingRequestsAdminPageClient() {
   }, [requests, search]);
 
   const visibleTotalAreaHa = filteredRequests.reduce(
-    (sum, request) => sum + (Number.isFinite(request.totalAreaHa) ? Number(request.totalAreaHa) : 0),
+    (sum, request) =>
+      sum +
+      (Number.isFinite(request.totalAreaHa) ? Number(request.totalAreaHa) : 0),
     0
   );
 
@@ -266,7 +318,7 @@ export default function MowingRequestsAdminPageClient() {
     <main className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="mx-auto max-w-7xl space-y-5">
         <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-100 md:p-6">
-          <h1 className="text-2xl font-bold text-gray-900">Mähanfragen</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Suchanfragen</h1>
           <p className="mt-2 text-sm text-gray-700">
             Hier siehst du die Meldungen der Landwirte und kannst daraus normale Aufträge erzeugen.
           </p>
@@ -325,7 +377,7 @@ export default function MowingRequestsAdminPageClient() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Besitzer, FL-Nummer, Notiz, Telefon ..."
+              placeholder="Landwirt, FL-Nummer, Notiz, Telefon ..."
               className="w-full rounded-xl border border-gray-300 px-3 py-3"
             />
           </div>
@@ -343,11 +395,11 @@ export default function MowingRequestsAdminPageClient() {
 
         {loading ? (
           <section className="rounded-3xl bg-white p-6 text-sm text-gray-700 shadow-sm ring-1 ring-gray-100">
-            Mähanfragen werden geladen...
+            Suchanfragen werden geladen...
           </section>
         ) : filteredRequests.length === 0 ? (
           <section className="rounded-3xl bg-white p-6 text-sm text-gray-700 shadow-sm ring-1 ring-gray-100">
-            Keine Mähanfragen gefunden.
+            Keine Suchanfragen gefunden.
           </section>
         ) : (
           <section className="space-y-3">
@@ -355,6 +407,9 @@ export default function MowingRequestsAdminPageClient() {
               const isOpen = openRequestId === request.id;
               const isCreatingOrders = creatingOrdersId === request.id;
               const canCreateOrders = request.status !== "ERLEDIGT" && request.fields.length > 0;
+              const contactIsLandwirt =
+                contactIsLandwirtByRequestId[request.id] !== false;
+              const selectedContactOwnerId = contactOwnerIdByRequestId[request.id] || "";
 
               return (
                 <article key={request.id} className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-100">
@@ -386,7 +441,7 @@ export default function MowingRequestsAdminPageClient() {
 
                   {isOpen && (
                     <div className="border-t border-gray-100 p-4 md:p-5">
-                      <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+                      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
                         <div className="space-y-4">
                           {request.note ? (
                             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
@@ -424,9 +479,61 @@ export default function MowingRequestsAdminPageClient() {
 
                         <div className="space-y-3">
                           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-800">
-                            <div className="font-bold text-gray-900">Kontakt</div>
-                            <div className="mt-2">Telefon: {request.owner.phone || "-"}</div>
+                            <div className="font-bold text-gray-900">Landwirt</div>
+                            <div className="mt-2">{getOwnerName(request.owner)}</div>
+                            <div>Telefon: {request.owner.phone || "-"}</div>
                             <div>E-Mail: {request.owner.email || "-"}</div>
+                          </div>
+
+                          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                            <label className="flex items-start gap-2 text-sm font-semibold text-blue-950">
+                              <input
+                                type="checkbox"
+                                checked={contactIsLandwirt}
+                                onChange={(event) => {
+                                  const checked = event.target.checked;
+
+                                  setContactIsLandwirtByRequestId((prev) => ({
+                                    ...prev,
+                                    [request.id]: checked,
+                                  }));
+
+                                  if (checked) {
+                                    setContactOwnerIdByRequestId((prev) => ({
+                                      ...prev,
+                                      [request.id]: "",
+                                    }));
+                                  }
+                                }}
+                                className="mt-1"
+                              />
+                              <span>Ansprechpartner ist der Landwirt</span>
+                            </label>
+
+                            {!contactIsLandwirt && (
+                              <div className="mt-3">
+                                <label className="mb-2 block text-sm font-semibold text-gray-900">
+                                  Ansprechpartner auswählen
+                                </label>
+                                <select
+                                  value={selectedContactOwnerId}
+                                  onChange={(event) =>
+                                    setContactOwnerIdByRequestId((prev) => ({
+                                      ...prev,
+                                      [request.id]: event.target.value,
+                                    }))
+                                  }
+                                  className="w-full rounded-xl border border-blue-300 bg-white px-3 py-3 text-sm"
+                                >
+                                  <option value="">Bitte auswählen</option>
+                                  {owners.map((owner) => (
+                                    <option key={owner.id} value={owner.id}>
+                                      {getOwnerName(owner)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                           </div>
 
                           <div>

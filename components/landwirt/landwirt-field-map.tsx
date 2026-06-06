@@ -51,6 +51,10 @@ function getFieldLabel(field: Pick<FieldItem, "displayName" | "name">) {
   return "Unbekannte Fläche";
 }
 
+function getShortFieldLabel(field: Pick<FieldItem, "displayName" | "name">) {
+  return (field.displayName || field.name || "Fläche").trim();
+}
+
 function formatHa(value: number) {
   return new Intl.NumberFormat("de-DE", {
     minimumFractionDigits: 2,
@@ -111,7 +115,7 @@ function getCenterFromRings(rings: [number, number][][]): [number, number] | nul
   return [center.lat, center.lng];
 }
 
-function createFieldLabelIcon(label: string, selected: boolean) {
+function createSelectedFieldLabelIcon(label: string) {
   const safeLabel = label.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   return L.divIcon({
@@ -121,9 +125,9 @@ function createFieldLabelIcon(label: string, selected: boolean) {
         min-width: 72px;
         max-width: 130px;
         border-radius: 9999px;
-        background: ${selected ? "rgba(22,163,74,0.96)" : "rgba(255,255,255,0.94)"};
-        border: 2px solid ${selected ? "#ffffff" : "rgba(249,115,22,0.9)"};
-        color: ${selected ? "#ffffff" : "#7c2d12"};
+        background: rgba(22,163,74,0.96);
+        border: 2px solid #ffffff;
+        color: #ffffff;
         box-shadow: 0 2px 8px rgba(0,0,0,0.35);
         padding: 5px 9px;
         font-size: 13px;
@@ -141,7 +145,13 @@ function createFieldLabelIcon(label: string, selected: boolean) {
   });
 }
 
-function FitMapToData({ fieldPolygons, fields }: { fieldPolygons: PreparedPolygon[]; fields: FieldItem[] }) {
+function FitMapToData({
+  fieldPolygons,
+  fields,
+}: {
+  fieldPolygons: PreparedPolygon[];
+  fields: FieldItem[];
+}) {
   const map = useMap();
 
   useEffect(() => {
@@ -172,8 +182,15 @@ function FitMapToData({ fieldPolygons, fields }: { fieldPolygons: PreparedPolygo
   return null;
 }
 
-export default function LandwirtFieldMap({ fields, selectedFieldIds, onToggleField }: Props) {
-  const selectedSet = useMemo(() => new Set(selectedFieldIds), [selectedFieldIds]);
+export default function LandwirtFieldMap({
+  fields,
+  selectedFieldIds,
+  onToggleField,
+}: Props) {
+  const selectedSet = useMemo(
+    () => new Set(selectedFieldIds),
+    [selectedFieldIds]
+  );
 
   const fieldPolygons = useMemo(
     () =>
@@ -188,7 +205,9 @@ export default function LandwirtFieldMap({ fields, selectedFieldIds, onToggleFie
   );
 
   const defaultCenter: [number, number] =
-    fieldPolygons[0] ? getCenterFromRings(fieldPolygons[0].rings) || [53.36, 9.99] : [53.36, 9.99];
+    fieldPolygons[0]
+      ? getCenterFromRings(fieldPolygons[0].rings) || [53.36, 9.99]
+      : [53.36, 9.99];
 
   const mapKey = `landwirt-map-${fields.length}`;
 
@@ -237,7 +256,7 @@ export default function LandwirtFieldMap({ fields, selectedFieldIds, onToggleFie
                   color: selected ? "#16a34a" : "#f97316",
                   weight: selected ? 5 : 3,
                   fillColor: selected ? "#22c55e" : "#fb923c",
-                  fillOpacity: selected ? 0.38 : 0.22,
+                  fillOpacity: selected ? 0.38 : 0.18,
                 }}
                 eventHandlers={{
                   click: () => onToggleField(field.id),
@@ -246,9 +265,18 @@ export default function LandwirtFieldMap({ fields, selectedFieldIds, onToggleFie
                 <Popup>
                   <div className="text-sm">
                     <div className="font-bold">{getFieldLabel(field)}</div>
-                    <div className="mt-1">Fläche: {formatHa(field.areaHa)} ha</div>
+                    <div className="mt-1">
+                      Fläche: {formatHa(field.areaHa)} ha
+                    </div>
                     {field.locationNote ? (
-                      <div className="mt-1">Treffpunkt: {field.locationNote}</div>
+                      <div className="mt-1">
+                        Treffpunkt: {field.locationNote}
+                      </div>
+                    ) : null}
+                    {field.notes ? (
+                      <div className="mt-1 text-gray-700">
+                        Notiz: {field.notes}
+                      </div>
                     ) : null}
                     <button
                       type="button"
@@ -262,10 +290,10 @@ export default function LandwirtFieldMap({ fields, selectedFieldIds, onToggleFie
               </Polygon>
             ))}
 
-            {center ? (
+            {selected && center ? (
               <Marker
                 position={center}
-                icon={createFieldLabelIcon(field.displayName || field.name || "Fläche", selected)}
+                icon={createSelectedFieldLabelIcon(getShortFieldLabel(field))}
                 eventHandlers={{
                   click: () => onToggleField(field.id),
                 }}
@@ -300,7 +328,9 @@ export default function LandwirtFieldMap({ fields, selectedFieldIds, onToggleFie
                 <div className="font-bold">Treffpunkt</div>
                 <div>{getFieldLabel(field)}</div>
                 {field.locationNote ? (
-                  <div className="mt-1 text-gray-700">{field.locationNote}</div>
+                  <div className="mt-1 text-gray-700">
+                    {field.locationNote}
+                  </div>
                 ) : null}
               </div>
             </Popup>

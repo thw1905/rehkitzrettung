@@ -47,6 +47,7 @@ type CreatedOrder = {
   mowingDate?: string | null;
   notes?: string | null;
   owner?: Owner | null;
+  contactOwner?: Owner | null;
   field?: FieldItem | null;
 };
 
@@ -77,6 +78,8 @@ export default function FieldOrderMapClient() {
   const [owners, setOwners] = useState<Owner[]>([]);
   const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   const [ownerId, setOwnerId] = useState("");
+  const [contactIsLandwirt, setContactIsLandwirt] = useState(true);
+  const [contactOwnerId, setContactOwnerId] = useState("");
   const [mowingDate, setMowingDate] = useState(getTodayDateInputValue());
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
@@ -102,6 +105,7 @@ export default function FieldOrderMapClient() {
         order.field?.displayName || "",
         order.field?.name || "",
         order.owner ? getOwnerLabel(order.owner) : "",
+        order.contactOwner ? getOwnerLabel(order.contactOwner) : "",
         order.notes || "",
       ]
         .join(" ")
@@ -172,7 +176,12 @@ export default function FieldOrderMapClient() {
     }
 
     if (!ownerId) {
-      alert("Bitte einen Ansprechpartner auswählen.");
+      alert("Bitte einen Landwirt auswählen.");
+      return;
+    }
+
+    if (!contactIsLandwirt && !contactOwnerId) {
+      alert("Bitte einen Ansprechpartner auswählen oder das Kontrollkästchen aktivieren.");
       return;
     }
 
@@ -200,6 +209,7 @@ export default function FieldOrderMapClient() {
         body: JSON.stringify({
           fieldIds: selectedFieldIds,
           ownerId,
+          contactOwnerId: contactIsLandwirt ? null : contactOwnerId,
           mowingDate,
           notes,
         }),
@@ -237,7 +247,7 @@ export default function FieldOrderMapClient() {
 
           <p className="mt-2 text-sm text-gray-600">
             Wähle mehrere Flächen auf der Karte aus und erstelle daraus automatisch Aufträge.
-            Der Ansprechpartner wird nur für die neuen Aufträge gespeichert.
+            Der Landwirt und ein optional abweichender Ansprechpartner werden für die neuen Aufträge gespeichert.
           </p>
         </section>
 
@@ -274,7 +284,7 @@ export default function FieldOrderMapClient() {
             <div className="mt-4 space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-semibold text-gray-900">
-                  Ansprechpartner
+                  Landwirt
                 </label>
 
                 <select
@@ -289,6 +299,44 @@ export default function FieldOrderMapClient() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                <label className="flex items-start gap-3 text-sm font-semibold text-gray-900">
+                  <input
+                    type="checkbox"
+                    checked={contactIsLandwirt}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setContactIsLandwirt(checked);
+                      if (checked) {
+                        setContactOwnerId("");
+                      }
+                    }}
+                    className="mt-1"
+                  />
+                  <span>Ansprechpartner ist der Landwirt</span>
+                </label>
+
+                {!contactIsLandwirt && (
+                  <div className="mt-3">
+                    <label className="mb-2 block text-sm font-semibold text-gray-900">
+                      Ansprechpartner auswählen
+                    </label>
+                    <select
+                      value={contactOwnerId}
+                      onChange={(e) => setContactOwnerId(e.target.value)}
+                      className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3"
+                    >
+                      <option value="">Bitte auswählen</option>
+                      {owners.map((owner) => (
+                        <option key={owner.id} value={owner.id}>
+                          {getOwnerLabel(owner)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -389,7 +437,7 @@ export default function FieldOrderMapClient() {
                     type="text"
                     value={createdOrdersSearch}
                     onChange={(event) => setCreatedOrdersSearch(event.target.value)}
-                    placeholder="Auftragsnummer, Fläche, Ansprechpartner..."
+                    placeholder="Auftragsnummer, Fläche, Landwirt, Ansprechpartner..."
                     className="w-full rounded-xl border border-green-300 bg-white px-3 py-2 text-sm text-gray-900"
                   />
                 </div>
@@ -414,8 +462,15 @@ export default function FieldOrderMapClient() {
                               Fläche: {order.field ? getFieldLabel(order.field) : "-"}
                             </div>
                             <div className="mt-1 text-gray-700">
+                              Landwirt: {order.owner ? getOwnerLabel(order.owner) : "-"}
+                            </div>
+                            <div className="mt-1 text-gray-700">
                               Ansprechpartner:{" "}
-                              {order.owner ? getOwnerLabel(order.owner) : "-"}
+                              {order.contactOwner
+                                ? getOwnerLabel(order.contactOwner)
+                                : order.owner
+                                  ? getOwnerLabel(order.owner)
+                                  : "-"}
                             </div>
                             {order.notes ? (
                               <div className="mt-1 text-xs text-gray-600">

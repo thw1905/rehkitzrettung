@@ -83,6 +83,7 @@ model Owner {
 
   fields          Field[]
   orders          Order[]
+  contactOrders   Order[] @relation("OrderContactOwner")
   accessTokens    OwnerAccessToken[]
   mowingRequests  MowingRequest[]
 }
@@ -333,6 +334,7 @@ model Order {
   sonstigesWildAbgesprungen Int               @default(0)
   maulwurfhuegelFehlstelle  Int               @default(0)
   ownerId                   String
+  contactOwnerId            String?
   fieldId                   String
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
@@ -340,6 +342,7 @@ model Order {
   operationDay              OperationDay?     @relation(fields: [operationDayId], references: [id])
   operationDayTeam          OperationDayTeam? @relation(fields: [operationDayTeamId], references: [id])
   owner                     Owner             @relation(fields: [ownerId], references: [id])
+  contactOwner              Owner?            @relation("OrderContactOwner", fields: [contactOwnerId], references: [id])
   field                     Field             @relation(fields: [fieldId], references: [id])
   pinpoints                 OrderPinpoint[]
   isManualTeamAssignment    Boolean           @default(false)

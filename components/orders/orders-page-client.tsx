@@ -55,6 +55,7 @@ type Order = {
   title: string;
   orderCode?: string | null;
   ownerId: string;
+  contactOwnerId?: string | null;
   fieldId: string;
   teamId: string | null;
   mowingDate: string | null;
@@ -63,6 +64,7 @@ type Order = {
   startTime: string | null;
   endTime: string | null;
   owner: Owner;
+  contactOwner?: Owner | null;
   field: Field;
   team: Team | null;
   reviere?: OrderRevier[];
@@ -71,6 +73,7 @@ type Order = {
 
 type EditableOrder = Order & {
   editedOwnerId: string;
+  editedContactOwnerId: string;
   editedFieldId: string;
   editedTeamId: string;
   editedMowingDate: string;
@@ -80,6 +83,8 @@ type EditableOrder = Order & {
 
 const emptyForm = {
   ownerId: "",
+  contactIsLandwirt: true,
+  contactOwnerId: "",
   fieldId: "",
   mowingDate: "",
   notes: "",
@@ -329,6 +334,7 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
       const preparedOrders: EditableOrder[] = ordersData.map((order) => ({
         ...order,
         editedOwnerId: order.ownerId,
+        editedContactOwnerId: order.contactOwnerId || "",
         editedFieldId: order.fieldId,
         editedTeamId: order.teamId || "",
         editedMowingDate: order.mowingDate
@@ -390,6 +396,7 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
       Pick<
         EditableOrder,
         | "editedOwnerId"
+        | "editedContactOwnerId"
         | "editedFieldId"
         | "editedTeamId"
         | "editedMowingDate"
@@ -412,12 +419,17 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
 
   async function createOrder() {
     if (!form.ownerId) {
-      alert("Bitte einen Ansprechpartner auswählen.");
+      alert("Bitte einen Landwirt auswählen.");
       return;
     }
 
     if (!form.fieldId) {
       alert("Bitte eine Fläche auswählen.");
+      return;
+    }
+
+    if (!form.contactIsLandwirt && !form.contactOwnerId) {
+      alert("Bitte einen Ansprechpartner auswählen oder das Kontrollkästchen aktivieren.");
       return;
     }
 
@@ -430,9 +442,12 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...form,
-          
+          ownerId: form.ownerId,
+          contactOwnerId: form.contactIsLandwirt ? null : form.contactOwnerId,
+          fieldId: form.fieldId,
           mowingDate: form.mowingDate || null,
+          notes: form.notes,
+          status: form.status,
         }),
       });
 
@@ -462,6 +477,7 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ownerId: order.editedOwnerId,
+          contactOwnerId: order.editedContactOwnerId || null,
           fieldId: order.editedFieldId,
           
           mowingDate: order.editedMowingDate || null,
@@ -542,6 +558,8 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
         getOrderLabel(order),
         order.owner?.firstName,
         order.owner?.lastName,
+        order.contactOwner?.firstName || "",
+        order.contactOwner?.lastName || "",
         order.field?.name,
         order.field?.displayName || "",
         order.team?.name || "",
@@ -600,13 +618,57 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
                 }
                 className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:text-sm"
               >
-                <option value="">Ansprechpartner auswählen</option>
+                <option value="">Landwirt auswählen</option>
                 {owners.map((owner) => (
                   <option key={owner.id} value={owner.id}>
                     {owner.lastName}, {owner.firstName}
                   </option>
                 ))}
               </select>
+
+              <div className="rounded-xl border bg-white p-3 md:col-span-2">
+                <label className="flex items-start gap-3 text-sm font-semibold text-gray-900">
+                  <input
+                    type="checkbox"
+                    checked={form.contactIsLandwirt}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setForm((prev) => ({
+                        ...prev,
+                        contactIsLandwirt: checked,
+                        contactOwnerId: checked ? "" : prev.contactOwnerId,
+                      }));
+                    }}
+                    className="mt-1"
+                  />
+                  <span>Ansprechpartner ist der Landwirt</span>
+                </label>
+
+                {!form.contactIsLandwirt && (
+                  <div className="mt-3">
+                    <label className="mb-2 block text-sm font-semibold text-gray-900">
+                      Ansprechpartner auswählen
+                    </label>
+                    <select
+                      value={form.contactOwnerId}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          contactOwnerId: e.target.value,
+                        }))
+                      }
+                      className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:text-sm"
+                    >
+                      <option value="">Bitte auswählen</option>
+                      {owners.map((owner) => (
+                        <option key={owner.id} value={owner.id}>
+                          {owner.lastName}, {owner.firstName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
 
               <select
                 value={form.fieldId}
@@ -680,7 +742,7 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
               <label className="mb-2 block text-sm font-medium">Suche</label>
               <input
                 type="text"
-                placeholder="Nummer, Ansprechpartner, Fläche, Team, Revier, Pächter, Status ..."
+                placeholder="Nummer, Landwirt, Ansprechpartner, Fläche, Team, Revier, Pächter, Status ..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:text-sm"
@@ -730,6 +792,7 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
 
               const hasChanges =
                 order.ownerId !== order.editedOwnerId ||
+                (order.contactOwnerId || "") !== order.editedContactOwnerId ||
                 order.fieldId !== order.editedFieldId ||
                 (order.teamId || "") !== order.editedTeamId ||
                 (order.mowingDate
@@ -829,13 +892,73 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
                             }
                             className="min-h-11 w-full rounded-xl border px-3 py-2.5 text-base md:text-sm"
                           >
-                            <option value="">Ansprechpartner auswählen</option>
+                            <option value="">Landwirt auswählen</option>
                             {owners.map((owner) => (
                               <option key={owner.id} value={owner.id}>
                                 {owner.lastName}, {owner.firstName}
                               </option>
                             ))}
                           </select>
+
+                          <div className="rounded-xl border bg-gray-50 p-3">
+                            <label className="flex items-start gap-3 text-sm font-semibold text-gray-900">
+                              <input
+                                type="checkbox"
+                                checked={!order.editedContactOwnerId}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    updateLocalOrder(order.id, {
+                                      editedContactOwnerId: "",
+                                    });
+                                  }
+                                }}
+                                className="mt-1"
+                              />
+                              <span>Ansprechpartner ist der Landwirt</span>
+                            </label>
+
+                            {order.editedContactOwnerId ? null : (
+                              <div className="mt-2 text-xs text-gray-500">
+                                Es wird der Landwirt als Ansprechpartner verwendet.
+                              </div>
+                            )}
+
+                            {order.editedContactOwnerId || order.contactOwnerId ? (
+                              <div className="mt-3">
+                                <label className="mb-2 block text-sm font-semibold text-gray-900">
+                                  Ansprechpartner auswählen
+                                </label>
+                                <select
+                                  value={order.editedContactOwnerId}
+                                  onChange={(e) =>
+                                    updateLocalOrder(order.id, {
+                                      editedContactOwnerId: e.target.value,
+                                    })
+                                  }
+                                  className="min-h-11 w-full rounded-xl border bg-white px-3 py-2.5 text-base md:text-sm"
+                                >
+                                  <option value="">Landwirt verwenden</option>
+                                  {owners.map((owner) => (
+                                    <option key={owner.id} value={owner.id}>
+                                      {owner.lastName}, {owner.firstName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateLocalOrder(order.id, {
+                                    editedContactOwnerId: owners[0]?.id || "",
+                                  })
+                                }
+                                className="mt-3 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                              >
+                                Anderen Ansprechpartner auswählen
+                              </button>
+                            )}
+                          </div>
 
                           <select
                             value={order.editedFieldId}
@@ -901,8 +1024,13 @@ export default function OrdersPageClient({ isAdmin }: { isAdmin: boolean }) {
 
                       <div className="mt-4 rounded-xl border bg-gray-50 p-3 text-sm text-gray-600">
                         <div>
-                          Ansprechpartner: {order.owner.firstName}{" "}
-                          {order.owner.lastName}
+                          Landwirt: {order.owner.firstName} {order.owner.lastName}
+                        </div>
+                        <div>
+                          Ansprechpartner:{" "}
+                          {order.contactOwner
+                            ? `${order.contactOwner.firstName} ${order.contactOwner.lastName}`.trim()
+                            : `${order.owner.firstName} ${order.owner.lastName}`.trim()}
                         </div>
                         <div>Fläche: {getFieldLabel(order.field)}</div>
                         <div>

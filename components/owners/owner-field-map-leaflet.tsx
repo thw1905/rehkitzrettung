@@ -4,7 +4,6 @@ import { useEffect, useMemo } from "react";
 import {
   CircleMarker,
   MapContainer,
-  Marker,
   Polygon,
   Popup,
   TileLayer,
@@ -111,34 +110,6 @@ function getCenterFromRings(rings: [number, number][][]): [number, number] | nul
 
   const center = bounds.getCenter();
   return [center.lat, center.lng];
-}
-
-function createFieldCodeIcon(code: string) {
-  const safeCode = code.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-  return L.divIcon({
-    className: "owner-field-code-icon",
-    html: `
-      <div style="
-        min-width: 72px;
-        border-radius: 9999px;
-        background: rgba(255,255,255,0.95);
-        border: 2px solid rgba(249,115,22,0.95);
-        color: #7c2d12;
-        box-shadow: 0 3px 9px rgba(0,0,0,0.35);
-        padding: 5px 10px;
-        font-size: 14px;
-        font-weight: 900;
-        line-height: 1;
-        text-align: center;
-        white-space: nowrap;
-      ">
-        ${safeCode}
-      </div>
-    `,
-    iconSize: [88, 28],
-    iconAnchor: [44, 14],
-  });
 }
 
 function buildBounds(fields: FieldItem[], preparedFields: PreparedField[]) {
@@ -254,6 +225,7 @@ export default function OwnerFieldMapLeaflet({ fields }: Props) {
           maxZoom={20}
           pane="overlayPane"
         />
+
         <TileLayer
           url="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
           attribution="Labels © Esri"
@@ -266,8 +238,6 @@ export default function OwnerFieldMapLeaflet({ fields }: Props) {
         {preparedFields.map((preparedField) => {
           const field = fields.find((item) => item.id === preparedField.id);
           if (!field) return null;
-
-          const center = getCenterFromRings(preparedField.rings);
 
           return (
             <div key={preparedField.id}>
@@ -285,7 +255,14 @@ export default function OwnerFieldMapLeaflet({ fields }: Props) {
                   <Popup>
                     <div className="text-sm">
                       <div className="font-bold">{preparedField.label}</div>
-                      <div className="mt-1">Fläche: {formatHa(field.areaHa)} ha</div>
+                      <div className="mt-1">
+                        Fläche: {formatHa(field.areaHa)} ha
+                      </div>
+                      {field.locationNote ? (
+                        <div className="mt-1">
+                          Treffpunkt: {field.locationNote}
+                        </div>
+                      ) : null}
                       {field.notes ? (
                         <div className="mt-1 text-gray-700">{field.notes}</div>
                       ) : null}
@@ -293,14 +270,6 @@ export default function OwnerFieldMapLeaflet({ fields }: Props) {
                   </Popup>
                 </Polygon>
               ))}
-
-              {center ? (
-                <Marker
-                  position={center}
-                  icon={createFieldCodeIcon(preparedField.code)}
-                  interactive={false}
-                />
-              ) : null}
             </div>
           );
         })}
@@ -330,7 +299,9 @@ export default function OwnerFieldMapLeaflet({ fields }: Props) {
                   <div className="font-bold">Treffpunkt</div>
                   <div>{getFieldLabel(field)}</div>
                   {field.locationNote ? (
-                    <div className="mt-1 text-gray-700">{field.locationNote}</div>
+                    <div className="mt-1 text-gray-700">
+                      {field.locationNote}
+                    </div>
                   ) : null}
                 </div>
               </Popup>

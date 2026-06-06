@@ -98,8 +98,8 @@ export default function OwnersPage() {
         return preparedOwners[0]?.id || null;
       });
     } catch (error) {
-      console.error("Fehler beim Laden der Ansprechpartner:", error);
-      alert("Ansprechpartner konnten nicht geladen werden.");
+      console.error("Fehler beim Laden der Landwirte:", error);
+      alert("Landwirte konnten nicht geladen werden.");
     } finally {
       setLoading(false);
     }
@@ -159,10 +159,10 @@ export default function OwnersPage() {
 
       setForm(emptyForm);
       await loadOwners();
-      alert("Ansprechpartner angelegt");
+      alert("Landwirt angelegt");
     } catch (error) {
       console.error("Fehler beim Anlegen:", error);
-      alert("Ansprechpartner konnte nicht angelegt werden.");
+      alert("Landwirt konnte nicht angelegt werden.");
     } finally {
       setCreating(false);
     }
@@ -193,7 +193,7 @@ export default function OwnersPage() {
       await loadOwners();
     } catch (error) {
       console.error("Fehler beim Speichern:", error);
-      alert("Ansprechpartner konnte nicht gespeichert werden.");
+      alert("Landwirt konnte nicht gespeichert werden.");
     } finally {
       setSavingId(null);
     }
@@ -218,7 +218,7 @@ export default function OwnersPage() {
       await loadOwners();
     } catch (error) {
       console.error("Fehler beim Löschen:", error);
-      alert("Ansprechpartner konnte nicht gelöscht werden.");
+      alert("Landwirt konnte nicht gelöscht werden.");
     } finally {
       setSavingId(null);
     }
@@ -375,20 +375,20 @@ export default function OwnersPage() {
       <div className="mx-auto max-w-6xl space-y-4 sm:space-y-5 md:space-y-6">
         <div className="rounded-2xl border-2 border-slate-900 bg-slate-900 p-4 shadow sm:p-5 md:p-6">
           <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-            Ansprechpartnerverwaltung
+            Landwirtverwaltung
           </h1>
           <p className="mt-2 text-sm text-slate-100 sm:text-base">
-            Ansprechpartner anlegen, bearbeiten und löschen.
+            Landwirt anlegen, bearbeiten und löschen.
           </p>
         </div>
 
         <div className="space-y-4 rounded-2xl border-2 border-blue-800 bg-blue-50 p-4 shadow sm:p-5 md:p-6">
           <div className="rounded-xl bg-blue-800 px-4 py-3">
             <h2 className="text-lg font-extrabold text-white sm:text-xl">
-              Neuen Ansprechpartner anlegen
+              Neuen Landwirt anlegen
             </h2>
             <p className="mt-1 text-sm text-blue-100 sm:text-base">
-              Stammdaten für Ansprechpartner erfassen.
+              Stammdaten für Landwirte erfassen.
             </p>
           </div>
 
@@ -457,7 +457,7 @@ export default function OwnersPage() {
               className="min-h-11 rounded-xl bg-black px-4 py-2.5 text-white disabled:opacity-50"
               disabled={creating}
             >
-              {creating ? "Speichert..." : "Ansprechpartner anlegen"}
+              {creating ? "Speichert..." : "Landwirt anlegen"}
             </button>
           </div>
         </div>
@@ -475,11 +475,11 @@ export default function OwnersPage() {
 
         {loading ? (
           <div className="rounded-2xl bg-white p-5 shadow sm:p-6">
-            Ansprechpartner werden geladen...
+            Landwirte werden geladen...
           </div>
         ) : filteredOwners.length === 0 ? (
           <div className="rounded-2xl bg-white p-5 shadow sm:p-6">
-            Keine Ansprechpartner gefunden.
+            Keine Landwirte gefunden.
           </div>
         ) : (
           <div className="space-y-3 sm:space-y-4">
@@ -651,7 +651,7 @@ export default function OwnersPage() {
                           Landwirt-Link
                         </div>
                         <p className="mt-1 text-sm text-green-900">
-                          Dieser Link zeigt nur die Flächen dieses Ansprechpartners und wird später für Mähanfragen genutzt.
+                          Dieser Link zeigt nur die Flächen dieses Landwirts und wird später für Suchfragen genutzt.
                         </p>
 
                         {ownerLink?.loading && (
