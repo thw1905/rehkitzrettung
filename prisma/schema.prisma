@@ -414,3 +414,17 @@ model MowingRequestField {
   @@index([fieldId])
 }
 
+model HelpArticle {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  content   String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([isActive])
+}
+

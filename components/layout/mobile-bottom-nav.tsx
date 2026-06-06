@@ -30,11 +30,12 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
         { href: "/personal", label: "Persönlich", icon: "👤" },
         { href: "/management", label: "Verwaltung", icon: "⚙️" },
         { href: "/operations", label: "Einsatz", icon: "📊" },
+        { href: "/hilfe", label: "Hilfe", icon: "❓" },
       ]
     : [
         { href: "/personal", label: "Persönlich", icon: "👤" },
         { href: "/dashboard", label: "Dashboard", icon: "🏠" },
-        { href: "/personal-statistics", label: "Statistik", icon: "📊" },
+        { href: "/hilfe", label: "Hilfe", icon: "❓" },
       ];
 
   function isItemActive(item: { href: string }) {

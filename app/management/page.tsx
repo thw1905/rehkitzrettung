@@ -16,6 +16,8 @@ const sections = [
       { href: "/reviere", title: "Reviere", icon: "🐗"},
       { href: "/revier-paechter", title: "Revierpächter", icon: "🐗🧑‍💼"},
       { href: "/revier-map", title: "Revier-Flächenübersicht", icon:"🐗🌽"},
+      { href: "/hilfe", title: "Hilfe / Bedienungsanleitung", icon: "❓" },
+      { href: "/admin/help", title: "Anleitung bearbeiten", icon: "✏️" },
       { href: "/admin/db-check", title: "DB-Check"},
     ],
   },

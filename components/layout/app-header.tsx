@@ -178,6 +178,7 @@ useEffect(() => {
     { href: "/team-members", label: "Mein Team" },
     { href: "/availability", label: "Meine Verfügbarkeit" },
     { href: "/personal-statistics", label: "Meine Statistik"},
+    { href: "/hilfe", label: "Hilfe" },
     { href: "/profile", label: "Mein Profil" },
   ];
 
@@ -192,6 +193,7 @@ useEffect(() => {
   { href: "/reviere", label: "Reviere"},
   { href: "/revier-paechter", label: "Revierpächter"},
   { href: "/revier-map", label: "Revier/Flächenübersicht"},
+  { href: "/admin/help", label: "Anleitung bearbeiten"},
   { href: "/admin/db-check", label: "DB-Check"},
 ];
 

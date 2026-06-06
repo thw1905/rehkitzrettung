@@ -74,6 +74,7 @@ title="Hilfe / Problem?"
             >
               💬 WhatsApp schreiben
             </a>
+            
           </div>
         </div>
       )}
