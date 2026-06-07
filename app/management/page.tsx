@@ -1,24 +1,39 @@
-import { icon } from "leaflet";
 import Link from "next/link";
-import { title } from "process";
 
 const sections = [
   {
-    title: "Verwaltung",
+    title: "Einsatz / Aufträge",
     items: [
       { href: "/orders", title: "Aufträge", icon: "📋" },
       { href: "/field-order-map", title: "Aufträge per Karte", icon: "🗺️" },
+      { href: "/admin/mowing-requests", title: "Mähanfragen", icon: "🔍" },
+    ],
+  },
+  {
+    title: "Stammdaten",
+    items: [
       { href: "/helpers", title: "Helfer", icon: "👥" },
+      { href: "/owners", title: "Landwirte", icon: "👨‍🌾" },
       { href: "/fields", title: "Flächen", icon: "🌾" },
-      { href: "/owners", title: "Landwirt", icon: "👨‍🌾" },
-      { href: "/owner-field-map", title: "Landwirt-Flächenkarte", icon: "👨‍🌾🗺️"},
-      { href: "/admin/mowing-requests", title: "Suchanfragen", icon: "🔍"},
-      { href: "/reviere", title: "Reviere", icon: "🐗"},
-      { href: "/revier-paechter", title: "Revierpächter", icon: "🐗🧑‍💼"},
-      { href: "/revier-map", title: "Revier-Flächenübersicht", icon:"🐗🌽"},
+    ],
+  },
+  {
+    title: "Reviere / Hegeringe",
+    items: [
+      { href: "/reviere", title: "Reviere", icon: "🐗" },
+      { href: "/hegeringe", title: "Hegeringe", icon: "🦌" },
+      { href: "/revier-paechter", title: "Revierpächter", icon: "🐗🧑‍💼" },
+      { href: "/revier-map", title: "Revier-Flächenübersicht", icon: "🐗🌽" },
+      { href: "/owner-field-map", title: "Landwirt-Flächenkarte", icon: "👨‍🌾🗺️" },
+      { href: "/admin/reviere-tools", title: "Revier-Werkzeuge", icon: "🛠️" },
+    ],
+  },
+  {
+    title: "Hilfe / System",
+    items: [
       { href: "/hilfe", title: "Hilfe / Bedienungsanleitung", icon: "❓" },
       { href: "/admin/help", title: "Anleitung bearbeiten", icon: "✏️" },
-      { href: "/admin/db-check", title: "DB-Check"},
+      { href: "/admin/db-check", title: "DB-Check", icon: "🧪" },
     ],
   },
 ];
@@ -30,7 +45,7 @@ export default function ManagementPage() {
         <div className="rounded-2xl bg-slate-900 p-5 text-white shadow">
           <h1 className="text-2xl font-bold">Verwaltung</h1>
           <p className="mt-2 text-sm text-slate-100">
-            Aufträge, Helfer, Flächen und Ansprechpartner
+            Aufträge, Stammdaten, Reviere, Hegeringe und Systemfunktionen
           </p>
         </div>
 

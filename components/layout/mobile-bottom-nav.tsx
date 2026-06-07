@@ -53,21 +53,24 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     }
 
     if (item.href === "/management") {
-      return (
-        pathname.startsWith("/management") ||
-        pathname.startsWith("/orders") ||
-        pathname.startsWith("/field-order-map") ||
-        pathname.startsWith("/helpers") ||
-        pathname.startsWith("/fields") ||
-        pathname.startsWith("/owners") ||
-        pathname.startsWith("/owner-field-map") ||
-        pathname.startsWith("/admin/mowing-requests") ||
-        pathname.startsWith("/reviere") ||
-        pathname.startsWith("/revier-paechter")||
-        pathname.startsWith("/revier-map") ||
-        pathname.startsWith("/admin/db-check")
-      );
-    }
+  return (
+    pathname.startsWith("/management") ||
+    pathname.startsWith("/orders") ||
+    pathname.startsWith("/field-order-map") ||
+    pathname.startsWith("/helpers") ||
+    pathname.startsWith("/fields") ||
+    pathname.startsWith("/owners") ||
+    pathname.startsWith("/owner-field-map") ||
+    pathname.startsWith("/admin/mowing-requests") ||
+    pathname.startsWith("/reviere") ||
+    pathname.startsWith("/hegeringe") ||
+    pathname.startsWith("/revier-paechter") ||
+    pathname.startsWith("/revier-map") ||
+    pathname.startsWith("/admin/reviere-tools") ||
+    pathname.startsWith("/admin/help") ||
+    pathname.startsWith("/admin/db-check")
+  );
+}
 
     if (item.href === "/operations") {
       return (
