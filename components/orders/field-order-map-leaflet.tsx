@@ -24,11 +24,20 @@ type FieldItem = {
   locationNote?: string | null;
 };
 
+type HegeringItem = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
 type RevierItem = {
   id: string;
   name: string;
   nummer?: string | null;
   areaGeoJson: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
+  isActive?: boolean;
+  hegeringId?: string | null;
+  hegering?: HegeringItem | null;
   pachter?: {
     id: string;
     firstName: string;
@@ -157,8 +166,17 @@ export default function FieldOrderMapLeaflet({
       .filter(Boolean) as PreparedPolygon[];
   }, [fields]);
 
+  const activeReviere = useMemo(() => {
+    return reviere.filter((revier) => {
+      if (revier.isActive === false) return false;
+      if (revier.hegering && revier.hegering.isActive === false) return false;
+
+      return true;
+    });
+  }, [reviere]);
+
   const preparedReviere = useMemo(() => {
-    return reviere
+    return activeReviere
       .map((revier) => {
         try {
           const geometry = revier.areaGeoJson?.geometry;
@@ -205,7 +223,7 @@ export default function FieldOrderMapLeaflet({
         }
       })
       .filter(Boolean) as PreparedRevier[];
-  }, [reviere]);
+  }, [activeReviere]);
 
   function getColor(fieldId: string) {
     return selectedSet.has(fieldId) ? "#2563eb" : "#16a34a";
@@ -244,7 +262,6 @@ export default function FieldOrderMapLeaflet({
 
       <FitMapToFields polygons={polygons} />
 
-      {/* Reviergrenzen */}
       {preparedReviere.map(({ revier, rings }) =>
         rings.map((ring, index) => (
           <Polyline
@@ -265,6 +282,10 @@ export default function FieldOrderMapLeaflet({
               <div className="min-w-[220px] space-y-2">
                 <div className="text-base font-semibold">
                   {getRevierLabel(revier)}
+                </div>
+
+                <div className="text-sm text-gray-700">
+                  <b>Hegering:</b> {revier.hegering?.name || "nicht zugeordnet"}
                 </div>
 
                 {revier.pachter ? (
@@ -297,7 +318,6 @@ export default function FieldOrderMapLeaflet({
         ))
       )}
 
-      {/* Flächen */}
       {polygons.map(({ field, positions }) => {
         const selected = selectedSet.has(field.id);
 

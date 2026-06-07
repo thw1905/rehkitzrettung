@@ -11,6 +11,12 @@ type ImportResult = {
   message: string;
 };
 
+type Hegering = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
 type RevierPachter = {
   id: string;
   firstName: string;
@@ -31,6 +37,9 @@ type Revier = {
   externalId?: string | null;
   name: string;
   nummer?: string | null;
+  hegeringId?: string | null;
+  hegering?: Hegering | null;
+  isActive: boolean;
   paechter?: RevierPachterAssignment[];
 };
 
@@ -54,10 +63,18 @@ export default function RevierePageClient() {
 
   const [reviere, setReviere] = useState<Revier[]>([]);
   const [paechter, setPaechter] = useState<RevierPachter[]>([]);
+  const [hegeringe, setHegeringe] = useState<Hegering[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [savingRevierId, setSavingRevierId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
+  const [hegeringDrafts, setHegeringDrafts] = useState<Record<string, string>>(
+    {}
+  );
+  const [activeDrafts, setActiveDrafts] = useState<Record<string, boolean>>({});
+
   const [selectedPachterByRevier, setSelectedPachterByRevier] = useState<
     Record<string, string>
   >({});
@@ -69,13 +86,20 @@ export default function RevierePageClient() {
 
     return reviere.filter((revier) => {
       const label = getRevierLabel(revier).toLowerCase();
+      const hegeringText = revier.hegering?.name?.toLowerCase() || "";
+      const activeText = revier.isActive ? "aktiv" : "inaktiv";
 
       const paechterText = (revier.paechter || [])
         .map((item) => getPachterName(item.pachter))
         .join(" ")
         .toLowerCase();
 
-      return label.includes(q) || paechterText.includes(q);
+      return (
+        label.includes(q) ||
+        hegeringText.includes(q) ||
+        activeText.includes(q) ||
+        paechterText.includes(q)
+      );
     });
   }, [reviere, search]);
 
@@ -83,13 +107,15 @@ export default function RevierePageClient() {
     setLoading(true);
 
     try {
-      const [reviereRes, paechterRes] = await Promise.all([
+      const [reviereRes, paechterRes, hegeringeRes] = await Promise.all([
         fetch("/api/reviere", { cache: "no-store" }),
         fetch("/api/revier-paechter", { cache: "no-store" }),
+        fetch("/api/hegeringe", { cache: "no-store" }),
       ]);
 
       const reviereData = await reviereRes.json();
       const paechterData = await paechterRes.json();
+      const hegeringeData = await hegeringeRes.json();
 
       if (!reviereRes.ok) {
         throw new Error(
@@ -103,18 +129,33 @@ export default function RevierePageClient() {
         );
       }
 
-      const normalizedReviere = Array.isArray(reviereData) ? reviereData : [];
+      if (!hegeringeRes.ok) {
+        throw new Error(
+          hegeringeData?.error || "Hegeringe konnten nicht geladen werden."
+        );
+      }
+
+      const normalizedReviere: Revier[] = Array.isArray(reviereData)
+        ? reviereData
+        : [];
 
       setReviere(normalizedReviere);
       setPaechter(Array.isArray(paechterData) ? paechterData : []);
+      setHegeringe(Array.isArray(hegeringeData) ? hegeringeData : []);
 
-      const drafts: Record<string, string> = {};
+      const nameNext: Record<string, string> = {};
+      const hegeringNext: Record<string, string> = {};
+      const activeNext: Record<string, boolean> = {};
 
       for (const revier of normalizedReviere) {
-        drafts[revier.id] = revier.name || "";
+        nameNext[revier.id] = revier.name || "";
+        hegeringNext[revier.id] = revier.hegeringId || "";
+        activeNext[revier.id] = revier.isActive !== false;
       }
 
-      setNameDrafts(drafts);
+      setNameDrafts(nameNext);
+      setHegeringDrafts(hegeringNext);
+      setActiveDrafts(activeNext);
     } catch (error: any) {
       console.error(error);
       alert(error?.message || "Daten konnten nicht geladen werden.");
@@ -145,7 +186,9 @@ export default function RevierePageClient() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data?.error || "Reviere konnten nicht importiert werden.");
+        throw new Error(
+          data?.error || "Reviere konnten nicht importiert werden."
+        );
       }
 
       setResult(data);
@@ -160,7 +203,7 @@ export default function RevierePageClient() {
     }
   }
 
-  async function saveRevierName(revier: Revier) {
+  async function saveRevier(revier: Revier) {
     const nextName = (nameDrafts[revier.id] || "").trim();
 
     if (!nextName) {
@@ -178,19 +221,21 @@ export default function RevierePageClient() {
         },
         body: JSON.stringify({
           name: nextName,
+          hegeringId: hegeringDrafts[revier.id] || null,
+          isActive: activeDrafts[revier.id] !== false,
         }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data?.error || "Reviername konnte nicht gespeichert werden.");
+        throw new Error(data?.error || "Revier konnte nicht gespeichert werden.");
       }
 
       await loadData();
     } catch (error: any) {
       console.error(error);
-      alert(error?.message || "Reviername konnte nicht gespeichert werden.");
+      alert(error?.message || "Revier konnte nicht gespeichert werden.");
     } finally {
       setSavingRevierId(null);
     }
@@ -220,7 +265,9 @@ export default function RevierePageClient() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data?.error || "Revierpächter konnte nicht hinzugefügt werden.");
+        throw new Error(
+          data?.error || "Revierpächter konnte nicht hinzugefügt werden."
+        );
       }
 
       setSelectedPachterByRevier((prev) => ({
@@ -259,7 +306,9 @@ export default function RevierePageClient() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data?.error || "Revierpächter konnte nicht entfernt werden.");
+        throw new Error(
+          data?.error || "Revierpächter konnte nicht entfernt werden."
+        );
       }
 
       await loadData();
@@ -275,6 +324,10 @@ export default function RevierePageClient() {
     (revier) => !revier.paechter || revier.paechter.length === 0
   ).length;
 
+  const noHegeringCount = reviere.filter((revier) => !revier.hegeringId).length;
+  const activeCount = reviere.filter((revier) => revier.isActive !== false).length;
+  const inactiveCount = reviere.length - activeCount;
+
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-4">
@@ -285,7 +338,8 @@ export default function RevierePageClient() {
 
           <p className="mt-2 text-sm text-gray-600">
             Hier kannst du die Reviergrenzen importieren, eigene Reviernamen
-            vergeben und mehrere Revierpächter zuordnen.
+            vergeben, Hegeringe zuordnen, Reviere aktiv/inaktiv setzen und
+            mehrere Revierpächter zuordnen.
           </p>
         </section>
 
@@ -333,9 +387,22 @@ export default function RevierePageClient() {
                 ART_NR ist die Reviernummer. Der Name kann frei vergeben werden.
               </p>
 
-              <div className="mt-2 text-sm text-gray-700">
-                Reviere gesamt: {reviere.length} · Ohne Pächter:{" "}
-                {unassignedCount}
+              <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-gray-700">
+                  Gesamt: {reviere.length}
+                </span>
+                <span className="rounded-full border border-green-200 bg-green-50 px-3 py-1 text-green-900">
+                  Aktiv: {activeCount}
+                </span>
+                <span className="rounded-full border border-gray-200 bg-white px-3 py-1 text-gray-700">
+                  Inaktiv: {inactiveCount}
+                </span>
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-900">
+                  Ohne Hegering: {noHegeringCount}
+                </span>
+                <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-orange-900">
+                  Ohne Pächter: {unassignedCount}
+                </span>
               </div>
             </div>
 
@@ -346,7 +413,7 @@ export default function RevierePageClient() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Reviernummer, Name oder Pächter..."
+                placeholder="Reviernummer, Name, Hegering oder Pächter..."
                 className="w-full rounded-2xl border border-gray-300 px-4 py-3"
               />
             </div>
@@ -376,31 +443,57 @@ export default function RevierePageClient() {
                   (pachter) => !assignedIds.has(pachter.id)
                 );
 
+                const hegeringId = hegeringDrafts[revier.id] || "";
+                const isActive = activeDrafts[revier.id] !== false;
+
                 return (
                   <div
                     key={revier.id}
-                    className="rounded-2xl border border-gray-200 bg-gray-50 p-4"
+                    className={`rounded-2xl border p-4 ${
+                      isActive
+                        ? "border-gray-200 bg-gray-50"
+                        : "border-gray-200 bg-white opacity-70"
+                    }`}
                   >
                     <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
                       <div>
                         <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-  Reviername
-</div>
+                          Reviername
+                        </div>
 
-<div className="mt-1 text-2xl font-bold text-gray-900">
-  {nameDrafts[revier.id] || revier.name || "Unbenanntes Revier"}
-</div>
+                        <div className="mt-1 text-2xl font-bold text-gray-900">
+                          {nameDrafts[revier.id] ||
+                            revier.name ||
+                            "Unbenanntes Revier"}
+                        </div>
 
-<div className="mt-1 text-sm font-semibold text-gray-500">
-  Reviernummer: {revier.nummer || "-"}
-</div>
+                        <div className="mt-1 text-sm font-semibold text-gray-500">
+                          Reviernummer: {revier.nummer || "-"}
+                        </div>
 
-<div className="mt-4">
-  <label className="mb-1 block text-sm font-semibold text-gray-900">
-    Reviername bearbeiten
-  </label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                              isActive
+                                ? "border-green-200 bg-green-50 text-green-900"
+                                : "border-gray-200 bg-white text-gray-700"
+                            }`}
+                          >
+                            {isActive ? "aktiv" : "inaktiv"}
+                          </span>
 
-                          <div className="flex gap-2">
+                          <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-900">
+                            Hegering:{" "}
+                            {revier.hegering?.name || "nicht zugeordnet"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 space-y-3">
+                          <div>
+                            <label className="mb-1 block text-sm font-semibold text-gray-900">
+                              Reviername bearbeiten
+                            </label>
+
                             <input
                               value={nameDrafts[revier.id] || ""}
                               onChange={(e) =>
@@ -411,23 +504,58 @@ export default function RevierePageClient() {
                               }
                               className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3"
                             />
+                          </div>
 
-                            <button
-                              type="button"
-                              onClick={() => saveRevierName(revier)}
-                              disabled={savingRevierId === revier.id}
-                              className="rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                          <div>
+                            <label className="mb-1 block text-sm font-semibold text-gray-900">
+                              Hegering
+                            </label>
+
+                            <select
+                              value={hegeringId}
+                              onChange={(e) =>
+                                setHegeringDrafts((prev) => ({
+                                  ...prev,
+                                  [revier.id]: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3"
                             >
-                              Speichern
-                            </button>
+                              <option value="">Kein Hegering</option>
+                              {hegeringe.map((hegering) => (
+                                <option key={hegering.id} value={hegering.id}>
+                                  {hegering.name}
+                                  {hegering.isActive ? "" : " (inaktiv)"}
+                                </option>
+                              ))}
+                            </select>
                           </div>
-                        </div>
 
-                        {savingRevierId === revier.id && (
-                          <div className="mt-2 text-xs text-gray-500">
-                            Speichert...
-                          </div>
-                        )}
+                          <label className="flex items-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900">
+                            <input
+                              type="checkbox"
+                              checked={isActive}
+                              onChange={(e) =>
+                                setActiveDrafts((prev) => ({
+                                  ...prev,
+                                  [revier.id]: e.target.checked,
+                                }))
+                              }
+                            />
+                            Revier aktiv anzeigen
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => saveRevier(revier)}
+                            disabled={savingRevierId === revier.id}
+                            className="w-full rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                          >
+                            {savingRevierId === revier.id
+                              ? "Speichert..."
+                              : "Revier speichern"}
+                          </button>
+                        </div>
                       </div>
 
                       <div>
@@ -446,7 +574,9 @@ export default function RevierePageClient() {
                                 key={assignment.id}
                                 className="flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-sm font-semibold text-orange-900"
                               >
-                                <span>{getPachterName(assignment.pachter)}</span>
+                                <span>
+                                  {getPachterName(assignment.pachter)}
+                                </span>
 
                                 <button
                                   type="button"

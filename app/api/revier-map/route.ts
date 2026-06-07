@@ -35,7 +35,8 @@ function isAreaFeature(value: any): value is GeoJsonAreaFeature {
     value &&
     value.type === "Feature" &&
     value.geometry &&
-    (value.geometry.type === "Polygon" || value.geometry.type === "MultiPolygon") &&
+    (value.geometry.type === "Polygon" ||
+      value.geometry.type === "MultiPolygon") &&
     Array.isArray(value.geometry.coordinates)
   );
 }
@@ -69,12 +70,12 @@ function calculateOverlap(params: {
     }
 
     if (!booleanIntersects(revierGeoJson as any, fieldGeoJson as any)) {
-  return null;
-}
+      return null;
+    }
 
-const intersection = intersect(
-  featureCollection([revierGeoJson as any, fieldGeoJson as any]) as any
-);
+    const intersection = intersect(
+      featureCollection([revierGeoJson as any, fieldGeoJson as any]) as any
+    );
 
     if (!intersection) {
       return null;
@@ -110,7 +111,21 @@ export async function GET(req: NextRequest) {
     const revierId = req.nextUrl.searchParams.get("revierId");
 
     const reviere = await db.revier.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          {
+            hegeringId: null,
+          },
+          {
+            hegering: {
+              isActive: true,
+            },
+          },
+        ],
+      },
       include: {
+        hegering: true,
         paechter: {
           include: {
             pachter: true,
@@ -120,7 +135,11 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: [{ nummer: "asc" }, { name: "asc" }],
+      orderBy: [
+        { hegering: { name: "asc" } },
+        { nummer: "asc" },
+        { name: "asc" },
+      ],
     });
 
     const normalizedReviere = reviere.map((revier) => ({
@@ -130,6 +149,9 @@ export async function GET(req: NextRequest) {
       nummer: revier.nummer,
       label: getRevierLabel(revier),
       areaGeoJson: revier.areaGeoJson,
+      hegeringId: revier.hegeringId,
+      hegering: revier.hegering,
+      isActive: revier.isActive,
       paechter: revier.paechter.map((assignment) => ({
         id: assignment.id,
         pachter: assignment.pachter,
@@ -148,7 +170,10 @@ export async function GET(req: NextRequest) {
 
     if (!selectedRevier) {
       return NextResponse.json(
-        { error: "Revier nicht gefunden." },
+        {
+          error:
+            "Revier nicht gefunden oder Revier ist aktuell ausgeblendet.",
+        },
         { status: 404 }
       );
     }
@@ -206,6 +231,9 @@ export async function GET(req: NextRequest) {
       nummer: selectedRevier.nummer,
       label: getRevierLabel(selectedRevier),
       areaGeoJson: selectedRevier.areaGeoJson,
+      hegeringId: selectedRevier.hegeringId,
+      hegering: selectedRevier.hegering,
+      isActive: selectedRevier.isActive,
       paechter: selectedRevier.paechter.map((assignment) => ({
         id: assignment.id,
         pachter: assignment.pachter,

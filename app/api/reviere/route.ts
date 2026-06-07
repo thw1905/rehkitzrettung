@@ -18,6 +18,7 @@ export async function GET() {
 
     const reviere = await db.revier.findMany({
       include: {
+        hegering: true,
         paechter: {
           include: {
             pachter: true,
@@ -28,6 +29,8 @@ export async function GET() {
         },
       },
       orderBy: [
+        { hegering: { name: "asc" } },
+        { isActive: "desc" },
         { nummer: "asc" },
         { name: "asc" },
       ],

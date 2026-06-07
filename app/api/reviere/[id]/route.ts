@@ -15,6 +15,14 @@ function normalizeRequiredString(value: unknown, fieldName: string) {
   return text;
 }
 
+function normalizeOptionalId(value: unknown) {
+  if (value === undefined || value === null) return null;
+
+  const text = String(value).trim();
+
+  return text.length > 0 ? text : null;
+}
+
 export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -33,6 +41,10 @@ export async function PATCH(
     const body = await req.json();
 
     const name = normalizeRequiredString(body.name, "Reviername");
+    const hegeringId = normalizeOptionalId(body.hegeringId);
+
+    const isActive =
+      typeof body.isActive === "boolean" ? body.isActive : true;
 
     const existing = await db.revier.findUnique({
       where: { id },
@@ -46,12 +58,29 @@ export async function PATCH(
       );
     }
 
+    if (hegeringId) {
+      const hegering = await db.hegering.findUnique({
+        where: { id: hegeringId },
+        select: { id: true },
+      });
+
+      if (!hegering) {
+        return NextResponse.json(
+          { error: "Hegering wurde nicht gefunden." },
+          { status: 400 }
+        );
+      }
+    }
+
     const revier = await db.revier.update({
       where: { id },
       data: {
         name,
+        hegeringId,
+        isActive,
       },
       include: {
+        hegering: true,
         paechter: {
           include: {
             pachter: true,

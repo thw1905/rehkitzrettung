@@ -269,6 +269,16 @@ model RevierPachter {
   reviere   RevierPachterAssignment[]
 }
 
+model Hegering {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviere   Revier[]
+}
+
 model Revier {
   id          String   @id @default(cuid())
   externalId  String?  @unique
@@ -276,11 +286,18 @@ model Revier {
   nummer      String?
   areaGeoJson Json
 
+  hegeringId  String?
+  hegering    Hegering? @relation(fields: [hegeringId], references: [id])
+  isActive    Boolean   @default(true)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   paechter    RevierPachterAssignment[]
 
   orders      OrderRevier[]
+
+  @@index([hegeringId])
+  @@index([isActive])
 }
 
 model RevierPachterAssignment {

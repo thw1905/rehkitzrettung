@@ -164,6 +164,7 @@ export async function POST() {
             name: defaultName,
             nummer,
             areaGeoJson: feature,
+            isActive: false,
           },
         });
 
