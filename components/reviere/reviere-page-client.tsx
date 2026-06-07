@@ -68,6 +68,9 @@ export default function RevierePageClient() {
   const [loading, setLoading] = useState(true);
   const [savingRevierId, setSavingRevierId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<
+    "active" | "inactive" | "all"
+  >("active");
 
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const [hegeringDrafts, setHegeringDrafts] = useState<Record<string, string>>(
@@ -82,12 +85,24 @@ export default function RevierePageClient() {
   const filteredReviere = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    if (!q) return reviere;
-
     return reviere.filter((revier) => {
+      const isRevierActive = revier.isActive !== false;
+
+      if (activeFilter === "active" && !isRevierActive) {
+        return false;
+      }
+
+      if (activeFilter === "inactive" && isRevierActive) {
+        return false;
+      }
+
+      if (!q) {
+        return true;
+      }
+
       const label = getRevierLabel(revier).toLowerCase();
       const hegeringText = revier.hegering?.name?.toLowerCase() || "";
-      const activeText = revier.isActive ? "aktiv" : "inaktiv";
+      const activeText = isRevierActive ? "aktiv" : "inaktiv";
 
       const paechterText = (revier.paechter || [])
         .map((item) => getPachterName(item.pachter))
@@ -101,7 +116,7 @@ export default function RevierePageClient() {
         paechterText.includes(q)
       );
     });
-  }, [reviere, search]);
+  }, [reviere, search, activeFilter]);
 
   async function loadData() {
     setLoading(true);
@@ -406,16 +421,37 @@ export default function RevierePageClient() {
               </div>
             </div>
 
-            <div className="w-full md:w-80">
-              <label className="mb-2 block text-sm font-semibold text-gray-900">
-                Suche
-              </label>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Reviernummer, Name, Hegering oder Pächter..."
-                className="w-full rounded-2xl border border-gray-300 px-4 py-3"
-              />
+            <div className="grid w-full gap-3 md:w-[520px] md:grid-cols-[180px_1fr]">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-gray-900">
+                  Status
+                </label>
+                <select
+                  value={activeFilter}
+                  onChange={(e) =>
+                    setActiveFilter(
+                      e.target.value as "active" | "inactive" | "all"
+                    )
+                  }
+                  className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3"
+                >
+                  <option value="active">Nur aktive</option>
+                  <option value="inactive">Nur inaktive</option>
+                  <option value="all">Alle</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-gray-900">
+                  Suche
+                </label>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Reviernummer, Name, Hegering oder Pächter..."
+                  className="w-full rounded-2xl border border-gray-300 px-4 py-3"
+                />
+              </div>
             </div>
           </div>
 
