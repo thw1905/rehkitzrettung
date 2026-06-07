@@ -200,29 +200,34 @@ export default function OwnersPage() {
   }
 
   async function deleteOwner(id: string, name: string) {
-    const confirmed = window.confirm(`Möchtest du ${name} wirklich löschen?`);
+  const confirmed = window.confirm(`Möchtest du ${name} wirklich löschen?`);
 
-    if (!confirmed) return;
+  if (!confirmed) return;
 
-    setSavingId(id);
+  setSavingId(id);
 
-    try {
-      const res = await fetch(`/api/owners/${id}`, {
-        method: "DELETE",
-      });
+  try {
+    const res = await fetch(`/api/owners/${id}`, {
+      method: "DELETE",
+    });
 
-      if (!res.ok) {
-        throw new Error("Löschen fehlgeschlagen");
-      }
+    const data = await res.json().catch(() => null);
 
-      await loadOwners();
-    } catch (error) {
-      console.error("Fehler beim Löschen:", error);
-      alert("Landwirt konnte nicht gelöscht werden.");
-    } finally {
-      setSavingId(null);
+    if (!res.ok) {
+      throw new Error(
+        data?.error || "Landwirt konnte nicht gelöscht werden."
+      );
     }
+
+    alert(data?.message || "Landwirt wurde gelöscht.");
+    await loadOwners();
+  } catch (error: any) {
+    console.error("Fehler beim Löschen:", error);
+    alert(error?.message || "Landwirt konnte nicht gelöscht werden.");
+  } finally {
+    setSavingId(null);
   }
+}
 
   async function loadOwnerLink(ownerId: string) {
     setOwnerLinkState(ownerId, {
