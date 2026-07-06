@@ -63,7 +63,7 @@ function buildSeasonDays() {
 
   const year = new Date().getFullYear();
   const start = new Date(year, 4, 1);
-  const end = new Date(year, 5, 30);
+  const end = new Date(year, 6, 31);
 
   // restlicher Code...
 

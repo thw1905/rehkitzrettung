@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 
-function getRange(days = 21) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
+function getSeasonRange() {
+  const year = new Date().getFullYear();
 
-  const end = new Date(start);
-  end.setDate(end.getDate() + days);
+  const start = new Date(Date.UTC(year, 4, 1, 0, 0, 0, 0)); // 01.05.
+  const end = new Date(Date.UTC(year, 7, 1, 0, 0, 0, 0)); // bis 31.07. inklusive
 
   return { start, end };
 }
@@ -16,19 +15,22 @@ function dateKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
     const currentUser = await getCurrentUserWithTeams();
 
     if (!currentUser || !currentUser.isAdmin) {
-      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Keine Berechtigung." },
+        { status: 403 }
+      );
     }
 
-    const { searchParams } = new URL(req.url);
-    const daysParam = Number(searchParams.get("days") || "21");
-    const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 21;
+    const { start, end } = getSeasonRange();
 
-    const { start, end } = getRange(days);
+    const days = Math.ceil(
+      (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+    );
 
     const users = await db.user.findMany({
       where: {
@@ -87,7 +89,8 @@ export async function GET(req: NextRequest) {
 
     for (let i = 0; i < days; i++) {
       const d = new Date(start);
-      d.setDate(start.getDate() + i);
+      d.setUTCDate(start.getUTCDate() + i);
+
       const key = dateKey(d);
 
       grouped[key] = {
@@ -112,10 +115,15 @@ export async function GET(req: NextRequest) {
         const status = found?.status || "OFFEN";
         const note = found?.note || null;
 
-        if (status === "ZUGESAGT") group.zugesagt += 1;
-        else if (status === "ABGESAGT") group.abgesagt += 1;
-        else if (status === "VIELLEICHT") group.vielleicht += 1;
-        else group.offen += 1;
+        if (status === "ZUGESAGT") {
+          group.zugesagt += 1;
+        } else if (status === "ABGESAGT") {
+          group.abgesagt += 1;
+        } else if (status === "VIELLEICHT") {
+          group.vielleicht += 1;
+        } else {
+          group.offen += 1;
+        }
 
         group.entries.push({
           userId: user.id,
@@ -134,7 +142,10 @@ export async function GET(req: NextRequest) {
     console.error("Fehler beim Laden der Admin-Verfügbarkeiten:", error);
 
     return NextResponse.json(
-      { error: error?.message || "Verfügbarkeiten konnten nicht geladen werden." },
+      {
+        error:
+          error?.message || "Verfügbarkeiten konnten nicht geladen werden.",
+      },
       { status: 500 }
     );
   }

@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     const year = new Date().getFullYear();
 
 const start = new Date(Date.UTC(year, 4, 1, 0, 0, 0, 0)); // 01.05.
-const end = new Date(Date.UTC(year, 6, 1, 0, 0, 0, 0)); // bis 30.06. inklusive
+const end = new Date(Date.UTC(year, 7, 1, 0, 0, 0, 0)); // bis 31.07. inklusive
 
     const rawAvailabilities = await db.availability.findMany({
       where: {
