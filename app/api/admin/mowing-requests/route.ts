@@ -117,6 +117,30 @@ function normalizeMowingRequest(request: any) {
   };
 }
 
+function normalizeFieldOption(field: any) {
+  const fieldAreaSqm = safeAreaSqm(field.areaGeoJson);
+
+  return {
+    id: field.id,
+    ownerId: field.ownerId,
+    name: field.name,
+    displayName: field.displayName,
+    notes: field.notes,
+    locationNote: field.locationNote,
+    areaSqm: fieldAreaSqm,
+    areaHa: fieldAreaSqm / 10000,
+    owner: field.owner
+      ? {
+          id: field.owner.id,
+          firstName: field.owner.firstName,
+          lastName: field.owner.lastName,
+          phone: field.owner.phone,
+          email: field.owner.email,
+        }
+      : null,
+  };
+}
+
 function buildSummary(requests: any[]) {
   const normalizedRequests = requests.map(normalizeMowingRequest);
 
@@ -173,6 +197,54 @@ function buildAdminCreatedNote(params: {
   return parts.join("\n");
 }
 
+async function loadFieldOptions() {
+  const fields = await db.field.findMany({
+    where: {
+      ownerId: {
+        not: null,
+      },
+    },
+    select: {
+      id: true,
+      ownerId: true,
+      name: true,
+      displayName: true,
+      notes: true,
+      locationNote: true,
+      areaGeoJson: true,
+      owner: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: [
+      {
+        owner: {
+          lastName: "asc",
+        },
+      },
+      {
+        owner: {
+          firstName: "asc",
+        },
+      },
+      {
+        displayName: "asc",
+      },
+      {
+        name: "asc",
+      },
+    ],
+  });
+
+  return fields.map(normalizeFieldOption);
+}
+
 export async function GET(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserWithTeams();
@@ -206,13 +278,19 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const requests = await db.mowingRequest.findMany({
-      where,
-      include: MOWING_REQUEST_INCLUDE,
-      orderBy: [{ createdAt: "desc" }, { mowingDate: "asc" }],
-    });
+    const [requests, fieldOptions] = await Promise.all([
+      db.mowingRequest.findMany({
+        where,
+        include: MOWING_REQUEST_INCLUDE,
+        orderBy: [{ createdAt: "desc" }, { mowingDate: "asc" }],
+      }),
+      loadFieldOptions(),
+    ]);
 
-    return NextResponse.json(buildSummary(requests));
+    return NextResponse.json({
+      ...buildSummary(requests),
+      fieldOptions,
+    });
   } catch (error: any) {
     console.error("Mähanfragen laden Fehler:", error);
 
@@ -339,7 +417,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error?.message || "Telefonische Mähanfrage konnte nicht erstellt werden.",
+          error?.message ||
+          "Telefonische Mähanfrage konnte nicht erstellt werden.",
       },
       { status: 500 }
     );

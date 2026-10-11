@@ -72,6 +72,18 @@ type HelperStatisticsResponse = {
   assignmentRows: AssignmentRow[];
 };
 
+type HelperSummaryRow = {
+  userId: string;
+  helperName: string;
+  helperRole: HelperRole;
+  isAdmin: boolean;
+  OFFEN: number;
+  ZUGESAGT: number;
+  ABGESAGT: number;
+  VIELLEICHT: number;
+  assignedCount: number;
+};
+
 type Props = {
   from: string;
   to: string;
@@ -168,6 +180,35 @@ function StatBox({
   );
 }
 
+function InlineCountBadge({
+  label,
+  value,
+  tone,
+  title,
+}: {
+  label: string;
+  value: number;
+  tone: "green" | "amber" | "red" | "gray" | "blue";
+  title: string;
+}) {
+  const toneClasses = {
+    green: "border-green-200 bg-green-50 text-green-900",
+    amber: "border-amber-200 bg-amber-50 text-amber-900",
+    red: "border-red-200 bg-red-50 text-red-900",
+    gray: "border-gray-200 bg-gray-50 text-gray-900",
+    blue: "border-blue-200 bg-blue-50 text-blue-900",
+  };
+
+  return (
+    <span
+      title={title}
+      className={`rounded-full border px-2 py-0.5 font-bold ${toneClasses[tone]}`}
+    >
+      {label} {value}
+    </span>
+  );
+}
+
 export default function HelperStatisticsSection({ from, to }: Props) {
   const [data, setData] = useState<HelperStatisticsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -251,7 +292,12 @@ export default function HelperStatisticsSection({ from, to }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, helperFrom, helperTo]);
 
-  const users = data?.users || [];
+  //const users = data?.users || [];
+  const users = useMemo(() => {
+  return [...(data?.users || [])].sort((a, b) =>
+    a.name.localeCompare(b.name, "de", { sensitivity: "base" })
+  );
+}, [data]);
 
   const teamOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -275,6 +321,68 @@ export default function HelperStatisticsSection({ from, to }: Props) {
     return result;
   }, [data]);
 
+  const helperSummaryRows = useMemo(() => {
+    const map = new Map<string, HelperSummaryRow>();
+
+    for (const row of data?.availabilityRows || []) {
+      if (!map.has(row.userId)) {
+        map.set(row.userId, {
+          userId: row.userId,
+          helperName: row.helperName,
+          helperRole: row.helperRole,
+          isAdmin: row.isAdmin,
+          OFFEN: 0,
+          ZUGESAGT: 0,
+          ABGESAGT: 0,
+          VIELLEICHT: 0,
+          assignedCount: 0,
+        });
+      }
+
+      const item = map.get(row.userId);
+
+      if (!item) continue;
+
+      item[row.status] += 1;
+    }
+
+    for (const row of data?.assignmentRows || []) {
+      const item = map.get(row.userId);
+
+      if (!item) {
+        map.set(row.userId, {
+          userId: row.userId,
+          helperName: row.helperName,
+          helperRole: row.helperRole,
+          isAdmin: false,
+          OFFEN: 0,
+          ZUGESAGT: 0,
+          ABGESAGT: 0,
+          VIELLEICHT: 0,
+          assignedCount: 1,
+        });
+
+        continue;
+      }
+
+      item.assignedCount += 1;
+    }
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.helperName.localeCompare(b.helperName, "de")
+    );
+  }, [data]);
+
+  const helperSummaryByUserId = useMemo(() => {
+    const map = new Map<string, HelperSummaryRow>();
+
+    for (const row of helperSummaryRows) {
+      map.set(row.userId, row);
+    }
+
+    return map;
+  }, [helperSummaryRows]);
+
   const filteredAvailabilityRows = useMemo(() => {
     const rows = data?.availabilityRows || [];
 
@@ -284,6 +392,7 @@ export default function HelperStatisticsSection({ from, to }: Props) {
       if (availabilityStatus && row.status !== availabilityStatus) return false;
 
       const isAssigned = assignmentKeySet.has(`${row.date}|${row.userId}`);
+      const summary = helperSummaryByUserId.get(row.userId);
 
       const haystack = [
         row.date,
@@ -295,6 +404,9 @@ export default function HelperStatisticsSection({ from, to }: Props) {
           ? "rückmeldung ja gemeldet eingetragen"
           : "rückmeldung nein nicht gemeldet kein eintrag",
         isAssigned ? "eingeteilt ja" : "eingeteilt nein",
+        summary
+          ? `verfügbar ${summary.ZUGESAGT} vielleicht ${summary.VIELLEICHT} nicht verfügbar ${summary.ABGESAGT} offen ${summary.OFFEN} eingeteilt ${summary.assignedCount}`
+          : "",
       ].join(" ");
 
       return includesText(haystack, search);
@@ -306,6 +418,7 @@ export default function HelperStatisticsSection({ from, to }: Props) {
     helperRole,
     availabilityStatus,
     assignmentKeySet,
+    helperSummaryByUserId,
   ]);
 
   const filteredAssignmentRows = useMemo(() => {
@@ -356,7 +469,8 @@ export default function HelperStatisticsSection({ from, to }: Props) {
           </h2>
 
           <p className="mt-1 text-sm text-gray-600">
-            Verfügbarkeit pro Tag und Team-Einteilungen im gewählten Zeitraum.
+            Verfügbarkeit, Rückmeldungen und Team-Einteilungen im gewählten
+            Zeitraum.
           </p>
         </div>
 
@@ -626,12 +740,19 @@ export default function HelperStatisticsSection({ from, to }: Props) {
 
               {activeTab === "availability" ? (
                 <div className="mt-5 overflow-hidden rounded-2xl border border-gray-200">
-                  <div className="bg-gray-100 px-4 py-3 text-sm font-bold text-gray-900">
-                    Verfügbarkeit: {filteredAvailabilityRows.length} Einträge
+                  <div className="bg-gray-100 px-4 py-3">
+                    <div className="text-sm font-bold text-gray-900">
+                      Verfügbarkeit: {filteredAvailabilityRows.length} Einträge
+                    </div>
+
+                    <div className="mt-1 text-xs text-gray-600">
+                      V = Verfügbar · ? = Vielleicht · N = Nicht verfügbar · O =
+                      Offen · E = Eingeteilt
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[950px] text-left text-sm text-gray-900">
+                    <table className="w-full min-w-[1050px] text-left text-sm text-gray-900">
                       <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-700">
                         <tr>
                           <th className="px-4 py-3">Datum</th>
@@ -660,14 +781,59 @@ export default function HelperStatisticsSection({ from, to }: Props) {
                               `${row.date}|${row.userId}`
                             );
 
+                            const summary = helperSummaryByUserId.get(
+                              row.userId
+                            );
+
                             return (
                               <tr key={row.id}>
                                 <td className="px-4 py-3 font-semibold">
                                   {formatDate(row.date)}
                                 </td>
 
-                                <td className="px-4 py-3 font-semibold">
-                                  {row.helperName}
+                                <td className="px-4 py-3">
+                                  <div className="font-semibold">
+                                    {row.helperName}
+                                  </div>
+
+                                  {summary ? (
+                                    <div className="mt-2 flex flex-wrap gap-1 text-[11px] leading-5">
+                                      <InlineCountBadge
+                                        label="V"
+                                        value={summary.ZUGESAGT}
+                                        tone="green"
+                                        title="Verfügbar"
+                                      />
+
+                                      <InlineCountBadge
+                                        label="?"
+                                        value={summary.VIELLEICHT}
+                                        tone="amber"
+                                        title="Vielleicht"
+                                      />
+
+                                      <InlineCountBadge
+                                        label="N"
+                                        value={summary.ABGESAGT}
+                                        tone="red"
+                                        title="Nicht verfügbar"
+                                      />
+
+                                      <InlineCountBadge
+                                        label="O"
+                                        value={summary.OFFEN}
+                                        tone="gray"
+                                        title="Offen"
+                                      />
+
+                                      <InlineCountBadge
+                                        label="E"
+                                        value={summary.assignedCount}
+                                        tone="blue"
+                                        title="Eingeteilt"
+                                      />
+                                    </div>
+                                  ) : null}
                                 </td>
 
                                 <td className="px-4 py-3">
