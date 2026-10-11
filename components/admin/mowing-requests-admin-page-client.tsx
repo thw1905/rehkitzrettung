@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type RequestStatus = "ALLE" | "OFFEN" | "IN_BEARBEITUNG" | "ERLEDIGT" | "ABGELEHNT";
+type RequestStatus =
+  | "ALLE"
+  | "OFFEN"
+  | "IN_BEARBEITUNG"
+  | "ERLEDIGT"
+  | "ABGELEHNT";
 
 type Owner = {
   id: string;
@@ -20,6 +25,11 @@ type FieldItem = {
   locationNote?: string | null;
 };
 
+type FieldOption = FieldItem & {
+  ownerId: string;
+  owner?: Owner | null;
+};
+
 type MowingRequestFieldItem = {
   id: string;
   fieldId: string;
@@ -30,6 +40,7 @@ type MowingRequest = {
   id: string;
   ownerId: string;
   mowingDate: string;
+  timeText?: string | null;
   note?: string | null;
   status: string;
   createdAt: string;
@@ -41,6 +52,7 @@ type MowingRequest = {
 
 type ApiResponse = {
   requests: MowingRequest[];
+  fieldOptions?: FieldOption[];
   summary?: {
     totalRequests: number;
     totalFields: number;
@@ -86,7 +98,8 @@ function formatHa(value: number | null | undefined) {
   }).format(Number.isFinite(value) ? Number(value) : 0);
 }
 
-function getOwnerName(owner: Owner) {
+function getOwnerName(owner: Owner | null | undefined) {
+  if (!owner) return "-";
   return [owner.firstName || "", owner.lastName || ""].join(" ").trim() || "-";
 }
 
@@ -97,13 +110,18 @@ function getFieldLabel(field: FieldItem) {
   if (displayName && name) return `${displayName} · ${name}`;
   if (displayName) return displayName;
   if (name) return name;
+
   return "Unbekannte Fläche";
 }
 
 function statusBadgeClass(status: string) {
   if (status === "OFFEN") return "border-blue-300 bg-blue-50 text-blue-900";
-  if (status === "IN_BEARBEITUNG") return "border-amber-300 bg-amber-50 text-amber-900";
-  if (status === "ERLEDIGT") return "border-green-300 bg-green-50 text-green-900";
+  if (status === "IN_BEARBEITUNG") {
+    return "border-amber-300 bg-amber-50 text-amber-900";
+  }
+  if (status === "ERLEDIGT") {
+    return "border-green-300 bg-green-50 text-green-900";
+  }
   if (status === "ABGELEHNT") return "border-red-300 bg-red-50 text-red-900";
 
   return "border-gray-300 bg-gray-50 text-gray-900";
@@ -112,18 +130,31 @@ function statusBadgeClass(status: string) {
 export default function MowingRequestsAdminPageClient() {
   const [requests, setRequests] = useState<MowingRequest[]>([]);
   const [owners, setOwners] = useState<Owner[]>([]);
+  const [fieldOptions, setFieldOptions] = useState<FieldOption[]>([]);
   const [summary, setSummary] = useState<ApiResponse["summary"] | null>(null);
+
   const [statusFilter, setStatusFilter] = useState<RequestStatus>("OFFEN");
   const [dateFilter, setDateFilter] = useState("");
   const [search, setSearch] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creatingOrdersId, setCreatingOrdersId] = useState<string | null>(null);
   const [openRequestId, setOpenRequestId] = useState<string | null>(null);
+
   const [contactIsLandwirtByRequestId, setContactIsLandwirtByRequestId] =
     useState<Record<string, boolean>>({});
-  const [contactOwnerIdByRequestId, setContactOwnerIdByRequestId] =
-    useState<Record<string, string>>({});
+  const [contactOwnerIdByRequestId, setContactOwnerIdByRequestId] = useState<
+    Record<string, string>
+  >({});
+
+  const [manualFormOpen, setManualFormOpen] = useState(false);
+  const [manualOwnerId, setManualOwnerId] = useState("");
+  const [manualFieldIds, setManualFieldIds] = useState<string[]>([]);
+  const [manualMowingDate, setManualMowingDate] = useState("");
+  const [manualTimeText, setManualTimeText] = useState("");
+  const [manualNote, setManualNote] = useState("");
+  const [manualSaving, setManualSaving] = useState(false);
 
   async function loadRequests() {
     setLoading(true);
@@ -167,6 +198,11 @@ export default function MowingRequestsAdminPageClient() {
 
       setRequests(nextRequests);
       setOwners(Array.isArray(ownersJson) ? ownersJson : []);
+      setFieldOptions(
+        Array.isArray(requestsJson.fieldOptions)
+          ? requestsJson.fieldOptions
+          : []
+      );
       setSummary(requestsJson.summary || null);
 
       setContactIsLandwirtByRequestId((prev) => {
@@ -200,6 +236,109 @@ export default function MowingRequestsAdminPageClient() {
     loadRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, dateFilter]);
+
+  const manualFieldOptions = useMemo(() => {
+    if (!manualOwnerId) return [];
+
+    return fieldOptions
+      .filter((field) => field.ownerId === manualOwnerId)
+      .sort((a, b) => getFieldLabel(a).localeCompare(getFieldLabel(b), "de"));
+  }, [fieldOptions, manualOwnerId]);
+
+  const manualSelectedAreaHa = useMemo(() => {
+    const selected = new Set(manualFieldIds);
+
+    return manualFieldOptions.reduce((sum, field) => {
+      if (!selected.has(field.id)) return sum;
+
+      return sum + (Number.isFinite(field.areaHa) ? Number(field.areaHa) : 0);
+    }, 0);
+  }, [manualFieldIds, manualFieldOptions]);
+
+  function resetManualForm() {
+    setManualOwnerId("");
+    setManualFieldIds([]);
+    setManualMowingDate("");
+    setManualTimeText("");
+    setManualNote("");
+  }
+
+  function toggleManualField(fieldId: string) {
+    setManualFieldIds((prev) => {
+      if (prev.includes(fieldId)) {
+        return prev.filter((id) => id !== fieldId);
+      }
+
+      return [...prev, fieldId];
+    });
+  }
+
+  async function createManualMowingRequest() {
+    if (!manualOwnerId) {
+      alert("Bitte einen Landwirt auswählen.");
+      return;
+    }
+
+    if (!manualMowingDate) {
+      alert("Bitte ein Mähdatum auswählen.");
+      return;
+    }
+
+    if (manualFieldIds.length === 0) {
+      alert("Bitte mindestens eine Fläche auswählen.");
+      return;
+    }
+
+    const owner = owners.find((item) => item.id === manualOwnerId);
+
+    const confirmed = window.confirm(
+      `Telefonische Mähanfrage erfassen?\n\nLandwirt: ${getOwnerName(
+        owner
+      )}\nMähdatum: ${formatDate(manualMowingDate)}\nFlächen: ${
+        manualFieldIds.length
+      }\nGesamtfläche: ${formatHa(manualSelectedAreaHa)} ha`
+    );
+
+    if (!confirmed) return;
+
+    setManualSaving(true);
+
+    try {
+      const res = await fetch("/api/admin/mowing-requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ownerId: manualOwnerId,
+          fieldIds: manualFieldIds,
+          mowingDate: manualMowingDate,
+          timeText: manualTimeText,
+          note: manualNote,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Mähanfrage konnte nicht erstellt werden.");
+      }
+
+      alert(json?.message || "Mähanfrage wurde erstellt.");
+
+      resetManualForm();
+      setManualFormOpen(false);
+      setStatusFilter("OFFEN");
+      setDateFilter(manualMowingDate);
+
+      await loadRequests();
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.message || "Mähanfrage konnte nicht erstellt werden.");
+    } finally {
+      setManualSaving(false);
+    }
+  }
 
   async function updateStatus(requestId: string, status: string) {
     setSavingId(requestId);
@@ -240,7 +379,9 @@ export default function MowingRequestsAdminPageClient() {
       : (contactOwnerIdByRequestId[request.id] || "").trim();
 
     if (!contactIsLandwirt && !contactOwnerId) {
-      alert("Bitte einen Ansprechpartner auswählen oder den Haken bei 'Ansprechpartner ist der Landwirt' setzen.");
+      alert(
+        "Bitte einen Ansprechpartner auswählen oder den Haken bei 'Ansprechpartner ist der Landwirt' setzen."
+      );
       return;
     }
 
@@ -249,7 +390,13 @@ export default function MowingRequestsAdminPageClient() {
       : null;
 
     const confirmed = window.confirm(
-      `Aus dieser Mähanfrage ${request.fields.length} Auftrag/Aufträge erzeugen?\n\nLandwirt: ${getOwnerName(request.owner)}\nAnsprechpartner: ${contactOwner ? getOwnerName(contactOwner) : getOwnerName(request.owner)}\nMähdatum: ${formatDate(request.mowingDate)}\nGesamtfläche: ${formatHa(request.totalAreaHa)} ha`
+      `Aus dieser Mähanfrage ${request.fields.length} Auftrag/Aufträge erzeugen?\n\nLandwirt: ${getOwnerName(
+        request.owner
+      )}\nAnsprechpartner: ${
+        contactOwner ? getOwnerName(contactOwner) : getOwnerName(request.owner)
+      }\nMähdatum: ${formatDate(
+        request.mowingDate
+      )}\nGesamtfläche: ${formatHa(request.totalAreaHa)} ha`
     );
 
     if (!confirmed) return;
@@ -296,6 +443,7 @@ export default function MowingRequestsAdminPageClient() {
         getOwnerName(request.owner),
         request.owner.phone || "",
         request.owner.email || "",
+        request.timeText || "",
         request.note || "",
         request.status || "",
         request.fields.map((item) => getFieldLabel(item.field)).join(" "),
@@ -318,40 +466,252 @@ export default function MowingRequestsAdminPageClient() {
     <main className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="mx-auto max-w-7xl space-y-5">
         <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-100 md:p-6">
-          <h1 className="text-2xl font-bold text-gray-900">Suchanfragen</h1>
-          <p className="mt-2 text-sm text-gray-700">
-            Hier siehst du die Meldungen der Landwirte und kannst daraus normale Aufträge erzeugen.
-          </p>
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Suchanfragen</h1>
+              <p className="mt-2 text-sm text-gray-700">
+                Hier siehst du die Meldungen der Landwirte und kannst daraus
+                normale Aufträge erzeugen.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setManualFormOpen((prev) => !prev)}
+              className="rounded-xl bg-black px-4 py-3 text-sm font-bold text-white"
+            >
+              {manualFormOpen
+                ? "Telefonische Anfrage schließen"
+                : "+ Telefonische Mähanfrage"}
+            </button>
+          </div>
         </section>
+
+        {manualFormOpen && (
+          <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-100 md:p-5">
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-gray-900">
+                Telefonische Mähanfrage erfassen
+              </h2>
+              <p className="mt-1 text-sm text-gray-700">
+                Wenn ein Landwirt anruft, kannst du hier dieselbe Anfrage
+                manuell anlegen. Danach erscheint sie normal in der Liste.
+              </p>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-900">
+                    Landwirt
+                  </label>
+
+                  <select
+                    value={manualOwnerId}
+                    onChange={(event) => {
+                      setManualOwnerId(event.target.value);
+                      setManualFieldIds([]);
+                    }}
+                    className="w-full rounded-xl border border-gray-300 px-3 py-3"
+                  >
+                    <option value="">Bitte auswählen</option>
+                    {owners.map((owner) => (
+                      <option key={owner.id} value={owner.id}>
+                        {getOwnerName(owner)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-900">
+                    Mähdatum
+                  </label>
+
+                  <input
+                    type="date"
+                    value={manualMowingDate}
+                    onChange={(event) => setManualMowingDate(event.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-3 py-3"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-900">
+                    Uhrzeit / Zeitraum
+                  </label>
+
+                  <input
+                    value={manualTimeText}
+                    onChange={(event) => setManualTimeText(event.target.value)}
+                    placeholder="z. B. morgen früh, ab 9 Uhr, nachmittags"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-3"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-900">
+                    Notiz
+                  </label>
+
+                  <textarea
+                    value={manualNote}
+                    onChange={(event) => setManualNote(event.target.value)}
+                    placeholder="Was wurde telefonisch mitgeteilt?"
+                    rows={5}
+                    className="w-full rounded-xl border border-gray-300 px-3 py-3"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="font-bold text-gray-900">Flächen</div>
+                      <div className="text-sm text-gray-700">
+                        {manualFieldIds.length} ausgewählt ·{" "}
+                        {formatHa(manualSelectedAreaHa)} ha
+                      </div>
+                    </div>
+
+                    {manualFieldOptions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setManualFieldIds(
+                            manualFieldOptions.map((field) => field.id)
+                          )
+                        }
+                        className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                      >
+                        Alle auswählen
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mt-3 max-h-[420px] overflow-y-auto rounded-2xl border border-gray-200 bg-white">
+                    {!manualOwnerId ? (
+                      <div className="p-4 text-sm text-gray-600">
+                        Bitte zuerst einen Landwirt auswählen.
+                      </div>
+                    ) : manualFieldOptions.length === 0 ? (
+                      <div className="p-4 text-sm text-gray-600">
+                        Für diesen Landwirt wurden keine Flächen gefunden.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-100">
+                        {manualFieldOptions.map((field) => {
+                          const checked = manualFieldIds.includes(field.id);
+
+                          return (
+                            <label
+                              key={field.id}
+                              className="flex cursor-pointer items-start gap-3 p-3 hover:bg-gray-50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleManualField(field.id)}
+                                className="mt-1"
+                              />
+
+                              <div className="min-w-0">
+                                <div className="font-semibold text-gray-900">
+                                  {getFieldLabel(field)}
+                                </div>
+                                <div className="mt-1 text-sm text-gray-600">
+                                  {formatHa(field.areaHa)} ha
+                                  {field.locationNote
+                                    ? ` · ${field.locationNote}`
+                                    : ""}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 md:flex-row md:justify-end">
+                  <button
+                    type="button"
+                    onClick={resetManualForm}
+                    disabled={manualSaving}
+                    className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-bold text-gray-900 disabled:opacity-50"
+                  >
+                    Formular leeren
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={createManualMowingRequest}
+                    disabled={
+                      manualSaving ||
+                      !manualOwnerId ||
+                      !manualMowingDate ||
+                      manualFieldIds.length === 0
+                    }
+                    className="rounded-xl bg-black px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    {manualSaving ? "Speichert..." : "Mähanfrage speichern"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="grid gap-3 md:grid-cols-4">
           <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-center">
-            <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Anfragen</div>
-            <div className="mt-1 text-2xl font-bold text-blue-950">{summary?.totalRequests ?? requests.length}</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+              Anfragen
+            </div>
+            <div className="mt-1 text-2xl font-bold text-blue-950">
+              {summary?.totalRequests ?? requests.length}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-center">
-            <div className="text-xs font-semibold uppercase tracking-wide text-green-700">Flächen</div>
-            <div className="mt-1 text-2xl font-bold text-green-950">{summary?.totalFields ?? 0}</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-green-700">
+              Flächen
+            </div>
+            <div className="mt-1 text-2xl font-bold text-green-950">
+              {summary?.totalFields ?? 0}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-center">
-            <div className="text-xs font-semibold uppercase tracking-wide text-orange-700">Gesamt ha</div>
-            <div className="mt-1 text-2xl font-bold text-orange-950">{formatHa(summary?.totalAreaHa)}</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-orange-700">
+              Gesamt ha
+            </div>
+            <div className="mt-1 text-2xl font-bold text-orange-950">
+              {formatHa(summary?.totalAreaHa)}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-white p-4 text-center">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Gefiltert ha</div>
-            <div className="mt-1 text-2xl font-bold text-gray-950">{formatHa(visibleTotalAreaHa)}</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Gefiltert ha
+            </div>
+            <div className="mt-1 text-2xl font-bold text-gray-950">
+              {formatHa(visibleTotalAreaHa)}
+            </div>
           </div>
         </section>
 
         <section className="grid gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-100 md:grid-cols-[220px_220px_1fr_140px] md:p-5">
           <div>
-            <label className="mb-2 block text-sm font-semibold text-gray-900">Status</label>
+            <label className="mb-2 block text-sm font-semibold text-gray-900">
+              Status
+            </label>
             <select
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as RequestStatus)}
+              onChange={(event) =>
+                setStatusFilter(event.target.value as RequestStatus)
+              }
               className="w-full rounded-xl border border-gray-300 px-3 py-3"
             >
               <option value="ALLE">Alle</option>
@@ -363,7 +723,9 @@ export default function MowingRequestsAdminPageClient() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-semibold text-gray-900">Mähdatum</label>
+            <label className="mb-2 block text-sm font-semibold text-gray-900">
+              Mähdatum
+            </label>
             <input
               type="date"
               value={dateFilter}
@@ -373,7 +735,9 @@ export default function MowingRequestsAdminPageClient() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-semibold text-gray-900">Suche</label>
+            <label className="mb-2 block text-sm font-semibold text-gray-900">
+              Suche
+            </label>
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -406,28 +770,66 @@ export default function MowingRequestsAdminPageClient() {
             {filteredRequests.map((request) => {
               const isOpen = openRequestId === request.id;
               const isCreatingOrders = creatingOrdersId === request.id;
-              const canCreateOrders = request.status !== "ERLEDIGT" && request.fields.length > 0;
+              const canCreateOrders =
+                request.status !== "ERLEDIGT" && request.fields.length > 0;
               const contactIsLandwirt =
                 contactIsLandwirtByRequestId[request.id] !== false;
-              const selectedContactOwnerId = contactOwnerIdByRequestId[request.id] || "";
+              const selectedContactOwnerId =
+                contactOwnerIdByRequestId[request.id] || "";
 
               return (
-                <article key={request.id} className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-100">
+                <article
+                  key={request.id}
+                  className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-100"
+                >
                   <button
                     type="button"
-                    onClick={() => setOpenRequestId((prev) => (prev === request.id ? null : request.id))}
+                    onClick={() =>
+                      setOpenRequestId((prev) =>
+                        prev === request.id ? null : request.id
+                      )
+                    }
                     className="flex w-full flex-col gap-3 p-4 text-left md:flex-row md:items-center md:justify-between md:p-5"
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-bold text-gray-900">{getOwnerName(request.owner)}</h2>
-                        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusBadgeClass(request.status)}`}>{request.status}</span>
+                        <h2 className="text-lg font-bold text-gray-900">
+                          {getOwnerName(request.owner)}
+                        </h2>
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-bold ${statusBadgeClass(
+                            request.status
+                          )}`}
+                        >
+                          {request.status}
+                        </span>
                       </div>
 
                       <div className="mt-2 grid gap-1 text-sm text-gray-700 md:grid-cols-2">
-                        <div>Eingegangen: <span className="font-semibold">{formatDateTime(request.createdAt)}</span></div>
-                        <div>Mähdatum: <span className="font-semibold">{formatDate(request.mowingDate)}</span></div>
-                        <div>Gesamtfläche: <span className="font-semibold">{formatHa(request.totalAreaHa)} ha</span></div>
+                        <div>
+                          Eingegangen:{" "}
+                          <span className="font-semibold">
+                            {formatDateTime(request.createdAt)}
+                          </span>
+                        </div>
+                        <div>
+                          Mähdatum:{" "}
+                          <span className="font-semibold">
+                            {formatDate(request.mowingDate)}
+                          </span>
+                        </div>
+                        <div>
+                          Gesamtfläche:{" "}
+                          <span className="font-semibold">
+                            {formatHa(request.totalAreaHa)} ha
+                          </span>
+                        </div>
+                        <div>
+                          Uhrzeit:{" "}
+                          <span className="font-semibold">
+                            {request.timeText || "-"}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -435,7 +837,9 @@ export default function MowingRequestsAdminPageClient() {
                       <div className="text-sm font-semibold text-gray-700">
                         {request.fields.length} Fläche(n)
                       </div>
-                      <div className="text-xl text-gray-500">{isOpen ? "−" : "+"}</div>
+                      <div className="text-xl text-gray-500">
+                        {isOpen ? "−" : "+"}
+                      </div>
                     </div>
                   </button>
 
@@ -443,10 +847,21 @@ export default function MowingRequestsAdminPageClient() {
                     <div className="border-t border-gray-100 p-4 md:p-5">
                       <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
                         <div className="space-y-4">
+                          {request.timeText ? (
+                            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+                              <div className="font-bold">Uhrzeit / Angabe</div>
+                              <div className="mt-1 whitespace-pre-wrap">
+                                {request.timeText}
+                              </div>
+                            </div>
+                          ) : null}
+
                           {request.note ? (
                             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
                               <div className="font-bold">Notiz</div>
-                              <div className="mt-1 whitespace-pre-wrap">{request.note}</div>
+                              <div className="mt-1 whitespace-pre-wrap">
+                                {request.note}
+                              </div>
                             </div>
                           ) : null}
 
@@ -456,20 +871,33 @@ export default function MowingRequestsAdminPageClient() {
                                 <tr className="border-b bg-gray-50">
                                   <th className="px-3 py-2">Fläche</th>
                                   <th className="px-3 py-2 text-right">ha</th>
-                                  <th className="px-3 py-2">Treffpunkt/Notiz</th>
+                                  <th className="px-3 py-2">
+                                    Treffpunkt/Notiz
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {request.fields.map((item) => (
-                                  <tr key={item.id} className="border-b last:border-b-0">
-                                    <td className="px-3 py-2 font-semibold text-gray-900">{getFieldLabel(item.field)}</td>
-                                    <td className="px-3 py-2 text-right">{formatHa(item.field.areaHa)} ha</td>
-                                    <td className="px-3 py-2 text-gray-700">{item.field.locationNote || "-"}</td>
+                                  <tr
+                                    key={item.id}
+                                    className="border-b last:border-b-0"
+                                  >
+                                    <td className="px-3 py-2 font-semibold text-gray-900">
+                                      {getFieldLabel(item.field)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      {formatHa(item.field.areaHa)} ha
+                                    </td>
+                                    <td className="px-3 py-2 text-gray-700">
+                                      {item.field.locationNote || "-"}
+                                    </td>
                                   </tr>
                                 ))}
                                 <tr className="bg-gray-50 font-bold">
                                   <td className="px-3 py-2">Gesamt</td>
-                                  <td className="px-3 py-2 text-right">{formatHa(request.totalAreaHa)} ha</td>
+                                  <td className="px-3 py-2 text-right">
+                                    {formatHa(request.totalAreaHa)} ha
+                                  </td>
                                   <td className="px-3 py-2" />
                                 </tr>
                               </tbody>
@@ -479,8 +907,12 @@ export default function MowingRequestsAdminPageClient() {
 
                         <div className="space-y-3">
                           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-800">
-                            <div className="font-bold text-gray-900">Landwirt</div>
-                            <div className="mt-2">{getOwnerName(request.owner)}</div>
+                            <div className="font-bold text-gray-900">
+                              Landwirt
+                            </div>
+                            <div className="mt-2">
+                              {getOwnerName(request.owner)}
+                            </div>
                             <div>Telefon: {request.owner.phone || "-"}</div>
                             <div>E-Mail: {request.owner.email || "-"}</div>
                           </div>
@@ -537,15 +969,21 @@ export default function MowingRequestsAdminPageClient() {
                           </div>
 
                           <div>
-                            <label className="mb-2 block text-sm font-semibold text-gray-900">Status ändern</label>
+                            <label className="mb-2 block text-sm font-semibold text-gray-900">
+                              Status ändern
+                            </label>
                             <select
                               value={request.status}
-                              onChange={(event) => updateStatus(request.id, event.target.value)}
+                              onChange={(event) =>
+                                updateStatus(request.id, event.target.value)
+                              }
                               disabled={savingId === request.id || isCreatingOrders}
                               className="w-full rounded-xl border border-gray-300 px-3 py-3"
                             >
                               <option value="OFFEN">OFFEN</option>
-                              <option value="IN_BEARBEITUNG">IN_BEARBEITUNG</option>
+                              <option value="IN_BEARBEITUNG">
+                                IN_BEARBEITUNG
+                              </option>
                               <option value="ERLEDIGT">ERLEDIGT</option>
                               <option value="ABGELEHNT">ABGELEHNT</option>
                             </select>
@@ -554,15 +992,23 @@ export default function MowingRequestsAdminPageClient() {
                           <button
                             type="button"
                             onClick={() => createOrdersFromRequest(request)}
-                            disabled={!canCreateOrders || isCreatingOrders || savingId === request.id}
+                            disabled={
+                              !canCreateOrders ||
+                              isCreatingOrders ||
+                              savingId === request.id
+                            }
                             className="w-full rounded-xl bg-black px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                           >
-                            {isCreatingOrders ? "Erzeuge Aufträge..." : "Aufträge erzeugen"}
+                            {isCreatingOrders
+                              ? "Erzeuge Aufträge..."
+                              : "Aufträge erzeugen"}
                           </button>
 
                           {request.status === "ERLEDIGT" ? (
                             <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-xs text-green-900">
-                              Diese Anfrage ist erledigt. Für erledigte Anfragen können hier keine weiteren Aufträge erzeugt werden.
+                              Diese Anfrage ist erledigt. Für erledigte Anfragen
+                              können hier keine weiteren Aufträge erzeugt
+                              werden.
                             </div>
                           ) : null}
                         </div>

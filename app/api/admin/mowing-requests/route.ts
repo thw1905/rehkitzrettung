@@ -13,7 +13,27 @@ const ALLOWED_STATUS = new Set([
   "ABGELEHNT",
 ]);
 
-function parseDateOnlyToUtc(dateString: string) {
+function parseDateOnlyToUtc(dateInput: Date | string) {
+  if (dateInput instanceof Date) {
+    return new Date(
+      Date.UTC(
+        dateInput.getUTCFullYear(),
+        dateInput.getUTCMonth(),
+        dateInput.getUTCDate(),
+        0,
+        0,
+        0,
+        0
+      )
+    );
+  }
+
+  const dateString = String(dateInput || "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    throw new Error("Ungültiges Datum.");
+  }
+
   const [year, month, day] = dateString.split("-").map(Number);
 
   if (
@@ -33,6 +53,17 @@ function safeAreaSqm(feature: unknown) {
   } catch {
     return 0;
   }
+}
+
+function getOwnerName(owner?: {
+  firstName?: string | null;
+  lastName?: string | null;
+} | null) {
+  if (!owner) return "-";
+
+  const name = `${owner.firstName || ""} ${owner.lastName || ""}`.trim();
+
+  return name || "-";
 }
 
 function normalizeMowingRequest(request: any) {
@@ -69,6 +100,93 @@ function normalizeMowingRequest(request: any) {
   };
 }
 
+function normalizeFieldOption(field: any) {
+  const fieldAreaSqm = safeAreaSqm(field.areaGeoJson);
+
+  return {
+    id: field.id,
+    ownerId: field.ownerId,
+    name: field.name,
+    displayName: field.displayName,
+    notes: field.notes,
+    locationNote: field.locationNote,
+    areaSqm: fieldAreaSqm,
+    areaHa: fieldAreaSqm / 10000,
+    owner: field.owner
+      ? {
+          id: field.owner.id,
+          firstName: field.owner.firstName,
+          lastName: field.owner.lastName,
+          phone: field.owner.phone,
+          email: field.owner.email,
+        }
+      : null,
+  };
+}
+
+function buildManualRequestNote(params: {
+  note: string | null;
+  adminName: string;
+}) {
+  const parts = ["Telefonisch/Admin erfasst."];
+
+  if (params.adminName && params.adminName !== "-") {
+    parts.push(`Erfasst durch: ${params.adminName}`);
+  }
+
+  if (params.note?.trim()) {
+    parts.push(params.note.trim());
+  }
+
+  return parts.join("\n");
+}
+
+function buildSummary(requests: any[]) {
+  const normalized = requests.map(normalizeMowingRequest);
+  const totalFields = normalized.reduce(
+    (sum, request) => sum + request.fields.length,
+    0
+  );
+  const totalAreaSqm = normalized.reduce(
+    (sum, request) => sum + (request.totalAreaSqm || 0),
+    0
+  );
+
+  return {
+    requests: normalized,
+    summary: {
+      totalRequests: normalized.length,
+      totalFields,
+      totalAreaHa: totalAreaSqm / 10000,
+    },
+  };
+}
+
+async function getRequestInclude() {
+  return {
+    owner: true,
+    fields: {
+      include: {
+        field: {
+          select: {
+            id: true,
+            name: true,
+            displayName: true,
+            notes: true,
+            locationNote: true,
+            areaGeoJson: true,
+          },
+        },
+      },
+      orderBy: {
+        field: {
+          displayName: "asc",
+        },
+      },
+    },
+  } as const;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserWithTeams();
@@ -101,44 +219,179 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const requests = await db.mowingRequest.findMany({
-      where,
-      include: {
-        owner: true,
-        fields: {
-          include: {
-            field: {
-              select: {
-                id: true,
-                name: true,
-                displayName: true,
-                notes: true,
-                locationNote: true,
-                areaGeoJson: true,
-              },
-            },
-          },
-          orderBy: {
-            field: {
-              displayName: "asc",
+    const include = await getRequestInclude();
+
+    const [requests, fieldsForManualForm] = await Promise.all([
+      db.mowingRequest.findMany({
+        where,
+        include,
+        orderBy: [{ createdAt: "desc" }, { mowingDate: "asc" }],
+      }),
+      db.field.findMany({
+        select: {
+          id: true,
+          ownerId: true,
+          name: true,
+          displayName: true,
+          notes: true,
+          locationNote: true,
+          areaGeoJson: true,
+          owner: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              email: true,
             },
           },
         },
-      },
-      orderBy: [
-        { createdAt: "desc" },
-        { mowingDate: "asc" },
-      ],
-    });
+        orderBy: [{ displayName: "asc" }, { name: "asc" }],
+      }),
+    ]);
+
+    const { requests: normalizedRequests, summary } = buildSummary(requests);
 
     return NextResponse.json({
-      requests: requests.map(normalizeMowingRequest),
+      requests: normalizedRequests,
+      fieldOptions: fieldsForManualForm.map(normalizeFieldOption),
+      summary,
     });
   } catch (error: any) {
     console.error("Mähanfragen laden Fehler:", error);
 
     return NextResponse.json(
       { error: error?.message || "Mähanfragen konnten nicht geladen werden." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const currentUser = await getCurrentUserWithTeams();
+
+    if (!currentUser || !currentUser.isAdmin) {
+      return NextResponse.json(
+        { error: "Keine Berechtigung." },
+        { status: 403 }
+      );
+    }
+
+    const body = await req.json().catch(() => ({}));
+
+    const ownerId = String(body.ownerId || "").trim();
+    const mowingDateText = String(body.mowingDate || "").trim();
+    const timeText = String(body.timeText || "").trim();
+    const note = String(body.note || "").trim();
+
+    const fieldIds = Array.from(
+      new Set(
+        Array.isArray(body.fieldIds)
+          ? body.fieldIds
+              .map((item: unknown) => String(item || "").trim())
+              .filter(Boolean)
+          : []
+      )
+    );
+
+    if (!ownerId) {
+      return NextResponse.json(
+        { error: "Bitte einen Landwirt auswählen." },
+        { status: 400 }
+      );
+    }
+
+    if (!mowingDateText) {
+      return NextResponse.json(
+        { error: "Bitte ein Mähdatum auswählen." },
+        { status: 400 }
+      );
+    }
+
+    if (fieldIds.length === 0) {
+      return NextResponse.json(
+        { error: "Bitte mindestens eine Fläche auswählen." },
+        { status: 400 }
+      );
+    }
+
+    const mowingDate = parseDateOnlyToUtc(mowingDateText);
+
+    const owner = await db.owner.findUnique({
+      where: {
+        id: ownerId,
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (!owner) {
+      return NextResponse.json(
+        { error: "Der ausgewählte Landwirt wurde nicht gefunden." },
+        { status: 404 }
+      );
+    }
+
+    const fields = await db.field.findMany({
+      where: {
+        id: {
+          in: fieldIds,
+        },
+        ownerId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (fields.length !== fieldIds.length) {
+      return NextResponse.json(
+        {
+          error:
+            "Mindestens eine ausgewählte Fläche wurde nicht gefunden oder gehört nicht zu diesem Landwirt.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const adminName = getOwnerName(currentUser as any);
+    const finalNote = buildManualRequestNote({
+      note,
+      adminName,
+    });
+
+    const include = await getRequestInclude();
+
+    const created = await db.mowingRequest.create({
+      data: {
+        ownerId,
+        mowingDate,
+        timeText: timeText || null,
+        note: finalNote,
+        status: "OFFEN",
+        fields: {
+          create: fieldIds.map((fieldId) => ({
+            fieldId,
+          })),
+        },
+      },
+      include,
+    });
+
+    return NextResponse.json({
+      success: true,
+      request: normalizeMowingRequest(created),
+      message: "Telefonische Mähanfrage wurde erstellt.",
+    });
+  } catch (error: any) {
+    console.error("Mähanfrage erstellen Fehler:", error);
+
+    return NextResponse.json(
+      { error: error?.message || "Mähanfrage konnte nicht erstellt werden." },
       { status: 500 }
     );
   }
