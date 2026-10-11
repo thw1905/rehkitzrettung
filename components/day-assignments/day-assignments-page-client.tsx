@@ -4,6 +4,24 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { area } from "@turf/area";
+import {
+  closestCenter,
+  DndContext,
+  DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type User = {
   id: string;
@@ -43,10 +61,10 @@ type OrderItem = {
     lastName: string;
   };
   field: {
-  name: string;
-  displayName?: string | null;
-  areaGeoJson?: GeoJSON.Feature<GeoJSON.Polygon> | null;
-};
+    name: string;
+    displayName?: string | null;
+    areaGeoJson?: GeoJSON.Feature<GeoJSON.Polygon> | null;
+  };
   operationDayTeam: DayTeam | null;
   team: {
     id: string;
@@ -138,6 +156,109 @@ function compareOrdersForTeam(a: OrderItem, b: OrderItem) {
   return getOrderLabel(a).localeCompare(getOrderLabel(b), "de");
 }
 
+function SortableOrderCard({
+  order,
+  index,
+  teamOrdersLength,
+  saving,
+  onMoveUp,
+  onMoveDown,
+}: {
+  order: OrderItem;
+  index: number;
+  teamOrdersLength: number;
+  saving: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: order.id,
+    disabled: saving,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={[
+        "rounded-xl border border-gray-200 bg-white p-3",
+        isDragging ? "shadow-xl ring-2 ring-black/20" : "",
+      ].join(" ")}
+    >
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          disabled={saving}
+          className="flex h-9 w-9 shrink-0 touch-none select-none items-center justify-center rounded-full bg-black text-sm font-bold text-white disabled:opacity-40"
+          title="Auftrag ziehen"
+        >
+          {index + 1}
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-gray-900">
+            {getOrderLabel(order)}
+          </div>
+
+          <div className="mt-1 text-sm text-gray-700">
+            Fläche: {getFieldLabel(order)}
+          </div>
+
+          <div className="mt-1 text-sm font-semibold text-gray-900">
+            Größe: {formatHectare(getFieldAreaHectare(order))}
+          </div>
+
+          <div className="mt-1 text-xs text-gray-500">
+            Ansprechpartner: {order.owner.firstName} {order.owner.lastName}
+          </div>
+
+          <div className="mt-2 text-xs font-semibold text-gray-500">
+            Zum Sortieren die schwarze Nummer gedrückt halten und ziehen.
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-col gap-1">
+          <button
+            type="button"
+            onClick={onMoveUp}
+            disabled={index === 0 || saving}
+            className="rounded-lg border border-gray-300 px-3 py-1 text-sm font-semibold text-gray-800 disabled:opacity-40"
+            title="Nach oben"
+          >
+            ▲
+          </button>
+
+          <button
+            type="button"
+            onClick={onMoveDown}
+            disabled={index === teamOrdersLength - 1 || saving}
+            className="rounded-lg border border-gray-300 px-3 py-1 text-sm font-semibold text-gray-800 disabled:opacity-40"
+            title="Nach unten"
+          >
+            ▼
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DayAssignmentsPageClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -156,6 +277,23 @@ export default function DayAssignmentsPageClient() {
   const [meetingTime, setMeetingTime] = useState("");
   const [savingMeetingTime, setSavingMeetingTime] = useState(false);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 180,
+        tolerance: 6,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
   function handleDateChange(date: string) {
     setSelectedDate(date);
     router.replace(`/day-assignments?date=${date}`);
@@ -173,7 +311,9 @@ export default function DayAssignmentsPageClient() {
       const data: ResponseData & { error?: string } = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Tages-Zuordnung konnte nicht geladen werden.");
+        throw new Error(
+          data.error || "Tages-Zuordnung konnte nicht geladen werden."
+        );
       }
 
       setOrders(Array.isArray(data.orders) ? data.orders : []);
@@ -221,10 +361,6 @@ export default function DayAssignmentsPageClient() {
     return map;
   }, [orders]);
 
-  const unassignedOrders = useMemo(() => {
-    return orders.filter((order) => !order.operationDayTeam?.id);
-  }, [orders]);
-
   async function assignOrder(orderId: string, operationDayTeamId: string) {
     setSavingOrderId(orderId);
 
@@ -242,7 +378,9 @@ export default function DayAssignmentsPageClient() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data?.error || "Auftrag konnte nicht zugewiesen werden.");
+        throw new Error(
+          data?.error || "Auftrag konnte nicht zugewiesen werden."
+        );
       }
 
       await loadData(selectedDate);
@@ -254,28 +392,12 @@ export default function DayAssignmentsPageClient() {
     }
   }
 
-  async function moveOrderInTeam(
-    dayTeam: DayTeam,
-    orderIndex: number,
-    direction: "up" | "down"
-  ) {
-    const teamOrders = [...(ordersByTeamId.get(dayTeam.id) || [])];
-
-    if (teamOrders.length < 2) return;
-
-    const targetIndex = direction === "up" ? orderIndex - 1 : orderIndex + 1;
-
-    if (targetIndex < 0 || targetIndex >= teamOrders.length) return;
-
-    const temp = teamOrders[orderIndex];
-    teamOrders[orderIndex] = teamOrders[targetIndex];
-    teamOrders[targetIndex] = temp;
-
+  async function saveTeamOrder(dayTeam: DayTeam, nextTeamOrders: OrderItem[]) {
     setSavingOrderTeamId(dayTeam.id);
 
     setOrders((prev) => {
       const orderPosition = new Map(
-        teamOrders.map((order, index) => [order.id, index + 1])
+        nextTeamOrders.map((order, index) => [order.id, index + 1])
       );
 
       return prev.map((order) => {
@@ -298,7 +420,7 @@ export default function DayAssignmentsPageClient() {
         },
         body: JSON.stringify({
           operationDayTeamId: dayTeam.id,
-          orderIds: teamOrders.map((order) => order.id),
+          orderIds: nextTeamOrders.map((order) => order.id),
         }),
       });
 
@@ -313,11 +435,52 @@ export default function DayAssignmentsPageClient() {
       await loadData(selectedDate);
     } catch (error: any) {
       console.error("Fehler beim Speichern der Reihenfolge:", error);
-      alert(error?.message || "Auftragsreihenfolge konnte nicht gespeichert werden.");
+      alert(
+        error?.message || "Auftragsreihenfolge konnte nicht gespeichert werden."
+      );
       await loadData(selectedDate);
     } finally {
       setSavingOrderTeamId(null);
     }
+  }
+
+  async function moveOrderInTeam(
+    dayTeam: DayTeam,
+    orderIndex: number,
+    direction: "up" | "down"
+  ) {
+    const teamOrders = [...(ordersByTeamId.get(dayTeam.id) || [])];
+
+    if (teamOrders.length < 2) return;
+
+    const targetIndex = direction === "up" ? orderIndex - 1 : orderIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= teamOrders.length) return;
+
+    const nextTeamOrders = [...teamOrders];
+    const temp = nextTeamOrders[orderIndex];
+    nextTeamOrders[orderIndex] = nextTeamOrders[targetIndex];
+    nextTeamOrders[targetIndex] = temp;
+
+    await saveTeamOrder(dayTeam, nextTeamOrders);
+  }
+
+  async function handleDragEnd(dayTeam: DayTeam, event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over) return;
+    if (active.id === over.id) return;
+
+    const teamOrders = [...(ordersByTeamId.get(dayTeam.id) || [])];
+
+    const oldIndex = teamOrders.findIndex((order) => order.id === active.id);
+    const newIndex = teamOrders.findIndex((order) => order.id === over.id);
+
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const nextTeamOrders = arrayMove(teamOrders, oldIndex, newIndex);
+
+    await saveTeamOrder(dayTeam, nextTeamOrders);
   }
 
   async function saveMeetingTime(value: string) {
@@ -463,8 +626,9 @@ export default function DayAssignmentsPageClient() {
               </h2>
 
               <p className="mt-1 text-sm text-gray-600">
-                Hier kannst du die Reihenfolge der Aufträge je Team anpassen.
-                Diese Reihenfolge wird später auch in „Meine Aufträge“ genutzt.
+                Ziehe die schwarze Nummer eines Auftrags nach oben oder unten.
+                Die Reihenfolge wird gespeichert und später auch in „Meine
+                Aufträge“ genutzt.
               </p>
 
               {dayTeams.length === 0 ? (
@@ -475,6 +639,7 @@ export default function DayAssignmentsPageClient() {
                 <div className="mt-4 space-y-4">
                   {dayTeams.map((dayTeam) => {
                     const teamOrders = ordersByTeamId.get(dayTeam.id) || [];
+                    const isSavingThisTeam = savingOrderTeamId === dayTeam.id;
 
                     return (
                       <div
@@ -488,12 +653,15 @@ export default function DayAssignmentsPageClient() {
                             </div>
 
                             <div className="mt-1 text-sm text-gray-700">
-  Zugeordnete Aufträge: {dayTeam.orders.length}
-</div>
+                              Zugeordnete Aufträge: {teamOrders.length}
+                            </div>
 
                             <div className="mt-1 text-sm font-semibold text-gray-900">
-  Gesamtfläche: {formatHectare(getTeamTotalHectare(dayTeam, orders))}
-</div>
+                              Gesamtfläche:{" "}
+                              {formatHectare(
+                                getTeamTotalHectare(dayTeam, orders)
+                              )}
+                            </div>
 
                             <div className="mt-1 text-sm text-gray-700">
                               Pilot:{" "}
@@ -507,7 +675,7 @@ export default function DayAssignmentsPageClient() {
                             </div>
                           </div>
 
-                          {savingOrderTeamId === dayTeam.id && (
+                          {isSavingThisTeam && (
                             <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-700">
                               Speichert...
                             </div>
@@ -519,71 +687,36 @@ export default function DayAssignmentsPageClient() {
                             Diesem Team sind noch keine Aufträge zugeordnet.
                           </div>
                         ) : (
-                          <div className="mt-4 space-y-2">
-                            {teamOrders.map((order, index) => (
-                              <div
-                                key={order.id}
-                                className="rounded-xl border border-gray-200 bg-white p-3"
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black text-sm font-bold text-white">
-                                    {index + 1}
-                                  </div>
-
-                                  <div className="min-w-0 flex-1">
-                                    <div className="font-semibold text-gray-900">
-                                      {getOrderLabel(order)}
-                                    </div>
-
-                                    <div className="mt-1 text-sm text-gray-700">
-  Fläche: {getFieldLabel(order)}
-</div>
-
-<div className="mt-1 text-sm font-semibold text-gray-900">
-  Größe: {formatHectare(getFieldAreaHectare(order))}
-</div>
-
-                                    <div className="mt-1 text-xs text-gray-500">
-                                      Ansprechpartner: {order.owner.firstName}{" "}
-                                      {order.owner.lastName}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex shrink-0 flex-col gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        moveOrderInTeam(dayTeam, index, "up")
-                                      }
-                                      disabled={
-                                        index === 0 ||
-                                        savingOrderTeamId === dayTeam.id
-                                      }
-                                      className="rounded-lg border border-gray-300 px-3 py-1 text-sm font-semibold text-gray-800 disabled:opacity-40"
-                                      title="Nach oben"
-                                    >
-                                      ▲
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        moveOrderInTeam(dayTeam, index, "down")
-                                      }
-                                      disabled={
-                                        index === teamOrders.length - 1 ||
-                                        savingOrderTeamId === dayTeam.id
-                                      }
-                                      className="rounded-lg border border-gray-300 px-3 py-1 text-sm font-semibold text-gray-800 disabled:opacity-40"
-                                      title="Nach unten"
-                                    >
-                                      ▼
-                                    </button>
-                                  </div>
-                                </div>
+                          <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={(event) =>
+                              handleDragEnd(dayTeam, event)
+                            }
+                          >
+                            <SortableContext
+                              items={teamOrders.map((order) => order.id)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              <div className="mt-4 space-y-2">
+                                {teamOrders.map((order, index) => (
+                                  <SortableOrderCard
+                                    key={order.id}
+                                    order={order}
+                                    index={index}
+                                    teamOrdersLength={teamOrders.length}
+                                    saving={isSavingThisTeam}
+                                    onMoveUp={() =>
+                                      moveOrderInTeam(dayTeam, index, "up")
+                                    }
+                                    onMoveDown={() =>
+                                      moveOrderInTeam(dayTeam, index, "down")
+                                    }
+                                  />
+                                ))}
                               </div>
-                            ))}
-                          </div>
+                            </SortableContext>
+                          </DndContext>
                         )}
                       </div>
                     );

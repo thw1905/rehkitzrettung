@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import HelperStatisticsSection from "@/components/statistics/helper-statistics-section";
 
 type Summary = {
   totalOrders: number;
@@ -133,6 +134,7 @@ function toDateInputValue(date: Date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
+
   return `${y}-${m}-${d}`;
 }
 
@@ -175,6 +177,7 @@ function formatMinutes(totalMinutes: number) {
   const minutes = safeMinutes % 60;
 
   if (hours <= 0) return `${minutes} min`;
+
   return `${hours} h ${minutes} min`;
 }
 
@@ -238,6 +241,7 @@ export default function StatisticsPageClient() {
   const [fundFilter, setFundFilter] = useState("ALLE");
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<StatisticsResponse | null>(null);
+
   const [sections, setSections] = useState<PrintSections>({
     summary: true,
     wild: true,
@@ -333,8 +337,10 @@ export default function StatisticsPageClient() {
 
   function selectCurrentSeason() {
     const nextRange = getDefaultSeasonRange();
+
     setFrom(nextRange.from);
     setTo(nextRange.to);
+
     loadStats(nextRange.from, nextRange.to);
   }
 
@@ -351,12 +357,14 @@ export default function StatisticsPageClient() {
   }
 
   const hasAnySection = Object.values(sections).some(Boolean);
+
   const filterOptions = data?.filterOptions || {
     owners: [],
     reviere: [],
     teams: [],
     pilots: [],
   };
+
   const rows = data?.rows || [];
 
   return (
@@ -463,10 +471,12 @@ export default function StatisticsPageClient() {
                 Saisonstatistik Rehkitzrettung
               </h1>
               <p className="mt-2 text-sm text-gray-700">
-                Auswertung von Einsätzen, Fläche, Zeit, Teams, Wilddaten und Detailfunden.
+                Auswertung von Einsätzen, Fläche, Zeit, Teams, Wilddaten und
+                Detailfunden.
               </p>
               <p className="mt-2 text-sm font-medium text-gray-900">
-                Zeitraum: {formatDate(from)} bis {formatDate(to)} · Erstellt am: {generatedAt}
+                Zeitraum: {formatDate(from)} bis {formatDate(to)} · Erstellt am:{" "}
+                {generatedAt}
               </p>
             </div>
 
@@ -622,6 +632,8 @@ export default function StatisticsPageClient() {
           </div>
         </section>
 
+        <HelperStatisticsSection from={from} to={to} />
+
         <section className="no-print page-card p-4">
           <div className="mb-3 text-sm font-bold text-gray-900">
             Was soll gedruckt werden?
@@ -679,7 +691,9 @@ export default function StatisticsPageClient() {
           <>
             {sections.summary && (
               <section className="print-section space-y-3">
-                <h2 className="text-lg font-bold text-gray-900">Gesamtübersicht</h2>
+                <h2 className="text-lg font-bold text-gray-900">
+                  Gesamtübersicht
+                </h2>
 
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
                   <StatCard
@@ -776,7 +790,8 @@ export default function StatisticsPageClient() {
                     Detailauswertung Fläche und Funde
                   </h2>
                   <p className="mt-1 text-sm text-gray-700">
-                    Einzelne erledigte Aufträge im gewählten Filter. Wildzahlen aus Direktfunden und PinPoints werden zusammengezählt.
+                    Einzelne erledigte Aufträge im gewählten Filter. Wildzahlen
+                    aus Direktfunden und PinPoints werden zusammengezählt.
                   </p>
                 </div>
 
@@ -806,6 +821,7 @@ export default function StatisticsPageClient() {
                           <th className="px-3 py-2 text-right">Maulw.</th>
                         </tr>
                       </thead>
+
                       <tbody>
                         {rows.map((row) => (
                           <tr key={row.id} className="border-t border-gray-200">
@@ -819,15 +835,33 @@ export default function StatisticsPageClient() {
                             <td className="px-3 py-2">{row.ownerName}</td>
                             <td className="px-3 py-2">{row.revierName}</td>
                             <td className="px-3 py-2">{row.teamName}</td>
-                            <td className="px-3 py-2">{row.pilotName || "-"}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(row.areaHa)}</td>
-                            <td className="px-3 py-2 text-right">{formatMinutes(row.minutes)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(row.rehkitzeGesichert)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(row.rehkitzeAbgesprungen)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(row.sonstigesWildGesichert)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(row.sonstigesWildAbgesprungen)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(row.wildGesamt)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(row.maulwurfhuegelFehlstelle)}</td>
+                            <td className="px-3 py-2">
+                              {row.pilotName || "-"}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(row.areaHa)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatMinutes(row.minutes)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(row.rehkitzeGesichert)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(row.rehkitzeAbgesprungen)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(row.sonstigesWildGesichert)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(row.sonstigesWildAbgesprungen)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(row.wildGesamt)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(row.maulwurfhuegelFehlstelle)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -844,7 +878,9 @@ export default function StatisticsPageClient() {
                     Reviere / Wild pro Hektar
                   </h2>
                   <p className="mt-1 text-sm text-gray-700">
-                    Durchschnittliche Wildzahlen je Revier bezogen auf die abgesuchte Fläche. Wildzahlen aus Direktfunden und PinPoints werden zusammengezählt.
+                    Durchschnittliche Wildzahlen je Revier bezogen auf die
+                    abgesuchte Fläche. Wildzahlen aus Direktfunden und PinPoints
+                    werden zusammengezählt.
                   </p>
                 </div>
 
@@ -872,24 +908,52 @@ export default function StatisticsPageClient() {
                           <th className="px-3 py-2 text-right">Maulw.</th>
                         </tr>
                       </thead>
+
                       <tbody>
                         {data.reviere.map((revier) => (
-                          <tr key={revier.revierId} className="border-t border-gray-200">
+                          <tr
+                            key={revier.revierId}
+                            className="border-t border-gray-200"
+                          >
                             <td className="px-3 py-2 font-semibold text-gray-900">
                               {revier.revierName}
                             </td>
-                            <td className="px-3 py-2 text-right">{revier.orderCount}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(revier.totalHa)} ha</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(revier.rehkitzeGesichert)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(revier.rehkitzeAbgesprungen)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(revier.rehkitzeGesamt)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(revier.sonstigesWildGesichert)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(revier.sonstigesWildAbgesprungen)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(revier.wildGesamt)}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(revier.rehkitzeGesichertPerHa)}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(revier.rehkitzeGesamtPerHa)}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(revier.wildGesamtPerHa)}</td>
-                            <td className="px-3 py-2 text-right">{formatNumber(revier.maulwurfhuegelFehlstelle)}</td>
+                            <td className="px-3 py-2 text-right">
+                              {revier.orderCount}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(revier.totalHa)} ha
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(revier.rehkitzeGesichert)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(revier.rehkitzeAbgesprungen)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(revier.rehkitzeGesamt)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(revier.sonstigesWildGesichert)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(revier.sonstigesWildAbgesprungen)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(revier.wildGesamt)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(revier.rehkitzeGesichertPerHa)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(revier.rehkitzeGesamtPerHa)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(revier.wildGesamtPerHa)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatNumber(revier.maulwurfhuegelFehlstelle)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -904,7 +968,8 @@ export default function StatisticsPageClient() {
                 <div className="mb-4">
                   <h2 className="text-lg font-bold text-gray-900">Teams</h2>
                   <p className="mt-1 text-sm text-gray-700">
-                    Leistung, Auftragszeit, Team-Einsatzzeit und Wilddaten pro Team.
+                    Leistung, Auftragszeit, Team-Einsatzzeit und Wilddaten pro
+                    Team.
                   </p>
                 </div>
 
@@ -924,8 +989,12 @@ export default function StatisticsPageClient() {
                           <th className="px-3 py-2 text-right">Fläche</th>
                           <th className="px-3 py-2 text-right">Auftragszeit</th>
                           <th className="px-3 py-2 text-right">Teamzeit</th>
-                          <th className="px-3 py-2 text-right">Ø Auftrag min/ha</th>
-                          <th className="px-3 py-2 text-right">Ø Einsatz min/ha</th>
+                          <th className="px-3 py-2 text-right">
+                            Ø Auftrag min/ha
+                          </th>
+                          <th className="px-3 py-2 text-right">
+                            Ø Einsatz min/ha
+                          </th>
                           <th className="px-3 py-2 text-right">RK ges.</th>
                           <th className="px-3 py-2 text-right">RK abg.</th>
                           <th className="px-3 py-2 text-right">SW ges.</th>
@@ -933,25 +1002,55 @@ export default function StatisticsPageClient() {
                           <th className="px-3 py-2 text-right">Maulw.</th>
                         </tr>
                       </thead>
+
                       <tbody>
                         {data.teams.map((team) => (
-                          <tr key={team.teamName} className="border-t border-gray-200">
+                          <tr
+                            key={team.teamName}
+                            className="border-t border-gray-200"
+                          >
                             <td className="px-3 py-2 font-semibold text-gray-900">
                               {team.teamName}
                             </td>
-                            <td className="px-3 py-2">{team.pilotName || "-"}</td>
-                            <td className="px-3 py-2">{team.searchersText || "-"}</td>
-                            <td className="px-3 py-2 text-right">{team.orderCount}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(team.totalHa)} ha</td>
-                            <td className="px-3 py-2 text-right">{formatMinutes(team.totalMinutes)}</td>
-                            <td className="px-3 py-2 text-right">{formatMinutes(team.teamDeploymentMinutes)}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(team.avgMinPerHa)}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(team.avgTeamDeploymentMinPerHa)}</td>
-                            <td className="px-3 py-2 text-right">{team.rehkitzeGesichert}</td>
-                            <td className="px-3 py-2 text-right">{team.rehkitzeAbgesprungen}</td>
-                            <td className="px-3 py-2 text-right">{team.sonstigesWildGesichert}</td>
-                            <td className="px-3 py-2 text-right">{team.sonstigesWildAbgesprungen}</td>
-                            <td className="px-3 py-2 text-right">{team.maulwurfhuegelFehlstelle}</td>
+                            <td className="px-3 py-2">
+                              {team.pilotName || "-"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {team.searchersText || "-"}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {team.orderCount}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(team.totalHa)} ha
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatMinutes(team.totalMinutes)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatMinutes(team.teamDeploymentMinutes)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(team.avgMinPerHa)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(team.avgTeamDeploymentMinPerHa)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {team.rehkitzeGesichert}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {team.rehkitzeAbgesprungen}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {team.sonstigesWildGesichert}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {team.sonstigesWildAbgesprungen}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {team.maulwurfhuegelFehlstelle}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -964,9 +1063,12 @@ export default function StatisticsPageClient() {
             {sections.days && (
               <section className="page-card print-card print-section p-4 md:p-5">
                 <div className="mb-4">
-                  <h2 className="text-lg font-bold text-gray-900">Einsatztage</h2>
+                  <h2 className="text-lg font-bold text-gray-900">
+                    Einsatztage
+                  </h2>
                   <p className="mt-1 text-sm text-gray-700">
-                    Tagesübersicht mit Auftragszeit und Team-Einsatzzeit im gewählten Zeitraum.
+                    Tagesübersicht mit Auftragszeit und Team-Einsatzzeit im
+                    gewählten Zeitraum.
                   </p>
                 </div>
 
@@ -984,8 +1086,12 @@ export default function StatisticsPageClient() {
                           <th className="px-3 py-2 text-right">Fläche</th>
                           <th className="px-3 py-2 text-right">Auftragszeit</th>
                           <th className="px-3 py-2 text-right">Teamzeit</th>
-                          <th className="px-3 py-2 text-right">Ø Auftrag min/ha</th>
-                          <th className="px-3 py-2 text-right">Ø Einsatz min/ha</th>
+                          <th className="px-3 py-2 text-right">
+                            Ø Auftrag min/ha
+                          </th>
+                          <th className="px-3 py-2 text-right">
+                            Ø Einsatz min/ha
+                          </th>
                           <th className="px-3 py-2 text-right">RK ges.</th>
                           <th className="px-3 py-2 text-right">RK abg.</th>
                           <th className="px-3 py-2 text-right">SW ges.</th>
@@ -993,23 +1099,49 @@ export default function StatisticsPageClient() {
                           <th className="px-3 py-2 text-right">Maulw.</th>
                         </tr>
                       </thead>
+
                       <tbody>
                         {data.days.map((day) => (
-                          <tr key={day.date} className="border-t border-gray-200">
+                          <tr
+                            key={day.date}
+                            className="border-t border-gray-200"
+                          >
                             <td className="px-3 py-2 font-semibold text-gray-900">
                               {formatDate(day.date)}
                             </td>
-                            <td className="px-3 py-2 text-right">{day.orderCount}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(day.totalHa)} ha</td>
-                            <td className="px-3 py-2 text-right">{formatMinutes(day.totalMinutes)}</td>
-                            <td className="px-3 py-2 text-right">{formatMinutes(day.teamDeploymentMinutes)}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(day.avgMinPerHa)}</td>
-                            <td className="px-3 py-2 text-right">{formatHa(day.avgTeamDeploymentMinPerHa)}</td>
-                            <td className="px-3 py-2 text-right">{day.rehkitzeGesichert}</td>
-                            <td className="px-3 py-2 text-right">{day.rehkitzeAbgesprungen}</td>
-                            <td className="px-3 py-2 text-right">{day.sonstigesWildGesichert}</td>
-                            <td className="px-3 py-2 text-right">{day.sonstigesWildAbgesprungen}</td>
-                            <td className="px-3 py-2 text-right">{day.maulwurfhuegelFehlstelle}</td>
+                            <td className="px-3 py-2 text-right">
+                              {day.orderCount}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(day.totalHa)} ha
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatMinutes(day.totalMinutes)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatMinutes(day.teamDeploymentMinutes)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(day.avgMinPerHa)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatHa(day.avgTeamDeploymentMinPerHa)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {day.rehkitzeGesichert}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {day.rehkitzeAbgesprungen}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {day.sonstigesWildGesichert}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {day.sonstigesWildAbgesprungen}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {day.maulwurfhuegelFehlstelle}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1023,4 +1155,4 @@ export default function StatisticsPageClient() {
       </div>
     </main>
   );
-};
+}
