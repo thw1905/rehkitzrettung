@@ -446,6 +446,33 @@ export default function DashboardPageClient({ isAdmin }: Props) {
               />
             </section>
 
+            {/* Nur für Admins: Korrektur abgeschlossener Direktfunde aller Teams. */}
+            <a
+              href="/admin/direct-findings"
+              className="group flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-left shadow-sm transition-colors hover:border-amber-500 hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 md:px-5"
+              aria-label="Direktfunde aller Teams korrigieren"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-white text-xl"
+                  aria-hidden="true"
+                >
+                  ✏️
+                </span>
+                <div className="min-w-0">
+                  <div className="font-bold text-amber-950">
+                    Direktfunde korrigieren
+                  </div>
+                  <p className="mt-0.5 text-xs leading-relaxed text-amber-900 sm:text-sm">
+                    Abgeschlossene Aufträge aller Teams prüfen und Wilddaten korrigieren.
+                  </p>
+                </div>
+              </div>
+              <span className="shrink-0 text-2xl font-semibold text-amber-800 transition-transform group-hover:translate-x-1" aria-hidden="true">
+                ›
+              </span>
+            </a>
+
             <section className="page-card p-4 md:p-5">
               <div className="mb-4">
                 <h2 className="text-lg font-bold text-gray-900">

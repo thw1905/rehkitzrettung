@@ -5,11 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdminApi } from "@/lib/admin";
 import { sendWebPushToUser } from "@/lib/web-push";
+import { sendMail } from "@/lib/mail";
 
 function parseDateOnlyToUtc(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number);
 
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
     throw new Error("Ungültiges Datum.");
   }
 
@@ -19,6 +24,33 @@ function parseDateOnlyToUtc(dateString: string) {
 function formatDateGerman(dateString: string) {
   const [year, month, day] = dateString.split("-");
   return `${day}.${month}.${year}`;
+}
+
+function getPersonName(person?: {
+  firstName?: string | null;
+  lastName?: string | null;
+} | null) {
+  if (!person) return "-";
+
+  const name = `${person.firstName || ""} ${person.lastName || ""}`.trim();
+
+  return name || "-";
+}
+
+function getFieldLabel(field?: {
+  displayName?: string | null;
+  name?: string | null;
+} | null) {
+  if (!field) return "Unbekannte Fläche";
+
+  const displayName = (field.displayName || "").trim();
+  const name = (field.name || "").trim();
+
+  if (displayName && name) return `${displayName} · ${name}`;
+  if (displayName) return displayName;
+  if (name) return name;
+
+  return "Unbekannte Fläche";
 }
 
 async function createNotificationForUsers(params: {
@@ -60,6 +92,223 @@ async function createNotificationForUsers(params: {
   };
 }
 
+type RevierOwnerMailData = {
+  email: string;
+  name: string;
+  reviere: Set<string>;
+  fields: Set<string>;
+};
+
+function addRevierOwnerMailData(
+  map: Map<string, RevierOwnerMailData>,
+  params: {
+    email: string | null | undefined;
+    name: string;
+    revierLabel: string;
+    fieldLabel: string;
+  }
+) {
+  const email = String(params.email || "").trim().toLowerCase();
+
+  if (!email) return;
+
+  if (!map.has(email)) {
+    map.set(email, {
+      email,
+      name: params.name || "-",
+      reviere: new Set<string>(),
+      fields: new Set<string>(),
+    });
+  }
+
+  const item = map.get(email);
+
+  if (!item) return;
+
+  if (params.revierLabel) {
+    item.reviere.add(params.revierLabel);
+  }
+
+  if (params.fieldLabel) {
+    item.fields.add(params.fieldLabel);
+  }
+}
+
+async function notifyAffectedRevierOwnersByEmail(params: {
+  date: Date;
+  dateString: string;
+  displayDate: string;
+  meetingText: string;
+  operationDayId: string;
+}) {
+  const operationDay = await db.operationDay.findUnique({
+    where: {
+      id: params.operationDayId,
+    },
+    include: {
+      teams: {
+        include: {
+          orders: {
+            include: {
+              field: {
+                select: {
+                  id: true,
+                  name: true,
+                  displayName: true,
+                },
+              },
+              reviere: {
+                include: {
+                  revier: {
+                    include: {
+                      paechter: {
+                        include: {
+                          pachter: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!operationDay) {
+    return {
+      emailsSent: 0,
+      recipients: 0,
+      skippedBecauseNoSmtp: false,
+      errors: [] as string[],
+    };
+  }
+
+  const mailByEmail = new Map<string, RevierOwnerMailData>();
+
+  for (const dayTeam of operationDay.teams) {
+    for (const order of dayTeam.orders) {
+      const fieldLabel = getFieldLabel(order.field);
+
+      for (const orderRevier of order.reviere || []) {
+        const revier = orderRevier.revier;
+
+        if (!revier) continue;
+
+        const revierLabel = [revier.nummer, revier.name]
+          .filter(Boolean)
+          .join(" · ");
+
+        for (const assignment of revier.paechter || []) {
+          const pachter = assignment.pachter;
+
+          if (!pachter) continue;
+
+          addRevierOwnerMailData(mailByEmail, {
+            email: pachter.email,
+            name: getPersonName(pachter),
+            revierLabel,
+            fieldLabel,
+          });
+        }
+      }
+    }
+  }
+
+  const errors: string[] = [];
+  let emailsSent = 0;
+
+  if (mailByEmail.size === 0) {
+    return {
+      emailsSent: 0,
+      recipients: 0,
+      skippedBecauseNoSmtp: false,
+      errors,
+    };
+  }
+
+  const hasSmtpConfig =
+    process.env.SMTP_HOST &&
+    process.env.SMTP_USER &&
+    process.env.SMTP_PASS &&
+    process.env.SMTP_FROM;
+
+  if (!hasSmtpConfig) {
+    console.warn(
+      "Revierinhaber-E-Mail wurde übersprungen: SMTP-Konfiguration fehlt."
+    );
+
+    return {
+      emailsSent: 0,
+      recipients: mailByEmail.size,
+      skippedBecauseNoSmtp: true,
+      errors,
+    };
+  }
+
+  for (const recipient of mailByEmail.values()) {
+    const revierLines =
+      Array.from(recipient.reviere)
+        .sort((a, b) => a.localeCompare(b, "de"))
+        .map((item) => `- ${item}`)
+        .join("\n") || "-";
+
+    const fieldLines =
+      Array.from(recipient.fields)
+        .sort((a, b) => a.localeCompare(b, "de"))
+        .map((item) => `- ${item}`)
+        .join("\n") || "-";
+
+    const subject = `Rehkitzrettung: Suche am ${params.displayDate}`;
+
+    const text = [
+      `Hallo ${recipient.name},`,
+      "",
+      `für den ${params.displayDate} ist eine Rehkitzsuche in deinem Revier geplant.`,
+      params.meetingText.trim() ? params.meetingText.trim() : "",
+      "",
+      "Betroffene Reviere:",
+      revierLines,
+      "",
+      "Betroffene Flächen:",
+      fieldLines,
+      "",
+      "Diese Nachricht wurde automatisch erstellt, weil für dein Revier ein Einsatz geplant wurde.",
+      "",
+      "Viele Grüße",
+      "Rehkitzrettung",
+    ]
+      .filter((line) => line !== "")
+      .join("\n");
+
+    try {
+      await sendMail({
+        to: recipient.email,
+        subject,
+        text,
+      });
+
+      emailsSent += 1;
+    } catch (error: any) {
+      const message = `E-Mail an ${recipient.email} konnte nicht gesendet werden: ${
+        error?.message || "Unbekannter Fehler"
+      }`;
+
+      console.error(message);
+      errors.push(message);
+    }
+  }
+
+  return {
+    emailsSent,
+    recipients: mailByEmail.size,
+    skippedBecauseNoSmtp: false,
+    errors,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const authCheck = await requireAdminApi();
 
@@ -81,8 +330,6 @@ export async function POST(req: NextRequest) {
     const date = parseDateOnlyToUtc(dateString);
     const displayDate = formatDateGerman(dateString);
 
-    let meetingText = "";
-
     const operationDay = await db.operationDay.findUnique({
       where: { date },
       include: {
@@ -99,15 +346,17 @@ export async function POST(req: NextRequest) {
         },
       },
     });
+
     if (!operationDay) {
       return NextResponse.json(
         { error: "Für dieses Datum wurde kein Einsatztag gefunden." },
         { status: 404 }
       );
     }
-    meetingText = operationDay.meetingTime
-  ? ` Treffzeit: ${operationDay.meetingTime} Uhr.`
-  : "";
+
+    const meetingText = operationDay.meetingTime
+      ? `Treffzeit: ${operationDay.meetingTime} Uhr.`
+      : "";
 
     const plannedUserIds = new Set<string>();
 
@@ -145,8 +394,9 @@ export async function POST(req: NextRequest) {
     let notPlannedPushes = 0;
 
     if (plannedUserIds.size > 0) {
-      const plannedMessage =
-        `Du bist für den Einsatz am ${displayDate}, ${meetingText} eingeplant. Bitte öffne die App, prüfe deine Aufträge und bestätige die Kenntnisnahme.`;
+      const plannedMessage = `Du bist für den Einsatz am ${displayDate}${
+        meetingText ? `, ${meetingText}` : ""
+      } eingeplant. Bitte öffne die App, prüfe deine Aufträge und bestätige die Kenntnisnahme.`;
 
       const result = await createNotificationForUsers({
         title: "🚨 Einsatz geplant",
@@ -160,8 +410,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (notPlannedUserIds.size > 0) {
-      const notPlannedMessage =
-        `Danke für deine Rückmeldung. Für den Einsatz am ${displayDate} bist du nicht eingeplant und musst nicht kommen.`;
+      const notPlannedMessage = `Danke für deine Rückmeldung. Für den Einsatz am ${displayDate} bist du nicht eingeplant und musst nicht kommen.`;
 
       const result = await createNotificationForUsers({
         title: "✅ Heute frei",
@@ -174,6 +423,14 @@ export async function POST(req: NextRequest) {
       notPlannedPushes = result.sentPushes;
     }
 
+    const revierOwnerMailResult = await notifyAffectedRevierOwnersByEmail({
+      date,
+      dateString,
+      displayDate,
+      meetingText,
+      operationDayId: operationDay.id,
+    });
+
     return NextResponse.json({
       success: true,
       plannedUsers: plannedUserIds.size,
@@ -181,6 +438,12 @@ export async function POST(req: NextRequest) {
       plannedPushes,
       notPlannedPushes,
       sentPushes: plannedPushes + notPlannedPushes,
+      revierOwnerEmails: {
+        recipients: revierOwnerMailResult.recipients,
+        sent: revierOwnerMailResult.emailsSent,
+        skippedBecauseNoSmtp: revierOwnerMailResult.skippedBecauseNoSmtp,
+        errors: revierOwnerMailResult.errors,
+      },
     });
   } catch (error: any) {
     console.error("Team-Benachrichtigung Fehler:", error);

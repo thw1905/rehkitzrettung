@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import QrScannerModal from "@/components/orders/qr-scanner-modal";
+import DirectFindingsCorrectionModal from "@/components/orders/direct-findings-correction-modal";
 import type { Pinpoint } from "@/components/orders/order-field-map";
+import { useTeamLiveLocation } from "@/components/orders/use-team-live-location";
 import { area } from "@turf/area";
 
 const OrderFieldMap = dynamic(
@@ -17,6 +19,7 @@ const PinpointNavigationModal = dynamic(
 );
 
 type OrderStatus = "OFFEN" | "IN_ARBEIT" | "ERLEDIGT";
+type OrderViewFilter = "AKTIV" | "ERLEDIGT" | "ALLE";
 type PinpointStatus = "OFFEN" | "ERREICHT" | "ERLEDIGT";
 
 type RevierPachter = {
@@ -132,12 +135,25 @@ function formatStatus(status: OrderStatus) {
 
 function getStatusClasses(status: OrderStatus) {
   if (status === "OFFEN") {
-    return "border-gray-300 bg-gray-100 text-gray-900";
+    return "border-red-300 bg-red-100 text-red-900";
   }
   if (status === "IN_ARBEIT") {
     return "border-yellow-300 bg-yellow-100 text-yellow-900";
   }
   return "border-green-300 bg-green-100 text-green-900";
+}
+
+// Nur die Kopfzeile wird eingefärbt; aufgeklappte Inhalte bleiben gut lesbar.
+function getOrderHeaderClasses(status: OrderStatus) {
+  if (status === "OFFEN") return "bg-red-50 hover:bg-red-100";
+  if (status === "IN_ARBEIT") return "bg-amber-50 hover:bg-amber-100";
+  return "bg-green-50 hover:bg-green-100";
+}
+
+function getOrderCardClasses(status: OrderStatus) {
+  if (status === "OFFEN") return "border-l-4 border-l-red-500";
+  if (status === "IN_ARBEIT") return "border-l-4 border-l-amber-500";
+  return "border-l-4 border-l-green-600";
 }
 
 function getPinpointStatusClass(status: PinpointStatus) {
@@ -429,6 +445,60 @@ function InfoCard({
   );
 }
 
+type CountKey =
+  | "rehkitzeGesichert"
+  | "rehkitzeAbgesprungen"
+  | "sonstigesWildGesichert"
+  | "sonstigesWildAbgesprungen"
+  | "maulwurfhuegelFehlstelle";
+
+const COUNT_CATEGORIES: { key: CountKey; label: string; icon: string; tone: string }[] = [
+  { key: "rehkitzeGesichert", label: "Kitz gesichert", icon: "🦌", tone: "border-green-300 bg-green-50" },
+  { key: "rehkitzeAbgesprungen", label: "Kitz abgesprungen", icon: "🦌", tone: "border-amber-300 bg-amber-50" },
+  { key: "sonstigesWildGesichert", label: "Sonstiges Wild gesichert", icon: "🌿", tone: "border-emerald-300 bg-emerald-50" },
+  { key: "sonstigesWildAbgesprungen", label: "Sonstiges Wild abgesprungen", icon: "🌿", tone: "border-orange-300 bg-orange-50" },
+  { key: "maulwurfhuegelFehlstelle", label: "Maulwurfhügel / Fehlstelle", icon: "🕳️", tone: "border-slate-300 bg-slate-50" },
+];
+
+function WildCounterButton({
+  label, icon, tone, value, onIncrease, onDecrease, disabled,
+}: {
+  label: string;
+  icon: string;
+  tone: string;
+  value: number;
+  onIncrease: () => void;
+  onDecrease: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 gap-2">
+      <button
+        type="button"
+        onClick={onIncrease}
+        disabled={disabled || value >= 6}
+        className={`flex min-h-[76px] min-w-0 flex-1 items-center justify-between gap-2 rounded-2xl border-2 p-3 text-left text-gray-950 active:scale-[0.99] disabled:opacity-60 ${tone}`}
+        aria-label={`${label}: plus eins, aktuell ${value}, maximal 6`}
+      >
+        <span className="flex min-w-0 flex-col gap-1">
+          <span className="text-sm font-bold leading-tight">{icon} {label}</span>
+          <span className="text-xs text-gray-600">Antippen: +1</span>
+        </span>
+        <span className="shrink-0 rounded-xl bg-white px-3 py-2 text-2xl font-black tabular-nums shadow-sm">{value}</span>
+      </button>
+      <button
+        type="button"
+        onClick={onDecrease}
+        disabled={disabled || value <= 0}
+        className="w-12 shrink-0 rounded-xl border-2 border-gray-300 bg-white text-2xl font-bold text-gray-900 disabled:opacity-30"
+        aria-label={`${label}: eins abziehen`}
+      >
+        −
+      </button>
+    </div>
+  );
+}
+
 export default function MyOrdersPageClient({
   isAdmin,
   role,
@@ -445,12 +515,32 @@ export default function MyOrdersPageClient({
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  // Beim Seitenaufruf werden erledigte Aufträge wieder ausgeblendet.
+  const [orderViewFilter, setOrderViewFilter] = useState<OrderViewFilter>("AKTIV");
+  const [directCorrectionOrderId, setDirectCorrectionOrderId] = useState<string | null>(null);
   const [finishModal, setFinishModal] = useState<FinishModalState>({
     open: false,
     orderId: null,
   });
+  const finishModalOrderIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    finishModalOrderIdRef.current = finishModal.open ? finishModal.orderId : null;
+  }, [finishModal]);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [pinpointModalId, setPinpointModalId] = useState<string | null>(null);
+  const editingPinpointIdRef = useRef<string | null>(null);
+  useEffect(() => { editingPinpointIdRef.current = pinpointModalId; }, [pinpointModalId]);
+  const [claimingPinpoint, setClaimingPinpoint] = useState(false);
+  const claimInProgressRef = useRef(false);
+  const [correctionMode, setCorrectionMode] = useState(false);
+  const [correctionLoadingId, setCorrectionLoadingId] = useState<string | null>(null);
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [correctionRevision, setCorrectionRevision] = useState("");
+  const [correctionHistory, setCorrectionHistory] = useState<{
+    id: string; correctedAt: string; correctedByName: string;
+    reason: string;
+  }[]>([]);
+
   const [openOwnerSections, setOpenOwnerSections] = useState<Record<string, boolean>>({});
   const [openInfoSections, setOpenInfoSections] = useState<Record<string, boolean>>({});
   const [openPinpoints, setOpenPinpoints] = useState<Record<string, boolean>>({});
@@ -461,9 +551,94 @@ export default function MyOrdersPageClient({
   pinpoint: Pinpoint;
 } | null>(null);
 
+  // Die App fragt nach einer freiwilligen Team-Freigabe, startet sie aber niemals
+  // ohne einen ausdruecklichen Klick des Helfers.
+  const [locationConsentDialog, setLocationConsentDialog] = useState<"entry" | "navigation" | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<{
+    order: Order;
+    pinpoint: Pinpoint;
+  } | null>(null);
+  // Falls der Browser lokalen Speicher sperrt, gilt die Entscheidung trotzdem
+  // mindestens fuer den aktuellen Seitenbesuch.
+  const locationConsentFallback = useRef<Record<string, string>>({});
+
+  // GPS-Freigabe bleibt auf der Seite "Meine Aufträge" aktiv, auch wenn
+  // die einzelne Pinpoint-Navigation geschlossen oder gewechselt wird.
+  const liveTeamId =
+    navigationTarget?.order.operationDayTeam?.id ||
+    orders.find((order) => order.operationDayTeam?.id && order.status !== "ERLEDIGT")?.operationDayTeam?.id ||
+    orders.find((order) => order.operationDayTeam?.id)?.operationDayTeam?.id ||
+    null;
+  const liveTeam = useTeamLiveLocation({
+    date: selectedDate,
+    teamId: liveTeamId,
+    navigationOpen: navigationTarget !== null,
+  });
+
   const canControlOrder = isAdmin || role === "PILOT";
   const canScanQr = isAdmin || role === "PILOT" || role === "SUCHER";
   const qrScanLockedUntilRef = useRef<Record<string, number>>({});
+
+  // Pro Einsatztag und Team genau eine Einstiegsfrage und bei "Spaeter"
+  // maximal eine Erinnerung beim erstmaligen Navigieren.
+  const locationDecisionKey = `rehkitzrettung:team-location:decision:v1:${selectedDate}:${liveTeamId || "ohne-team"}`;
+  const locationReminderKey = `rehkitzrettung:team-location:nav-reminder:v1:${selectedDate}:${liveTeamId || "ohne-team"}`;
+
+  function readLocationChoice(key: string) {
+    try {
+      return window.localStorage.getItem(key) ?? locationConsentFallback.current[key] ?? null;
+    } catch {
+      return locationConsentFallback.current[key] ?? null;
+    }
+  }
+
+  function saveLocationChoice(key: string, choice: string) {
+    locationConsentFallback.current[key] = choice;
+    try {
+      window.localStorage.setItem(key, choice);
+    } catch {
+      // Die Entscheidung bleibt im Speicher des aktuellen Seitenbesuchs.
+    }
+  }
+
+  useEffect(() => {
+    if (!liveTeam.canUseToday) {
+      setLocationConsentDialog(null);
+      setPendingNavigation(null);
+      return;
+    }
+    // Nur nach dem Laden und nur wenn es heute noch aktive Auftraege gibt.
+    if (loading || liveTeam.sharing || !orders.some(o => o.status !== "ERLEDIGT" && o.operationDayTeam?.id)) return;
+    if (!readLocationChoice(locationDecisionKey)) {
+      setLocationConsentDialog(current => current ?? "entry");
+    }
+    // Die Abfrage darf auch bei SSE-Neuladen nicht wieder erscheinen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, liveTeam.canUseToday, liveTeam.sharing, locationDecisionKey, orders]);
+
+  // "Ja" wird ausschliesslich aus einem bewussten Klick aufgerufen.
+  function acceptTeamLocation() {
+    saveLocationChoice(locationDecisionKey, "accepted");
+    liveTeam.startSharing();
+    setLocationConsentDialog(null);
+    if (pendingNavigation) {
+      setNavigationTarget(pendingNavigation);
+      setPendingNavigation(null);
+    }
+  }
+
+  function declineTeamLocation() {
+    if (locationConsentDialog === "entry") {
+      saveLocationChoice(locationDecisionKey, "later");
+    } else {
+      saveLocationChoice(locationReminderKey, "shown");
+    }
+    setLocationConsentDialog(null);
+    if (pendingNavigation) {
+      setNavigationTarget(pendingNavigation);
+      setPendingNavigation(null);
+    }
+  }
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -501,11 +676,26 @@ export default function MyOrdersPageClient({
         }
       }
 
-      setDrafts(nextDrafts);
-      setPinpointDrafts(nextPinpointDrafts);
+      // Bei SSE-Updates die noch nicht gespeicherten Direktfunde im
+      // Abschlussfenster bewahren (analog zur Pinpoint-Erfassung).
+      setDrafts((prev) => {
+        const editingId = finishModalOrderIdRef.current;
+        if (editingId && prev[editingId]) {
+          return { ...nextDrafts, [editingId]: prev[editingId] };
+        }
+        return nextDrafts;
+      });
+      // Eine SSE-Aktualisierung darf die laufende Wilddateneingabe nicht zuruecksetzen.
+      setPinpointDrafts((prev) => {
+        const editingId = editingPinpointIdRef.current;
+        if (editingId && prev[editingId]) {
+          return { ...nextPinpointDrafts, [editingId]: prev[editingId] };
+        }
+        return nextPinpointDrafts;
+      });
 
       setOpenOrderId((prev) => {
-        if (prev && loadedOrders.some((o) => o.id === prev && o.status !== "ERLEDIGT")) {
+        if (prev && loadedOrders.some((o) => o.id === prev)) {
           return prev;
         }
         const inProgress = loadedOrders.find((o) => o.status === "IN_ARBEIT");
@@ -586,6 +776,26 @@ export default function MyOrdersPageClient({
         ...changes,
       },
     }));
+  }
+
+  function adjustOrderCount(order: Order, key: CountKey, delta: number) {
+    setDrafts((prev) => {
+      const draft = prev[order.id] || buildDraftFromOrder(order);
+      const count = Number(draft[key]);
+      const current = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+      // Jede Einzelkategorie hat die gleiche Obergrenze wie die Pinpoints.
+      const next = Math.min(6, Math.max(0, current + delta));
+      return { ...prev, [order.id]: { ...draft, [key]: String(next) } };
+    });
+  }
+
+  function adjustPinpointCount(pinpointId: string, key: CountKey, delta: number) {
+    setPinpointDrafts((prev) => {
+      const draft = prev[pinpointId] || buildPinpointDraft();
+      const count = Number(draft[key]);
+      const next = Math.min(6, Math.max(0, (Number.isFinite(count) ? count : 0) + delta));
+      return { ...prev, [pinpointId]: { ...draft, [key]: String(next) } };
+    });
   }
 
   function getDraft(order: Order): DraftValues {
@@ -685,7 +895,9 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
     const data = await res.json();
 
     if (!res.ok) {
-      throw new Error(data?.error || "PinPoint konnte nicht aktualisiert werden.");
+      const failure = new Error(data?.error || "PinPoint konnte nicht aktualisiert werden.") as Error & { status?: number };
+      failure.status = res.status;
+      throw failure;
     }
 
     return data;
@@ -699,6 +911,13 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
     if (!canControlOrder) return;
 
     const draft = getDraft(order);
+    const outOfRange = COUNT_CATEGORIES.some(({ key }) =>
+      toNumber(draft[key]) > 6
+    );
+    if (outOfRange) {
+      alert("Die Direktfunde dürfen maximal 6 pro Kategorie betragen. Bitte die Zähler korrigieren.");
+      return;
+    }
     setSavingId(order.id);
 
     try {
@@ -778,10 +997,145 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
     }
   }
 
-  function markPinpointReached(_order: Order, pinpoint: Pinpoint) {
-    updatePinpointDraft(pinpoint.id, buildPinpointDraft(pinpoint));
-    setPinpointModalId(pinpoint.id);
+  // Erst auf dem Server atomar uebernehmen, dann Wilddatenformular oeffnen.
+  // Auch Kartenklicks verwenden diese Sperre.
+  async function markPinpointReached(
+    order: Order,
+    pinpoint: Pinpoint,
+    fromNavigation = false
+  ) {
+    if (claimInProgressRef.current) return;
+    claimInProgressRef.current = true;
+    setClaimingPinpoint(true);
+
+    try {
+      const res = await fetch(
+        `/api/orders/${order.id}/pinpoints/${pinpoint.id}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "claim" }),
+          cache: "no-store",
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "PinPoint konnte nicht uebernommen werden.");
+      }
+
+      setCorrectionMode(false);
+      updatePinpointDraft(pinpoint.id, buildPinpointDraft(pinpoint));
+      if (fromNavigation) setNavigationTarget(null);
+      setPinpointModalId(pinpoint.id);
+    } catch (error: any) {
+      alert(error?.message || "PinPoint wird bereits bearbeitet.");
+      await loadOrders();
+    } finally {
+      claimInProgressRef.current = false;
+      setClaimingPinpoint(false);
+    }
   }
+
+  // Korrektur bewusst oeffnen: aktuellen Serverstand + Versionsnummer holen,
+  // damit kein alter Wert aus einem anderen Smartphone uebernommen wird.
+  async function openPinpointCorrection(order: Order, pinpoint: Pinpoint) {
+    if (!canControlOrder) return;
+    setCorrectionLoadingId(pinpoint.id);
+    try {
+      const res = await fetch(
+        `/api/orders/${order.id}/pinpoints/${pinpoint.id}?history=1`,
+        { cache: "no-store" }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Korrektur konnte nicht geladen werden.");
+      if (data?.status !== "ERLEDIGT" || !data?.revision || !data?.totals) {
+        throw new Error("Nur bereits erledigte Pinpoints koennen korrigiert werden.");
+      }
+      setCorrectionRevision(String(data.revision));
+      setCorrectionReason("");
+      setCorrectionHistory(Array.isArray(data.corrections) ? data.corrections : []);
+      updatePinpointDraft(pinpoint.id, {
+        note: data.note || "",
+        rehkitzeGesichert: String(data.totals.rehkitzeGesichert ?? 0),
+        rehkitzeAbgesprungen: String(data.totals.rehkitzeAbgesprungen ?? 0),
+        sonstigesWildGesichert: String(data.totals.sonstigesWildGesichert ?? 0),
+        sonstigesWildAbgesprungen: String(data.totals.sonstigesWildAbgesprungen ?? 0),
+        maulwurfhuegelFehlstelle: String(data.totals.maulwurfhuegelFehlstelle ?? 0),
+      });
+      setCorrectionMode(true);
+      setPinpointModalId(pinpoint.id);
+    } catch (error: any) {
+      alert(error?.message || "Korrektur konnte nicht gestartet werden.");
+    } finally {
+      setCorrectionLoadingId(null);
+    }
+  }
+
+  async function cancelPinpointEditing(orderId: string, pinpointId: string) {
+    if (savingId === pinpointId) return;
+    if (correctionMode) {
+      setPinpointModalId(null);
+      setCorrectionMode(false);
+      setCorrectionReason("");
+      return;
+    }
+    try {
+      await fetch(`/api/orders/${orderId}/pinpoints/${pinpointId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "release" }),
+        cache: "no-store",
+      });
+    } catch (error) {
+      console.warn("PinPoint-Sperre konnte nicht sofort geloest werden:", error);
+      // Der Server laesst die Sperre automatisch nach zwei Minuten ablaufen.
+    } finally {
+      setPinpointModalId(null);
+      await loadOrders();
+    }
+  }
+
+  // Solange das Formular offen ist, bleibt die Sperre durch Heartbeats gueltig.
+  useEffect(() => {
+    if (!pinpointModalId || correctionMode) return;
+    const openOrder = orders.find((order) =>
+      (order.pinpoints || []).some((p) => p.id === pinpointModalId)
+    );
+    if (!openOrder) return;
+
+    const orderId = openOrder.id;
+    const pinpointId = pinpointModalId;
+    let stopped = false;
+
+    const heartbeat = async () => {
+      try {
+        const res = await fetch(`/api/orders/${orderId}/pinpoints/${pinpointId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "heartbeat" }),
+          cache: "no-store",
+        });
+        if (!res.ok && !stopped) {
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 409) {
+            setPinpointModalId((prev) => prev === pinpointId ? null : prev);
+            alert(data?.error || "Bearbeitungssperre ist abgelaufen.");
+            await loadOrders();
+          }
+        }
+      } catch (error) {
+        console.warn("PinPoint-Heartbeat fehlgeschlagen:", error);
+      }
+    };
+
+    const timer = window.setInterval(heartbeat, 30_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+    // Nur beim Oeffnen / Wechseln des PinPoint-Formulars starten.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinpointModalId, correctionMode]);
 
   async function navigateToField(field?: Field | null) {
   if (
@@ -806,37 +1160,22 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
   }
 }
 
+  // Navigation ist nur Navigation: Sie setzt den PinPoint NICHT auf ERREICHT.
+  // Erst der Klick auf "PinPoint erreicht" versucht die exklusive Uebernahme.
   async function navigateToPinpoint(order: Order, pinpoint: Pinpoint) {
-  setSavingId(pinpoint.id);
-
-  try {
-    let nextPinpoint = pinpoint;
-
-    if (pinpoint.status === "OFFEN") {
-      const updated = await patchPinpointStatus(order.id, pinpoint.id, {
-        status: "ERREICHT",
-      });
-
-      nextPinpoint = {
-        ...pinpoint,
-        status: "ERREICHT",
-        reachedAt: updated?.reachedAt || pinpoint.reachedAt || null,
-      };
-
-      await loadOrders();
+    // Falls die Einstiegsfrage mit "Spaeter" beantwortet wurde, erinnern
+    // wir nur beim ersten Navigationsstart noch einmal. Die Navigation
+    // funktioniert in jedem Fall auch ohne Teilen des Standorts.
+    if (liveTeam.canUseToday && !liveTeam.sharing &&
+      readLocationChoice(locationDecisionKey) !== "accepted" &&
+      readLocationChoice(locationReminderKey) !== "shown") {
+      saveLocationChoice(locationReminderKey, "shown");
+      setPendingNavigation({ order, pinpoint });
+      setLocationConsentDialog("navigation");
+      return;
     }
-
-    setNavigationTarget({
-      order,
-      pinpoint: nextPinpoint,
-    });
-  } catch (error: any) {
-    console.error("Fehler beim Starten der In-App-Navigation:", error);
-    alert(error?.message || "Navigation konnte nicht gestartet werden.");
-  } finally {
-    setSavingId(null);
+    setNavigationTarget({ order, pinpoint });
   }
-}
 
   function navigateToPinpointGoogle(pinpoint: Pinpoint) {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${pinpoint.latitude},${pinpoint.longitude}`;
@@ -845,11 +1184,20 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
 
   async function savePinpointReachedResult(order: Order, pinpoint: Pinpoint) {
     const draft = getPinpointDraft(pinpoint);
+    if (correctionMode && correctionReason.trim().length < 5) {
+      alert("Bitte einen Grund fuer die Korrektur eingeben (mindestens 5 Zeichen).");
+      return;
+    }
     setSavingId(pinpoint.id);
 
     try {
       await patchPinpointStatus(order.id, pinpoint.id, {
         status: "ERLEDIGT",
+        ...(correctionMode ? {
+          action: "correct",
+          reason: correctionReason.trim(),
+          expectedUpdatedAt: correctionRevision,
+        } : {}),
         note: draft.note,
         rehkitzeGesichert: toNumber(draft.rehkitzeGesichert),
         rehkitzeAbgesprungen: toNumber(draft.rehkitzeAbgesprungen),
@@ -859,9 +1207,17 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
       });
 
       setPinpointModalId(null);
+      if (correctionMode) {
+        setCorrectionMode(false);
+        setCorrectionReason("");
+      }
       await loadOrders();
     } catch (error: any) {
       console.error("Fehler beim Speichern des PinPoint-Fundes:", error);
+      if (error?.status === 409 && !correctionMode) {
+        setPinpointModalId(null);
+        await loadOrders();
+      }
       alert(error?.message || "PinPoint-Ergebnis konnte nicht gespeichert werden.");
     } finally {
       setSavingId(null);
@@ -875,33 +1231,46 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
     });
   }
 
+  const orderCounts = useMemo(() => ({
+    active: orders.filter((order) => order.status !== "ERLEDIGT").length,
+    done: orders.filter((order) => order.status === "ERLEDIGT").length,
+    all: orders.length,
+  }), [orders]);
+
   const filteredOrders = useMemo(() => {
-    const activeOrders = orders.filter((order) => order.status !== "ERLEDIGT");
     const term = search.trim().toLowerCase();
+    const statusPriority: Record<OrderStatus, number> = {
+      IN_ARBEIT: 0,
+      OFFEN: 1,
+      ERLEDIGT: 2,
+    };
 
-    if (!term) return activeOrders;
-
-    return activeOrders.filter((order) =>
-      [
-        getOrderLabel(order),
-        order.owner?.firstName || "",
-        order.owner?.lastName || "",
-        order.owner?.phone || "",
-        order.owner?.email || "",
-        order.owner?.street || "",
-        order.owner?.zip || "",
-        order.owner?.city || "",
-        order.field?.name || "",
-        order.field?.displayName || "",
-        order.team?.name || "",
-        order.notes || "",
-        order.status,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(term)
-    );
-  }, [orders, search]);
+    return orders
+      .filter((order) => {
+        if (orderViewFilter === "AKTIV") return order.status !== "ERLEDIGT";
+        if (orderViewFilter === "ERLEDIGT") return order.status === "ERLEDIGT";
+        return true;
+      })
+      .filter((order) =>
+        !term || [
+          getOrderLabel(order),
+          order.owner?.firstName || "",
+          order.owner?.lastName || "",
+          order.owner?.phone || "",
+          order.owner?.email || "",
+          order.owner?.street || "",
+          order.owner?.zip || "",
+          order.owner?.city || "",
+          order.field?.name || "",
+          order.field?.displayName || "",
+          order.team?.name || "",
+          order.notes || "",
+          order.status,
+        ].join(" ").toLowerCase().includes(term)
+      )
+      // Im Einsatz stehen laufende Aufträge vor offenen, erledigte zuletzt.
+      .sort((a, b) => statusPriority[a.status] - statusPriority[b.status]);
+  }, [orders, search, orderViewFilter]);
 
   const modalOrder = getModalOrder();
   const modalDraft = modalOrder ? getDraft(modalOrder) : null;
@@ -954,8 +1323,9 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
           <section className="page-card p-4 md:p-6">
             <h1 className="text-2xl font-bold text-gray-900">Meine Aufträge</h1>
             <p className="mt-2 text-sm text-gray-700">
-              Rot = offen, Gelb = in Arbeit, Grün = erledigt. Beim Starten der
-              Navigation wird der PinPoint automatisch auf „In Arbeit“ gesetzt.
+              Rot = offen, Gelb = in Arbeit, Grün = erledigt. Erledigte Aufträge
+              findest du im Filter „Erledigte“. Ein PinPoint wird erst beim Erreichen
+              zur Bearbeitung übernommen.
             </p>
           </section>
 
@@ -976,6 +1346,84 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
   </p>
 </section>
 
+           <section className="page-card p-4">
+             <div className="flex flex-wrap items-center justify-between gap-3">
+               <div>
+                 <h2 className="text-base font-bold text-gray-900">Live-Standort im Team</h2>
+                 <p className="mt-1 text-sm text-gray-700">
+                   Freiwillige GPS-Freigabe für deine Teammitglieder. Die Übertragung läuft
+                   auch weiter, wenn du die Pinpoint-Navigation schließt.
+                 </p>
+               </div>
+               <button
+                 type="button"
+                 disabled={!liveTeam.canUseToday}
+                 onClick={() => {
+                   if (liveTeam.sharing) {
+                     void liveTeam.stopSharing();
+                   } else {
+                     saveLocationChoice(locationDecisionKey, "accepted");
+                     liveTeam.startSharing();
+                   }
+                 }}
+                 className={`rounded-xl px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-400 ${
+                   liveTeam.sharing ? "bg-red-700" : "bg-green-700"
+                 }`}
+               >
+                 {liveTeam.sharing ? "Standortfreigabe beenden" : "Standort mit Team teilen"}
+               </button>
+             </div>
+             <p className="mt-2 text-xs text-gray-600">
+               {liveTeam.sharing
+                 ? liveTeam.ownPosition
+                   ? `GPS erfasst · Genauigkeit ±${Math.round(liveTeam.ownPosition.accuracy ?? 0)} m · Übertragung höchstens alle 2 Sekunden bei neuer Messung`
+                   : "Warte auf GPS-Berechtigung und erste Position …"
+                 : "Standort wird nicht an andere Helfer übertragen."}
+             </p>
+             {!liveTeam.canUseToday && (
+               <p className="mt-2 text-xs text-gray-600">
+                 Live-Ortung nur am heutigen Einsatztag bei vorhandener Teamzuordnung.
+               </p>
+             )}
+             {liveTeam.error && (
+               <p className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-800">
+                 {liveTeam.error}
+               </p>
+             )}
+           </section>
+
+          <section className="page-card p-4">
+            <h2 className="mb-2 text-base font-bold text-gray-900">Aufträge anzeigen</h2>
+            <div className="grid grid-cols-3 gap-2" role="group" aria-label="Aufträge nach Status filtern">
+              {([
+                { value: "AKTIV" as const, label: "Aktive", count: orderCounts.active, selected: "border-blue-600 bg-blue-50 text-blue-950 ring-2 ring-blue-200" },
+                { value: "ERLEDIGT" as const, label: "Erledigte", count: orderCounts.done, selected: "border-green-600 bg-green-50 text-green-950 ring-2 ring-green-200" },
+                { value: "ALLE" as const, label: "Alle", count: orderCounts.all, selected: "border-gray-600 bg-gray-100 text-gray-950 ring-2 ring-gray-200" },
+              ]).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={orderViewFilter === option.value}
+                  onClick={() => {
+                    setOrderViewFilter(option.value);
+                    setOpenOrderId(null);
+                  }}
+                  className={`min-w-0 rounded-xl border-2 px-2 py-3 text-center font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                    orderViewFilter === option.value
+                      ? option.selected
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <span className="block text-sm sm:text-base">{option.label}</span>
+                  <span className="mt-1 block text-xs sm:text-sm">({option.count})</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-gray-600">
+              Standardmäßig nur aktive Aufträge. Für Wilddatenkorrekturen „Erledigte“ auswählen.
+            </p>
+          </section>
+
           <section className="page-card p-4">
             <label className="mb-2 block text-sm font-semibold text-gray-900">
               Suche
@@ -995,7 +1443,13 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
             </section>
           ) : filteredOrders.length === 0 ? (
             <section className="page-card p-6 text-sm text-gray-700">
-              Keine offenen Aufträge gefunden.
+              {search.trim()
+                ? "Keine passenden Aufträge gefunden. Bitte Suche oder Statusfilter prüfen."
+                : orderViewFilter === "ERLEDIGT"
+                  ? "Keine erledigten Aufträge für diesen Einsatztag vorhanden."
+                  : orderViewFilter === "AKTIV"
+                    ? "Keine aktiven Aufträge für diesen Einsatztag vorhanden."
+                    : "Keine Aufträge für diesen Einsatztag vorhanden."}
             </section>
           ) : (
             <div className="space-y-4">
@@ -1026,13 +1480,14 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                 const teamDayDurationLabel = getTeamDayDurationLabel(order, nowMs);
 
                 return (
-                  <section key={order.id} className="page-card overflow-hidden">
+                  <section key={order.id} className={`page-card overflow-hidden ${getOrderCardClasses(order.status)}`}>
                     <button
                       type="button"
                       onClick={() =>
                         setOpenOrderId((prev) => (prev === order.id ? null : order.id))
                       }
-                      className="flex w-full items-start justify-between gap-3 p-4 text-left md:p-5"
+                      aria-expanded={isOpen}
+                      className={`flex w-full items-start justify-between gap-3 p-4 text-left transition-colors md:p-5 ${getOrderHeaderClasses(order.status)}`}
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1357,90 +1812,21 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                                 </div>
 
                                 {canControlOrder ? (
-                                  <div className="grid gap-3 sm:grid-cols-2">
-                                    <div>
-                                      <label className="mb-1 block text-sm font-medium text-gray-800">
-                                        Rehkitze gesichert
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        value={draft.rehkitzeGesichert}
-                                        onChange={(e) =>
-                                          updateDraft(order.id, {
-                                            rehkitzeGesichert: e.target.value,
-                                          })
-                                        }
-                                        className="w-full rounded-xl border px-3 py-3"
+                                  <div className="space-y-2">
+                                    {COUNT_CATEGORIES.map(({ key, label, icon, tone }) => (
+                                      <WildCounterButton
+                                        key={key}
+                                        label={label}
+                                        icon={icon}
+                                        tone={tone}
+                                        value={toNumber(draft[key])}
+                                        onIncrease={() => adjustOrderCount(order, key, 1)}
+                                        onDecrease={() => adjustOrderCount(order, key, -1)}
+                                        disabled={savingId === order.id || order.status === "ERLEDIGT"}
                                       />
-                                    </div>
-
-                                    <div>
-                                      <label className="mb-1 block text-sm font-medium text-gray-800">
-                                        Rehkitze abgesprungen
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        value={draft.rehkitzeAbgesprungen}
-                                        onChange={(e) =>
-                                          updateDraft(order.id, {
-                                            rehkitzeAbgesprungen: e.target.value,
-                                          })
-                                        }
-                                        className="w-full rounded-xl border px-3 py-3"
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <label className="mb-1 block text-sm font-medium text-gray-800">
-                                        Sonstiges Wild gesichert
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        value={draft.sonstigesWildGesichert}
-                                        onChange={(e) =>
-                                          updateDraft(order.id, {
-                                            sonstigesWildGesichert: e.target.value,
-                                          })
-                                        }
-                                        className="w-full rounded-xl border px-3 py-3"
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <label className="mb-1 block text-sm font-medium text-gray-800">
-                                        Sonstiges Wild abgesprungen
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        value={draft.sonstigesWildAbgesprungen}
-                                        onChange={(e) =>
-                                          updateDraft(order.id, {
-                                            sonstigesWildAbgesprungen: e.target.value,
-                                          })
-                                        }
-                                        className="w-full rounded-xl border px-3 py-3"
-                                      />
-                                    </div>
-
-                                    <div className="sm:col-span-2">
-                                      <label className="mb-1 block text-sm font-medium text-gray-800">
-                                        Maulwurfhügel / Fehlstelle
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        value={draft.maulwurfhuegelFehlstelle}
-                                        onChange={(e) =>
-                                          updateDraft(order.id, {
-                                            maulwurfhuegelFehlstelle: e.target.value,
-                                          })
-                                        }
-                                        className="w-full rounded-xl border px-3 py-3"
-                                      />
+                                    ))}
+                                    <div className="rounded-xl bg-white px-3 py-2 text-sm font-bold text-gray-800">
+                                      Direktfunde insgesamt: {COUNT_CATEGORIES.reduce((sum, { key }) => sum + toNumber(draft[key]), 0)}
                                     </div>
                                   </div>
                                 ) : (
@@ -1485,13 +1871,13 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                                 </div>
                               )}
 
-                              {order.status === "IN_ARBEIT" && (
+                              {(order.status === "IN_ARBEIT" || (canControlOrder && order.status === "ERLEDIGT")) && (
   <div className="page-card-muted p-3">
     <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
       PinPoints
     </div>
 
-    {canScanQr && (
+    {canScanQr && order.status === "IN_ARBEIT" && (
       <div className="mb-4 space-y-2">
         <textarea
           value={newPinpointText[order.id] || ""}
@@ -1596,7 +1982,7 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                     Google Maps
                   </button>
 
-                  {pinpoint.status !== "ERLEDIGT" && (
+                  {pinpoint.status !== "ERLEDIGT" && order.status === "IN_ARBEIT" && (
                     <button
                       type="button"
                       onClick={() => markPinpointReached(order, pinpoint)}
@@ -1604,6 +1990,16 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                       className="rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm font-semibold text-yellow-900 disabled:opacity-50"
                     >
                       ✅ PinPoint erreicht
+                    </button>
+                  )}
+                  {pinpoint.status === "ERLEDIGT" && canControlOrder && (
+                    <button
+                      type="button"
+                      onClick={() => void openPinpointCorrection(order, pinpoint)}
+                      disabled={savingId === pinpoint.id || correctionLoadingId === pinpoint.id}
+                      className="rounded-xl border border-amber-400 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950 disabled:opacity-50"
+                    >
+                      {correctionLoadingId === pinpoint.id ? "Laedt..." : "✏️ Wildmeldung korrigieren"}
                     </button>
                   )}
                 </div>
@@ -1681,6 +2077,15 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
     </button>
   </div>
 )}
+{canControlOrder && order.status === "ERLEDIGT" && (
+  <button
+    type="button"
+    onClick={() => setDirectCorrectionOrderId(order.id)}
+    className="mt-3 w-full rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950"
+  >
+    ✏️ Direktfunde korrigieren
+  </button>
+)}
                             </div>
                           </div>
                         </div>
@@ -1700,248 +2105,88 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
         modalManualTotals &&
         modalPinpointTotals &&
         modalCombinedTotals && (
-          <div className="fixed inset-0 z-[100] bg-black/40 p-3 md:p-4">
+          <div className="fixed inset-0 z-[100] bg-black/55 p-2 sm:p-4">
             <div className="flex h-full items-center justify-center">
-              <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-                <div className="border-b border-gray-200 px-4 py-4 md:px-5">
-                  <h2 className="text-xl font-bold text-gray-900">Auftrag prüfen</h2>
-
-                  <p className="mt-2 text-sm text-gray-700">
-                    Bitte prüfe die Wilddaten vor dem endgültigen Beenden.
+              <div className="flex max-h-[95dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="shrink-0 border-b border-gray-200 px-4 py-3">
+                  <h2 className="text-lg font-extrabold text-gray-950">🦌 Auftrag abschließen</h2>
+                  <p className="mt-1 text-sm text-gray-700">
+                    Direktfunde ohne PinPoint · Pro Kategorie maximal 6 · große Fläche: +1, Minusknopf: −1
                   </p>
-
-                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="text-sm font-semibold text-gray-900">
-                      {getOrderLabel(modalOrder)}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-700">
-                      {getFieldLabel(modalOrder.field)}
-                    </div>
+                  <div className="mt-2 text-xs font-semibold text-gray-600">
+                    {getOrderLabel(modalOrder)} · {getFieldLabel(modalOrder.field)}
                   </div>
                 </div>
 
-                <div className="overflow-y-auto px-4 py-4 md:px-5">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="mb-3 text-sm font-semibold text-gray-900">
-                      Direktfunde Pilot ohne PinPoint
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-gray-800">
-                          Rehkitze gesichert
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={modalDraft.rehkitzeGesichert}
-                          onChange={(e) =>
-                            updateDraft(modalOrder.id, {
-                              rehkitzeGesichert: e.target.value,
-                            })
-                          }
-                          className="w-full rounded-xl border px-3 py-3"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-gray-800">
-                          Rehkitze abgesprungen
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={modalDraft.rehkitzeAbgesprungen}
-                          onChange={(e) =>
-                            updateDraft(modalOrder.id, {
-                              rehkitzeAbgesprungen: e.target.value,
-                            })
-                          }
-                          className="w-full rounded-xl border px-3 py-3"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-gray-800">
-                          Sonstiges Wild gesichert
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={modalDraft.sonstigesWildGesichert}
-                          onChange={(e) =>
-                            updateDraft(modalOrder.id, {
-                              sonstigesWildGesichert: e.target.value,
-                            })
-                          }
-                          className="w-full rounded-xl border px-3 py-3"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-gray-800">
-                          Sonstiges Wild abgesprungen
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={modalDraft.sonstigesWildAbgesprungen}
-                          onChange={(e) =>
-                            updateDraft(modalOrder.id, {
-                              sonstigesWildAbgesprungen: e.target.value,
-                            })
-                          }
-                          className="w-full rounded-xl border px-3 py-3"
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2">
-                        <label className="mb-1 block text-sm font-medium text-gray-800">
-                          Maulwurfhügel / Fehlstelle
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={modalDraft.maulwurfhuegelFehlstelle}
-                          onChange={(e) =>
-                            updateDraft(modalOrder.id, {
-                              maulwurfhuegelFehlstelle: e.target.value,
-                            })
-                          }
-                          className="w-full rounded-xl border px-3 py-3"
-                        />
-                      </div>
-                    </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                  <div className="space-y-2">
+                    {COUNT_CATEGORIES.map(({ key, label, icon, tone }) => (
+                      <WildCounterButton
+                        key={key}
+                        label={label}
+                        icon={icon}
+                        tone={tone}
+                        value={toNumber(modalDraft[key])}
+                        onIncrease={() => adjustOrderCount(modalOrder, key, 1)}
+                        onDecrease={() => adjustOrderCount(modalOrder, key, -1)}
+                        disabled={savingId === modalOrder.id}
+                      />
+                    ))}
                   </div>
 
-                  <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
-                    <div className="mb-3 text-sm font-semibold text-gray-900">
-                      Erledigte PinPoints
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl border border-green-200 bg-green-50 p-3">
-                        <div className="text-xs font-medium text-green-700">
-                          Rehkitze gesichert
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-green-900">
-                          {modalPinpointTotals.rehkitzeGesichert}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                        <div className="text-xs font-medium text-amber-700">
-                          Rehkitze abgesprungen
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-amber-900">
-                          {modalPinpointTotals.rehkitzeAbgesprungen}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                        <div className="text-xs font-medium text-emerald-700">
-                          Sonstiges Wild gesichert
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-emerald-900">
-                          {modalPinpointTotals.sonstigesWildGesichert}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-orange-200 bg-orange-50 p-3">
-                        <div className="text-xs font-medium text-orange-700">
-                          Sonstiges Wild abgesprungen
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-orange-900">
-                          {modalPinpointTotals.sonstigesWildAbgesprungen}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
-                        <div className="text-xs font-medium text-slate-700">
-                          Maulwurfhügel / Fehlstelle
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-slate-900">
-                          {modalPinpointTotals.maulwurfhuegelFehlstelle}
-                        </div>
-                      </div>
-                    </div>
+                  <div className="mt-3 rounded-xl bg-gray-100 px-3 py-3 text-sm font-bold text-gray-900">
+                    Direktfunde insgesamt: {COUNT_CATEGORIES.reduce((sum, { key }) => sum + toNumber(modalDraft[key]), 0)}
                   </div>
 
-                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="mb-3 text-sm font-semibold text-gray-900">
-                      Gesamtwerte
+                  <details className="mt-3 rounded-xl border border-gray-200 bg-white p-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-900">
+                      Bereits erfasste PinPoints · {COUNT_CATEGORIES.reduce((sum, { key }) => sum + modalPinpointTotals[key], 0)} Funde
+                    </summary>
+                    <div className="mt-3 space-y-2 text-sm text-gray-700">
+                      {COUNT_CATEGORIES.map(({ key, label, icon }) => (
+                        <div key={key} className="flex items-center justify-between gap-3">
+                          <span>{icon} {label}</span>
+                          <strong className="tabular-nums">{modalPinpointTotals[key]}</strong>
+                        </div>
+                      ))}
                     </div>
+                  </details>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl border border-green-200 bg-green-50 p-3">
-                        <div className="text-xs font-medium text-green-700">
-                          Rehkitze gesichert
+                  <details className="mt-2 rounded-xl border border-gray-200 bg-white p-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-900">
+                      Auftrag gesamt · {modalCombinedTotalWild} Funde (Direktfunde + PinPoints)
+                    </summary>
+                    <div className="mt-3 space-y-2 text-sm text-gray-700">
+                      {COUNT_CATEGORIES.map(({ key, label, icon }) => (
+                        <div key={key} className="flex items-center justify-between gap-3">
+                          <span>{icon} {label}</span>
+                          <strong className="tabular-nums">{modalCombinedTotals[key]}</strong>
                         </div>
-                        <div className="mt-1 text-xl font-bold text-green-900">
-                          {modalCombinedTotals.rehkitzeGesichert}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                        <div className="text-xs font-medium text-amber-700">
-                          Rehkitze abgesprungen
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-amber-900">
-                          {modalCombinedTotals.rehkitzeAbgesprungen}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                        <div className="text-xs font-medium text-emerald-700">
-                          Sonstiges Wild gesichert
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-emerald-900">
-                          {modalCombinedTotals.sonstigesWildGesichert}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-orange-200 bg-orange-50 p-3">
-                        <div className="text-xs font-medium text-orange-700">
-                          Sonstiges Wild abgesprungen
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-orange-900">
-                          {modalCombinedTotals.sonstigesWildAbgesprungen}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
-                        <div className="text-xs font-medium text-slate-700">
-                          Maulwurfhügel / Fehlstelle
-                        </div>
-                        <div className="mt-1 text-xl font-bold text-slate-900">
-                          {modalCombinedTotals.maulwurfhuegelFehlstelle}
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  </div>
+                  </details>
 
                   {modalCombinedTotalWild === 0 && (
-                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                      Achtung: Aktuell sind überall 0 eingetragen. Bitte prüfen,
-                      ob das so korrekt ist.
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                      Noch keine Funde erfasst. Bitte prüfen, ob das richtig ist.
                     </div>
                   )}
 
-                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                    Nach dem Beenden kann der Auftrag nicht mehr geändert werden.
+                  <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-xs text-blue-950">
+                    Nach dem Auftragsabschluss kann der zuständige Pilot die Direktfunde bis zum Abschluss des Einsatztages korrigieren. Danach nur noch ein Admin. Jede Änderung wird protokolliert.
                   </div>
                 </div>
 
-                <div className="border-t border-gray-200 px-4 py-4 md:px-5">
-                  <div className="flex flex-col gap-2 md:flex-row md:justify-end">
+                <div className="shrink-0 border-t border-gray-200 bg-white p-3 sm:p-4">
+                  <div className="grid grid-cols-[0.8fr_1.2fr] gap-2">
                     <button
                       type="button"
                       onClick={() => setFinishModal({ open: false, orderId: null })}
-                      className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium text-gray-800"
+                      disabled={savingId === modalOrder.id}
+                      className="rounded-xl border border-gray-300 px-3 py-3 text-sm font-semibold text-gray-900 disabled:opacity-50"
                     >
                       Zurück
                     </button>
-
                     <button
                       type="button"
                       onClick={() =>
@@ -1950,11 +2195,9 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                         })
                       }
                       disabled={savingId === modalOrder.id}
-                      className="rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                      className="rounded-xl bg-green-700 px-3 py-3 text-sm font-bold text-white disabled:opacity-50"
                     >
-                      {savingId === modalOrder.id
-                        ? "Speichert..."
-                        : "Jetzt erledigt setzen"}
+                      {savingId === modalOrder.id ? "Speichert..." : "Auftrag abschließen ✓"}
                     </button>
                   </div>
                 </div>
@@ -1963,144 +2206,116 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
           </div>
         )}
 
+      {directCorrectionOrderId && (
+        <DirectFindingsCorrectionModal
+          orderId={directCorrectionOrderId}
+          onClose={() => setDirectCorrectionOrderId(null)}
+          onSaved={async () => { await loadOrders(); }}
+        />
+      )}
+
       {modalPinpoint && modalPinpointOrder && modalPinpointDraft && (
-        <div className="fixed inset-0 z-[110] bg-black/40 p-3 md:p-4">
+        <div className="fixed inset-0 z-[110] bg-black/55 p-2 sm:p-4">
           <div className="flex h-full items-center justify-center">
-            <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="border-b border-gray-200 px-4 py-4 md:px-5">
-                <h2 className="text-xl font-bold text-gray-900">
-                  PinPoint {modalPinpoint.sequenceNumber}
+            <div className="flex max-h-[95dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="shrink-0 border-b border-gray-200 px-4 py-3">
+                <h2 className="text-lg font-extrabold text-gray-950">
+                  {correctionMode ? "✏️ Wildmeldung korrigieren" : "🦌 Wildfund erfassen"}
                 </h2>
-                <p className="mt-2 text-sm text-gray-700">
-                  Wildzahlen und Notiz direkt am erreichten PinPoint erfassen.
+                <p className="mt-1 text-sm text-gray-700">
+                  PinPoint {modalPinpoint.sequenceNumber} · Pro Kategorie maximal 6 · große Fläche: +1, Minusknopf: −1
                 </p>
+                {correctionMode && (
+                  <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    Nur Pilot/Admin · Jede Änderung wird mit Begründung protokolliert.
+                  </div>
+                )}
               </div>
 
-              <div className="overflow-y-auto px-4 py-4 md:px-5">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-800">
-                      Rehkitze gesichert
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={modalPinpointDraft.rehkitzeGesichert}
-                      onChange={(e) =>
-                        updatePinpointDraft(modalPinpoint.id, {
-                          rehkitzeGesichert: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border px-3 py-3"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-800">
-                      Rehkitze abgesprungen
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={modalPinpointDraft.rehkitzeAbgesprungen}
-                      onChange={(e) =>
-                        updatePinpointDraft(modalPinpoint.id, {
-                          rehkitzeAbgesprungen: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border px-3 py-3"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-800">
-                      Sonstiges Wild gesichert
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={modalPinpointDraft.sonstigesWildGesichert}
-                      onChange={(e) =>
-                        updatePinpointDraft(modalPinpoint.id, {
-                          sonstigesWildGesichert: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border px-3 py-3"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-800">
-                      Sonstiges Wild abgesprungen
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={modalPinpointDraft.sonstigesWildAbgesprungen}
-                      onChange={(e) =>
-                        updatePinpointDraft(modalPinpoint.id, {
-                          sonstigesWildAbgesprungen: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border px-3 py-3"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="mb-1 block text-sm font-medium text-gray-800">
-                      Maulwurfhügel / Fehlstelle
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={modalPinpointDraft.maulwurfhuegelFehlstelle}
-                      onChange={(e) =>
-                        updatePinpointDraft(modalPinpoint.id, {
-                          maulwurfhuegelFehlstelle: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border px-3 py-3"
-                    />
-                  </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                <div className="space-y-2">
+                  {COUNT_CATEGORIES.map(({key, label, icon, tone}) => {
+                    const value = Number(modalPinpointDraft[key]) || 0;
+                    return (
+                      <WildCounterButton
+                        key={key}
+                        label={label}
+                        icon={icon}
+                        tone={tone}
+                        value={value}
+                        disabled={savingId === modalPinpoint.id}
+                        onIncrease={() => adjustPinpointCount(modalPinpoint.id, key, 1)}
+                        onDecrease={() => adjustPinpointCount(modalPinpoint.id, key, -1)}
+                      />
+                    );
+                  })}
                 </div>
 
-                <div className="mt-4">
-                  <label className="mb-1 block text-sm font-medium text-gray-800">
-                    Notiz
-                  </label>
-                  <textarea
-                    value={modalPinpointDraft.note}
-                    onChange={(e) =>
-                      updatePinpointDraft(modalPinpoint.id, {
-                        note: e.target.value,
-                      })
-                    }
-                    className="min-h-[120px] w-full rounded-xl border px-3 py-2"
-                  />
+                <div className="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-800">
+                  Gesamt: {COUNT_CATEGORIES.reduce((sum, category) => sum + (Number(modalPinpointDraft[category.key]) || 0), 0)}
                 </div>
+
+                <label className="mt-3 block text-sm font-semibold text-gray-900" htmlFor="pinpoint-note">
+                  Notiz (optional)
+                </label>
+                <textarea
+                  id="pinpoint-note"
+                  rows={2}
+                  value={modalPinpointDraft.note}
+                  onChange={(event) => updatePinpointDraft(modalPinpoint.id, { note: event.target.value })}
+                  placeholder="Bei Bedarf Besonderheiten eintragen ..."
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-gray-900"
+                />
+
+                {correctionMode && (
+                  <>
+                    <label className="mt-3 block text-sm font-bold text-amber-950" htmlFor="pinpoint-correction-reason">
+                      Grund der Korrektur (Pflichtfeld)
+                    </label>
+                    <textarea
+                      id="pinpoint-correction-reason"
+                      rows={2}
+                      value={correctionReason}
+                      onChange={(event) => setCorrectionReason(event.target.value)}
+                      placeholder="z. B. Versehentlich 2 statt 1 Kitz erfasst"
+                      className="mt-1 w-full rounded-xl border-2 border-amber-300 px-3 py-2 text-gray-900"
+                    />
+                    {correctionHistory.length > 0 && (
+                      <details className="mt-3 rounded-xl border border-gray-200 p-3 text-sm">
+                        <summary className="cursor-pointer font-semibold text-gray-800">
+                          Korrekturverlauf ({correctionHistory.length})
+                        </summary>
+                        <div className="mt-2 space-y-2">
+                          {correctionHistory.map((entry) => (
+                            <div key={entry.id} className="border-t border-gray-200 pt-2 text-gray-700">
+                              <strong>{entry.correctedByName}</strong> · {new Date(entry.correctedAt).toLocaleString("de-DE")}
+                              <div className="whitespace-pre-wrap">{entry.reason}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </>
+                )}
               </div>
 
-              <div className="border-t border-gray-200 px-4 py-4 md:px-5">
-                <div className="flex flex-col gap-2 md:flex-row md:justify-end">
+              <div className="shrink-0 border-t border-gray-200 bg-white p-3 sm:p-4">
+                <div className="grid grid-cols-[0.8fr_1.2fr] gap-2">
                   <button
                     type="button"
-                    onClick={() => setPinpointModalId(null)}
-                    className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium text-gray-800"
+                    onClick={() => void cancelPinpointEditing(modalPinpointOrder.id, modalPinpoint.id)}
+                    disabled={savingId === modalPinpoint.id}
+                    className="rounded-xl border border-gray-300 px-3 py-3 text-sm font-semibold text-gray-900 disabled:opacity-50"
                   >
                     Abbrechen
                   </button>
-
                   <button
                     type="button"
-                    onClick={() =>
-                      savePinpointReachedResult(modalPinpointOrder, modalPinpoint)
-                    }
-                    disabled={savingId === modalPinpoint.id}
-                    className="rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                    onClick={() => void savePinpointReachedResult(modalPinpointOrder, modalPinpoint)}
+                    disabled={savingId === modalPinpoint.id || claimingPinpoint || (correctionMode && correctionReason.trim().length < 5)}
+                    className="rounded-xl bg-green-700 px-3 py-3 text-sm font-bold text-white disabled:opacity-50"
                   >
-                    {savingId === modalPinpoint.id
-                      ? "Speichert..."
-                      : "PinPoint als erledigt speichern"}
+                    {savingId === modalPinpoint.id ? "Speichert..." : correctionMode ? "Korrektur speichern" : "PinPoint erledigt ✓"}
                   </button>
                 </div>
               </div>
@@ -2122,24 +2337,61 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
   </div>
 )}
 
+{locationConsentDialog && (
+  <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4"
+       role="dialog" aria-modal="true" aria-labelledby="team-location-consent-title">
+    <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+      <div className="flex items-center gap-3">
+        <span className="text-3xl" aria-hidden="true">📍</span>
+        <h2 id="team-location-consent-title" className="text-xl font-bold text-gray-950">
+          Standort mit deinem Team teilen?
+        </h2>
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-gray-800">
+        {locationConsentDialog === "navigation"
+          ? "Du startest die Pinpoint-Navigation. Sollen deine Teammitglieder während des Einsatzes auch deinen Standort sehen?"
+          : "Du hast heute einen Einsatz. Deine Teammitglieder können dich auf der Pinpoint-Karte sehen, wenn du deinen Standort freiwillig teilst."}
+      </p>
+      <div className="mt-3 space-y-2 rounded-xl bg-gray-100 p-3 text-sm text-gray-800">
+        <p>✓ Nur dein Einsatzteam sieht deinen Standort.</p>
+        <p>✓ Du kannst die Freigabe jederzeit beenden.</p>
+        <p>✓ Die Freigabe endet beim Verlassen der Auftragsseite.</p>
+        <p>✓ Ohne Zustimmung kannst du normal navigieren.</p>
+      </div>
+      <button type="button" onClick={acceptTeamLocation}
+        className="mt-4 w-full rounded-xl bg-green-700 px-4 py-3 text-base font-bold text-white">
+        📍 Ja, Standort mit Team teilen
+      </button>
+      <button type="button" onClick={declineTeamLocation}
+        className="mt-2 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900">
+        {locationConsentDialog === "navigation" ? "Ohne Freigabe navigieren" : "Jetzt nicht"}
+      </button>
+      <p className="mt-3 text-center text-xs text-gray-600">
+        Dein Smartphone kann zusaetzlich die Standortberechtigung abfragen.
+        Die Freigabe gilt nicht automatisch für den nächsten Einsatztag.
+      </p>
+    </div>
+  </div>
+)}
+
 {navigationTarget && (
   <PinpointNavigationModal
     open={true}
     pinpoint={navigationTarget.pinpoint}
+    orderId={navigationTarget.order.id}
+    claiming={claimingPinpoint}
+    members={liveTeam.members}
+    myUserId={liveTeam.myUserId}
+    ownSharedPosition={liveTeam.ownPosition}
+    sharingEnabled={liveTeam.sharing}
+    locationError={liveTeam.error}
     onClose={() => setNavigationTarget(null)}
     onReached={() => {
       const target = navigationTarget;
-      setNavigationTarget(null);
-
-      if (target) {
-        markPinpointReached(target.order, target.pinpoint);
-      }
+      if (target) void markPinpointReached(target.order, target.pinpoint, true);
     }}
   />
 )}
     </>
   );
 }
-
-  
-  

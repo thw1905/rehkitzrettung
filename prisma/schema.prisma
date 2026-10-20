@@ -117,6 +117,9 @@ model User {
   sessionVersion                  Int                           @default(0)
   notificationAcknowledgements    NotificationAcknowledgement[]
   notificationRecipients          NotificationRecipient[]
+  dailyTeamLocations              DailyTeamLocation[]
+  pinpointCorrections             PinpointCorrection[]
+  directFindingsCorrections       DirectFindingsCorrection[]
 }
 
 model NotificationMessage {
@@ -365,6 +368,25 @@ model Order {
   isManualTeamAssignment    Boolean           @default(false)
   reviere                   OrderRevier[]
   sortOrder                 Int               @default(0)
+  directFindingsCorrections DirectFindingsCorrection[]
+}
+
+// Revisionssichere Korrekturen der Direktfunde, die OHNE Pinpoint
+// am Auftrag gespeichert werden. Die Pinpoint-Funde bleiben unberuehrt.
+model DirectFindingsCorrection {
+  id                String   @id @default(cuid())
+  orderId           String
+  correctedByUserId String
+  correctedAt       DateTime @default(now())
+  reason            String
+  beforeData        Json
+  afterData         Json
+
+  order       Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  correctedBy User  @relation(fields: [correctedByUserId], references: [id])
+
+  @@index([orderId, correctedAt])
+  @@index([correctedByUserId])
 }
 
 model OrderPinpoint {
@@ -377,6 +399,11 @@ model OrderPinpoint {
   status                    PinpointStatus @default(OFFEN)
   scannedAt                 DateTime       @default(now())
   reachedAt                 DateTime?
+  // Bearbeitungssperre fuer die gemeinsame Wilddatenerfassung
+  claimedByUserId           String?
+  claimExpiresAt            DateTime?
+  finalizedAt               DateTime?
+  finalizedByUserId         String?
   rehkitzeGesichert         Int            @default(0)
   rehkitzeAbgesprungen      Int            @default(0)
   sonstigesWildGesichert    Int            @default(0)
@@ -387,6 +414,25 @@ model OrderPinpoint {
   updatedAt                 DateTime       @updatedAt
 
   order                     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  corrections               PinpointCorrection[]
+}
+
+// Unveraenderliches Aenderungsprotokoll fuer korrigierte Wildmeldungen.
+// Einmalige Speicherung und Korrektur veraendern NICHT die Anzahl der Pinpoints.
+model PinpointCorrection {
+  id                String   @id @default(cuid())
+  pinpointId        String
+  correctedByUserId String
+  correctedAt       DateTime @default(now())
+  reason            String
+  beforeData        Json
+  afterData         Json
+
+  pinpoint    OrderPinpoint @relation(fields: [pinpointId], references: [id], onDelete: Cascade)
+  correctedBy User          @relation(fields: [correctedByUserId], references: [id])
+
+  @@index([pinpointId, correctedAt])
+  @@index([correctedByUserId])
 }
 
 model OwnerAccessToken {
@@ -444,4 +490,23 @@ model HelpArticle {
   @@index([sortOrder])
   @@index([isActive])
 }
+// Eine feste Kennung pro Helfer und Einsatztag, unabhängig von Teamwechseln.
+// Der letzte Standort wird nur während einer aktiven, freiwilligen Freigabe gespeichert.
+model DailyTeamLocation {
+  id             String   @id @default(cuid())
+  date           DateTime
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  markerCode     String
+  sharingEnabled Boolean  @default(false)
+  latitude       Float?
+  longitude      Float?
+  accuracy       Float?
+  positionAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
+  @@unique([date, userId])
+  @@unique([date, markerCode])
+  @@index([date, sharingEnabled])
+}

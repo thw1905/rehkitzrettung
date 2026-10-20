@@ -1,0 +1,22 @@
+REHKITZRETTUNG – ADMIN-LINK IM DASHBOARD
+=====================================
+
+1. Diese ZIP-Datei entpacken.
+2. Die bestehende Dashboard-Clientdatei durch dashboard-page-client.tsx ersetzen.
+   Du findest sie in VS Code über die Suche nach "export default function DashboardPageClient".
+   (Im Projekt liegt sie voraussichtlich unter components/dashboard/dashboard-page-client.tsx.)
+3. Im Projektverzeichnis folgende Befehle ausführen:
+
+   npm run build
+   npm run dev
+
+WAS IST NEU?
+Die Admin-Kachel "Direktfunde korrigieren" befindet sich im Dashboard
+direkt unter den vier Auftragsstatus-Kennzahlen.
+Der Link öffnet die bereits vorhandene Seite /admin/direct-findings.
+Nur Admins sehen diese Kachel (isAdmin-Abschnitt).
+
+WICHTIG
+Das ist nur die Dashboard-Ergänzung. Die zuvor bereitgestellte
+my-orders-page-client.tsx ohne Admin-Korrekturlink muss weiterhin installiert sein.
+Eine Datenbankänderung ist nicht nötig.
