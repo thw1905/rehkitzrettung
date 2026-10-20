@@ -25,27 +25,71 @@ function navButtonClass(active: boolean) {
 export default function MobileBottomNav({ user }: MobileBottomNavProps) {
   const pathname = usePathname();
   const isAdmin = Boolean(user?.isAdmin);
-  const [canOpenGpsTest, setCanOpenGpsTest] = useState(false);
+  // Jeder Admin darf den Link sehen. Die eigentliche GPS-Testseite und
+  // die API bleiben serverseitig durch Admin-Rechte und DEMO_ORDER_PIN
+  // geschuetzt. Eine fehlgeschlagene Verfuegbarkeitsabfrage darf den
+  // Menuepunkt auf dem Smartphone nicht unsichtbar machen.
+  const canOpenGpsTest = isAdmin;
   const [helpMenuOpen, setHelpMenuOpen] = useState(false);
+  const [creatingDemoOrder, setCreatingDemoOrder] = useState(false);
+  const [deletingDemoOrders, setDeletingDemoOrders] = useState(false);
 
-  // Die Freigabe fuer den Menuepunkt kommt von der geschuetzten Server-API.
-  // Nur Admins sehen den Link; der GPS-Test selbst erfordert die Demo-PIN.
-  useEffect(() => {
-    let cancelled = false;
-    if (!isAdmin) {
-      setCanOpenGpsTest(false);
-      return;
-    }
-    void fetch("/api/admin/gps-test/access", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data) => {
-        if (!cancelled) setCanOpenGpsTest(data?.allowed === true);
-      })
-      .catch(() => {
-        if (!cancelled) setCanOpenGpsTest(false);
+  // Dieselben API-Aufrufe wie in der Desktop-Navigation verwenden.
+  async function handleCreateDemoOrder() {
+    if (!isAdmin || creatingDemoOrder || deletingDemoOrders) return;
+
+    const pin = window.prompt("PIN für Demo-Auftrag eingeben:");
+    if (!pin) return;
+
+    setCreatingDemoOrder(true);
+    try {
+      const response = await fetch("/api/demo-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
       });
-    return () => { cancelled = true; };
-  }, [isAdmin]);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        window.alert(result?.error || "Demo-Auftrag konnte nicht erstellt werden.");
+        return;
+      }
+      setHelpMenuOpen(false);
+      window.alert("Demo-Auftrag erfolgreich erstellt.");
+      window.location.href = "/orders";
+    } catch (error) {
+      console.error("Demo-Auftrag Fehler:", error);
+      window.alert("Demo-Auftrag konnte nicht erstellt werden.");
+    } finally {
+      setCreatingDemoOrder(false);
+    }
+  }
+
+  async function handleDeleteDemoOrders() {
+    if (!isAdmin || creatingDemoOrder || deletingDemoOrders) return;
+
+    const confirmed = window.confirm(
+      "Wirklich alle Demo-Aufträge löschen? Dieser Vorgang kann nicht rückgängig gemacht werden."
+    );
+    if (!confirmed) return;
+
+    setDeletingDemoOrders(true);
+    try {
+      const response = await fetch("/api/cleanup-demo-orders", { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        window.alert(result?.error || "Demo-Aufträge konnten nicht gelöscht werden.");
+        return;
+      }
+      setHelpMenuOpen(false);
+      window.alert(`Demo-Aufträge gelöscht: ${result.deleted ?? 0}`);
+      window.location.reload();
+    } catch (error) {
+      console.error("Demo löschen Fehler:", error);
+      window.alert("Demo-Aufträge konnten nicht gelöscht werden.");
+    } finally {
+      setDeletingDemoOrders(false);
+    }
+  }
 
   useEffect(() => { setHelpMenuOpen(false); }, [pathname]);
 
@@ -142,15 +186,15 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
         {baseItems.map((item) => {
           const active = isItemActive(item);
 
-          // Beim freigegebenen Benutzer oeffnet "Hilfe" auf Mobilgeraeten
-          // einen kleinen Bereich "Hilfe / System". Alle anderen nutzen
+          // Fuer Administratoren oeffnet "Hilfe" auf Mobilgeraeten
+          // den Bereich "Hilfe / System". Andere Nutzer verwenden
           // weiterhin den bisherigen direkten Hilfe-Link.
           if (item.href === "/hilfe" && canOpenGpsTest) {
             return (
               <div key={item.href} data-mobile-help-menu className="relative flex min-w-0 flex-1">
                 {helpMenuOpen && (
                   <div id="gps-test-mobile-help-menu"
-                    className="absolute bottom-[calc(100%+12px)] right-0 z-[95] w-[min(290px,88vw)] space-y-1 rounded-2xl border border-purple-200 bg-white p-3 shadow-2xl">
+                    className="absolute bottom-[calc(100%+12px)] right-0 z-[95] max-h-[min(75dvh,520px)] w-[min(320px,90vw)] space-y-1 overflow-y-auto rounded-2xl border border-purple-200 bg-white p-3 shadow-2xl">
                     <div className="px-2 pb-1 text-xs font-extrabold uppercase tracking-wide text-purple-900">
                       Hilfe / System
                     </div>
@@ -168,6 +212,27 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
                     >
                       🔒 GPS-Testmodus (PIN)
                     </Link>
+                    <div className="mt-2 border-t border-purple-100 pt-2">
+                      <p className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                        Demo-Aufträge
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void handleCreateDemoOrder()}
+                        disabled={creatingDemoOrder || deletingDemoOrders}
+                        className="mb-2 block w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-left text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {creatingDemoOrder ? "Erstelle Demo-Auftrag ..." : "🟡 Demo-Auftrag erstellen (PIN)"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteDemoOrders()}
+                        disabled={creatingDemoOrder || deletingDemoOrders}
+                        className="block w-full rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-left text-sm font-semibold text-red-900 hover:bg-red-100 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {deletingDemoOrders ? "Lösche Demo-Aufträge ..." : "🗑️ Demo-Aufträge löschen"}
+                      </button>
+                    </div>
                   </div>
                 )}
                 <button
