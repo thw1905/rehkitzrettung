@@ -49,6 +49,26 @@ export default function AppHeader({ user }: AppHeaderProps) {
   const [personalMenuOpen, setPersonalMenuOpen] = useState(false);
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const [operationsMenuOpen, setOperationsMenuOpen] = useState(false);
+  // Der Server entscheidet, ob die GPS-Test-PIN-Abfrage fuer diesen Admin
+  // verfuegbar ist. Die Test-API verlangt zusaetzlich eine gueltige PIN-Freigabe.
+  const [canOpenGpsTest, setCanOpenGpsTest] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAdmin) {
+      setCanOpenGpsTest(false);
+      return;
+    }
+    void fetch("/api/admin/gps-test/access", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (!cancelled) setCanOpenGpsTest(data?.allowed === true);
+      })
+      .catch(() => {
+        if (!cancelled) setCanOpenGpsTest(false);
+      });
+    return () => { cancelled = true; };
+  }, [isAdmin]);
 
   const closeAllMenus = () => {
     setPersonalMenuOpen(false);
@@ -268,6 +288,7 @@ export default function AppHeader({ user }: AppHeaderProps) {
         { href: "/hilfe", label: "Hilfe / Bedienungsanleitung" },
         { href: "/admin/help", label: "Anleitung bearbeiten" },
         { href: "/admin/db-check", label: "DB-Check" },
+        ...(canOpenGpsTest ? [{ href: "/admin/gps-test", label: "🔒 GPS-Testmodus" }] : []),
       ],
     },
   ];

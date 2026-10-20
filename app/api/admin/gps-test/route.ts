@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdminApi } from "@/lib/admin";
+import { authorizeGpsTestApi } from "@/lib/gps-test-access";
 
 // Kennzeichnungen verhindern, dass ein GPS-Test versehentlich normale
 // Aufträge, Teams oder Einsatztage überschreibt bzw. löscht.
@@ -66,8 +66,8 @@ async function listTests() {
   }));
 }
 
-export async function GET() {
-  const auth = await requireAdminApi();
+export async function GET(req: NextRequest) {
+  const auth = await authorizeGpsTestApi(req);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
@@ -113,7 +113,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAdminApi();
+  const auth = await authorizeGpsTestApi(req);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
@@ -266,7 +266,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = await requireAdminApi();
+  const auth = await authorizeGpsTestApi(req);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
@@ -372,4 +372,3 @@ export async function DELETE(req: NextRequest) {
     return errorResponse(error, "GPS-Test konnte nicht entfernt werden.");
   }
 }
-
