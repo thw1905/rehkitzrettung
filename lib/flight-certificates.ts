@@ -275,7 +275,7 @@ async function sendCertificateMail(to: string, payload: FlightCertificateData, b
     attachments:[{filename:flightFilename(payload),content:buffer,contentType:"application/pdf"}],
   });
   // Bei der SMTP-Annahme sollte der Empfänger auf der Accepted-Liste stehen.
-  if (!result.accepted.some(a => a.toLowerCase()===to.toLowerCase())) throw new Error("SMTP hat die Empfängeradresse nicht angenommen.");
+  if (!result.accepted.some(a => (typeof a === "string" ? a : a.address).trim().toLowerCase() === to.trim().toLowerCase())) throw new Error("SMTP hat die Empfängeradresse nicht angenommen.");
 }
 
 // Auto: nur erster Versuch. ERROR/SENDING werden NIEMALS automatisch neu

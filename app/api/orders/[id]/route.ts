@@ -564,7 +564,7 @@ export async function PATCH(
         }
       }
 
-      if (existingOrder.status !== "ERLEDIGT" && order.status === "ERLEDIGT") {
+      if (order.status === "ERLEDIGT") {
         try {
           await maybeSendFlightAfterOrderCompleted(order.id);
         } catch (error) {
@@ -671,7 +671,7 @@ export async function PATCH(
       });
     }
 
-    if (existingOrder.status !== "ERLEDIGT" && order.status === "ERLEDIGT") {
+    if (order.status === "ERLEDIGT") {
       try {
         await maybeSendFlightAfterOrderCompleted(order.id);
       } catch (error) {
