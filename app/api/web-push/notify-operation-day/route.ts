@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { requireAdminApi } from "@/lib/admin";
 import { sendWebPushToUser } from "@/lib/web-push";
 import { sendMail } from "@/lib/mail";
+import { getRevierOwnerMailTemplate } from "@/lib/revier-owner-mail-template-store";
+import { renderRevierMailText } from "@/lib/revier-owner-mail-template";
 
 function parseDateOnlyToUtc(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number);
@@ -97,6 +99,7 @@ type RevierOwnerMailData = {
   name: string;
   reviere: Set<string>;
   fields: Set<string>;
+  landwirtFields: Map<string, Set<string>>;
 };
 
 function addRevierOwnerMailData(
@@ -106,6 +109,7 @@ function addRevierOwnerMailData(
     name: string;
     revierLabel: string;
     fieldLabel: string;
+    landwirtName: string;
   }
 ) {
   const email = String(params.email || "").trim().toLowerCase();
@@ -118,6 +122,7 @@ function addRevierOwnerMailData(
       name: params.name || "-",
       reviere: new Set<string>(),
       fields: new Set<string>(),
+      landwirtFields: new Map<string, Set<string>>(),
     });
   }
 
@@ -132,6 +137,13 @@ function addRevierOwnerMailData(
   if (params.fieldLabel) {
     item.fields.add(params.fieldLabel);
   }
+
+  // Jede betroffene Flaeche wird beim zutreffenden Landwirt gefuehrt.
+  const landwirt = params.landwirtName.trim() || "Landwirt nicht hinterlegt";
+  if (!item.landwirtFields.has(landwirt)) {
+    item.landwirtFields.set(landwirt, new Set<string>());
+  }
+  if (params.fieldLabel) item.landwirtFields.get(landwirt)!.add(params.fieldLabel);
 }
 
 async function notifyAffectedRevierOwnersByEmail(params: {
@@ -155,8 +167,11 @@ async function notifyAffectedRevierOwnersByEmail(params: {
                   id: true,
                   name: true,
                   displayName: true,
+                  owner: { select: { firstName: true, lastName: true } },
                 },
               },
+              // Fallback bei Flaechen ohne eigenen Landwirt: Landwirt am Auftrag.
+              owner: { select: { firstName: true, lastName: true } },
               reviere: {
                 include: {
                   revier: {
@@ -191,6 +206,7 @@ async function notifyAffectedRevierOwnersByEmail(params: {
   for (const dayTeam of operationDay.teams) {
     for (const order of dayTeam.orders) {
       const fieldLabel = getFieldLabel(order.field);
+      const landwirtName = getPersonName(order.field?.owner ?? order.owner);
 
       for (const orderRevier of order.reviere || []) {
         const revier = orderRevier.revier;
@@ -211,6 +227,7 @@ async function notifyAffectedRevierOwnersByEmail(params: {
             name: getPersonName(pachter),
             revierLabel,
             fieldLabel,
+            landwirtName,
           });
         }
       }
@@ -248,6 +265,9 @@ async function notifyAffectedRevierOwnersByEmail(params: {
     };
   }
 
+  // Vorlage einmal pro Benachrichtigung laden, nicht bei jedem Empfaenger erneut.
+  const mailTemplate = await getRevierOwnerMailTemplate();
+
   for (const recipient of mailByEmail.values()) {
     const revierLines =
       Array.from(recipient.reviere)
@@ -261,27 +281,27 @@ async function notifyAffectedRevierOwnersByEmail(params: {
         .map((item) => `- ${item}`)
         .join("\n") || "-";
 
-    const subject = `Rehkitzrettung: Suche am ${params.displayDate}`;
+    const landwirtLines = Array.from(recipient.landwirtFields.entries())
+      .sort(([a], [b]) => a.localeCompare(b, "de"))
+      .map(([landwirt, labels]) => {
+        const fields = Array.from(labels).sort((a, b) => a.localeCompare(b, "de"));
+        return `- ${landwirt}: ${fields.join(", ")}`;
+      })
+      .join("\n") || "- Keine Landwirte hinterlegt";
 
-    const text = [
-      `Hallo ${recipient.name},`,
-      "",
-      `für den ${params.displayDate} ist eine Rehkitzsuche in deinem Revier geplant.`,
-      params.meetingText.trim() ? params.meetingText.trim() : "",
-      "",
-      "Betroffene Reviere:",
-      revierLines,
-      "",
-      "Betroffene Flächen:",
-      fieldLines,
-      "",
-      "Diese Nachricht wurde automatisch erstellt, weil für dein Revier ein Einsatz geplant wurde.",
-      "",
-      "Viele Grüße",
-      "Rehkitzrettung",
-    ]
-      .filter((line) => line !== "")
-      .join("\n");
+    const templateValues = {
+      paechter: recipient.name,
+      datum: params.displayDate,
+      uhrzeit: params.meetingText
+        ? params.meetingText.replace(/^Treffzeit:\s*/, "").replace(/\.$/, "").trim()
+        : "noch nicht festgelegt",
+      treffzeit: params.meetingText.trim(),
+      reviere: revierLines,
+      flaechen: fieldLines,
+      landwirte: landwirtLines,
+    };
+    const subject = renderRevierMailText(mailTemplate.subject, templateValues);
+    const text = renderRevierMailText(mailTemplate.body, templateValues);
 
     try {
       await sendMail({

@@ -1,34 +1,35 @@
-REHKITZRETTUNG – DEMO-AUFTRÄGE AUCH AUF DEM SMARTPHONE
-============================================================
+REHKITZRETTUNG - MUSTER BEFLIEGUNGSNACHWEIS ANZEIGEN
 
-Änderung:
-  In der unteren mobilen Navigation als Admin auf "Hilfe" tippen.
-  Dort werden nun angeboten:
-    - Hilfe / Bedienungsanleitung
-    - GPS-Testmodus (PIN)
-    - Demo-Auftrag erstellen (PIN)
-    - Demo-Aufträge löschen
+Voraussetzung: Das Paket "rehkitzrettung-befliegungsnachweis-auto-pdf.zip"
+mit der Verwaltungsseite /admin/flight-certificates ist bereits installiert.
 
-Das Anlegen benutzt dieselbe API wie am PC:
-  POST /api/demo-order mit DEMO_ORDER_PIN.
+FUNKTION
+- Unter Verwaltung -> Hilfe / System -> Befliegungsnachweise:
+  "Muster anzeigen / drucken" oeffnet ein ausgefuelltes Beispiel-PDF.
+  "Muster-PDF herunterladen" speichert dieselbe Musterversion.
+- Beide Buttons funktionieren ohne abgeschlossene Einsaetze oder angelegte Landwirte.
+- Musterdaten: 2 Flaechen des Landwirts Max Mustermann, 1x kein Wildfund,
+  1x ein gesichertes Kitz. Pilot: Peter Beispiel (keine Sucher-Namen).
+- Das Muster nutzt exakt die bereits installierte PDF-Erzeugung.
+- Das PDF wird als MUSTER gekennzeichnet, kein Versand, kein Datenbankzugriff
+  auf die Einsatzdaten, keine zusaetzlichen Prisma-Aenderungen.
+- Nur angemeldete Admins koennen das Muster abrufen.
 
-Das Löschen benutzt dieselbe API wie am PC:
-  POST /api/cleanup-demo-orders, mit zusätzlicher Sicherheitsabfrage.
-  Achtung: Der bisherige Desktop-Löschaufruf verlangt keine PIN.
-  Diese Änderung ergänzt auch für die mobile Löschfunktion keine PIN.
+INSTALLATION
+1. Entpacke dieses ZIP in C:\Projekte\rehkitzrettung und bestaetige
+   das Ueberschreiben der folgenden bestehenden Datei:
+      components/admin/flight-certificates-client.tsx
+   Neu hinzu kommt:
+      app/api/admin/flight-certificates/sample/route.ts
+2. Entwicklungsserver bei Bedarf neu starten:
+      npm run dev
+   Fuer den Live-Server vorher:
+      npm run build
+3. Rufe im Programm "Verwaltung -> Hilfe / System -> Befliegungsnachweise"
+   auf. Klicke auf "Muster anzeigen / drucken".
 
-Installation:
-  1. Bisherige Datei sichern:
-     components/layout/mobile-bottom-nav.tsx
-  2. Nur die gleichnamige Datei aus diesem ZIP im Projekt ersetzen.
-  3. Im Projektordner:
-        npm run build
-        npm run dev
-  4. Auf dem Smartphone (als Admin) die Anwendung aktualisieren,
-     unten auf "Hilfe" tippen und die Demo-Aktionen ausprobieren.
+KEIN npx prisma db push und KEIN neues npm-Paket erforderlich.
 
-Wenn die PWA noch die alte Ansicht zeigt, vollständig schließen
-und erneut öffnen beziehungsweise Webseitendaten aktualisieren.
-
-Keine Datenbankänderung, keine weiteren Dateien notwendig.
-Die ursprüngliche Desktop-Navigation bleibt unverändert.
+HINWEIS
+Wenn kein PDF erscheint, ggf. Pop-up-Blocker fuer die Website pruefen.
+Die Anzeige oeffnet sich in einem neuen Browser-Tab.

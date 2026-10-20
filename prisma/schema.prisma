@@ -86,6 +86,7 @@ model Owner {
   contactOrders   Order[] @relation("OrderContactOwner")
   accessTokens    OwnerAccessToken[]
   mowingRequests  MowingRequest[]
+  flightCertificates FlightCertificateDispatch[]
 }
 
 model User {
@@ -509,4 +510,33 @@ model DailyTeamLocation {
   @@unique([date, userId])
   @@unique([date, markerCode])
   @@index([date, sharingEnabled])
+}
+// Bearbeitbare E-Mail-Vorlage fuer die Revierpaechter-Benachrichtigung.
+// Ein Datensatz mit dem festen Schluessel "default" wird genutzt.
+model RevierOwnerEmailTemplate {
+  key       String   @id
+  subject   String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+// Ein Nachweis je Landwirt und Einsatztag. Die PDF-Daten werden beim
+// ersten Versand eingefroren und fuer spaetere Ausdrucke erhalten.
+model FlightCertificateDispatch {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       Owner    @relation(fields: [ownerId], references: [id])
+  date        DateTime
+  status      String   @default("SENDING") // SENDING | SENT | ERROR
+  payload     Json
+  attempts    Int      @default(1)
+  lastError   String?
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([ownerId, date])
+  @@index([date, status])
 }

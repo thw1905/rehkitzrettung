@@ -1,3 +1,4 @@
+import { maybeSendFlightAfterOrderCompleted } from "@/lib/flight-certificates";
 import { NextRequest, NextResponse } from "next/server";
 import area from "@turf/area";
 import { OrderStatus, PinpointStatus } from "@prisma/client";
@@ -563,6 +564,14 @@ export async function PATCH(
         }
       }
 
+      if (existingOrder.status !== "ERLEDIGT" && order.status === "ERLEDIGT") {
+        try {
+          await maybeSendFlightAfterOrderCompleted(order.id);
+        } catch (error) {
+          // Der erfolgreiche Auftragsabschluss darf nie durch einen Mailfehler verloren gehen.
+          console.error("Befliegungsnachweis beim Auftragsabschluss:", error);
+        }
+      }
       return NextResponse.json(normalizeOrderResponse(order));
     }
 
@@ -662,6 +671,14 @@ export async function PATCH(
       });
     }
 
+    if (existingOrder.status !== "ERLEDIGT" && order.status === "ERLEDIGT") {
+      try {
+        await maybeSendFlightAfterOrderCompleted(order.id);
+      } catch (error) {
+        // Der erfolgreiche Auftragsabschluss darf nie durch einen Mailfehler verloren gehen.
+        console.error("Befliegungsnachweis beim Auftragsabschluss:", error);
+      }
+    }
     return NextResponse.json(normalizeOrderResponse(order));
   } catch (error: any) {
     console.error("Fehler beim Aktualisieren des Auftrags:", error);
