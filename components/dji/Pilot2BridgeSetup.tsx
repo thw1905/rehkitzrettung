@@ -78,6 +78,49 @@ function bridgeDiagnostics(bridge?: Bridge): string {
   return info.length ? " | DJI-Diagnose: " + info.join(", ") : "";
 }
 
+function readDjiVerified(raw: unknown): { verified: boolean; explanation: string } {
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    try { value = JSON.parse(raw); }
+    catch { return { verified: false, explanation: "Antwort ist kein gültiges JSON" }; }
+  }
+  if (typeof value === "boolean") return { verified: value, explanation: "verifiziert=" + value };
+  if (!value || typeof value !== "object") return { verified: false, explanation: "Status nicht lesbar" };
+  const result = value as Record<string, unknown>;
+  const d = result.data;
+  let verified: boolean | null = typeof d === "boolean" ? d : null;
+  if (d && typeof d === "object") {
+    const nested = d as Record<string, unknown>;
+    if (typeof nested.verified === "boolean") verified = nested.verified;
+    if (typeof nested.isVerified === "boolean") verified = nested.isVerified;
+  }
+  const code = typeof result.code === "number" ? result.code : null;
+  const parts: string[] = [];
+  if (code !== null) parts.push("code=" + code);
+  if (verified !== null) parts.push("verifiziert=" + verified);
+  const message = safeDjiMessage(result.message);
+  if (message) parts.push(message);
+  return { verified: verified === true && (code === null || code === 0), explanation: parts.join(", ") || "Keine Statusangabe" };
+}
+
+async function waitUntilDjiVerified(bridge: Bridge) {
+  if (!bridge.platformIsVerified) {
+    throw new Error("DJI Pilot 2 stellt platformIsVerified nicht bereit; Statusprüfung nicht möglich.");
+  }
+  let reason = "keine Antwort";
+  // DJI may acknowledge the license method before verification is visible to the next JSBridge call.
+  for (let attempt = 0; attempt < 11; attempt++) {
+    let raw: unknown;
+    try { raw = bridge.platformIsVerified(); }
+    catch { throw new Error("DJI konnte den Verifizierungsstatus nicht abfragen."); }
+    const state = readDjiVerified(raw);
+    if (state.verified) return;
+    reason = state.explanation;
+    if (attempt < 10) await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("DJI bestätigt die App-Verifizierung nicht (" + reason + "). Bitte prüfen, ob die Cloud-API-App im DJI Developer Center aktiviert ist und App-ID, Key und License zusammengehören.");
+}
+
 function assertSuccess(raw: unknown, step: string) {
   const result = parseReply(raw);
   if (result.code !== 0) {
@@ -133,6 +176,9 @@ export default function Pilot2BridgeSetup({ token }: { token: string | null }) {
       });
       const license = await fetchJson<License>("/api/dji/pilot2/bridge-license");
       assertSuccess(bridge.platformVerifyLicense(license.appId, license.appKey, license.license), "Lizenzprüfung");
+      setStatus("Lizenzaufruf erfolgreich. DJI-Verifizierungsstatus wird geprüft …");
+      await waitUntilDjiVerified(bridge);
+      setStatus("DJI-App-Verifizierung bestätigt. API-Modul wird geladen …");
       // DJI requires the API module before any map endpoints can be used.
       setStatus("Lizenz akzeptiert. API-Modul wird geladen …");
       assertSuccess(bridge.platformLoadComponent("api", JSON.stringify({
