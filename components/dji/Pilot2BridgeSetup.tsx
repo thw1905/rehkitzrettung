@@ -93,7 +93,7 @@ export default function Pilot2BridgeSetup({ token }: { token: string | null }) {
       // DJI requires the API module before any map endpoints can be used.
       setStatus("Lizenz akzeptiert. API-Modul wird geladen …");
       assertSuccess(bridge.platformLoadComponent("api", JSON.stringify({
-        host: window.location.origin,
+        host: window.location.origin + "/",
         token,
       })), "API-Modul");
       setStatus("API-Modul geladen. Workspace wird eingestellt …");
