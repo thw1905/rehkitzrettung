@@ -259,6 +259,14 @@ function SortableOrderCard({
   );
 }
 
+type MeetingPointData = {
+  mode: "AUTO" | "MANUELL";
+  text: string;
+  autoText: string;
+  manualText: string;
+  sourceOrder: string | null;
+};
+
 export default function DayAssignmentsPageClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -276,6 +284,13 @@ export default function DayAssignmentsPageClient() {
   const [notifying, setNotifying] = useState(false);
   const [meetingTime, setMeetingTime] = useState("");
   const [savingMeetingTime, setSavingMeetingTime] = useState(false);
+  /* Treffpunkt Einsatztag */
+  const [meetingPoint, setMeetingPoint] = useState<MeetingPointData | null>(null);
+  const [meetingPointMode, setMeetingPointMode] = useState<"AUTO" | "MANUELL">("AUTO");
+  const [manualMeetingPoint, setManualMeetingPoint] = useState("");
+  const [savingMeetingPoint, setSavingMeetingPoint] = useState(false);
+  const [meetingPointError, setMeetingPointError] = useState("");
+
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -301,6 +316,8 @@ export default function DayAssignmentsPageClient() {
 
   async function loadData(date: string) {
     setLoading(true);
+    setMeetingPoint(null);
+    setMeetingPointError("");
 
     try {
       const res = await fetch(
@@ -318,6 +335,15 @@ export default function DayAssignmentsPageClient() {
 
       setOrders(Array.isArray(data.orders) ? data.orders : []);
       setDayTeams(Array.isArray(data.dayTeams) ? data.dayTeams : []);
+      const pointResponse = await fetch(
+        `/api/operation-days/meeting-point?date=${encodeURIComponent(date)}`,
+        { cache: "no-store" },
+      );
+      const pointData = await pointResponse.json();
+      if (!pointResponse.ok) throw new Error(pointData.error || "Treffpunkt konnte nicht geladen werden.");
+      setMeetingPoint(pointData as MeetingPointData);
+      setMeetingPointMode(pointData.mode === "MANUELL" ? "MANUELL" : "AUTO");
+      setManualMeetingPoint(pointData.manualText || "");
       setMeetingTime(data.operationDay?.meetingTime || "");
     } catch (error: any) {
       console.error("Fehler beim Laden:", error);
@@ -514,9 +540,43 @@ export default function DayAssignmentsPageClient() {
     }
   }
 
+  const meetingPointChanged = meetingPoint !== null && (
+    meetingPointMode !== meetingPoint.mode ||
+    (meetingPointMode === "MANUELL" && manualMeetingPoint.trim() !== meetingPoint.manualText)
+  );
+
+  async function saveMeetingPoint() {
+    if (meetingPointMode === "MANUELL" && !manualMeetingPoint.trim()) {
+      setMeetingPointError("Bitte einen manuellen Treffpunkt angeben.");
+      return;
+    }
+    setSavingMeetingPoint(true);
+    setMeetingPointError("");
+    try {
+      const response = await fetch("/api/operation-days/meeting-point", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: selectedDate,
+          meetingPointText: meetingPointMode === "MANUELL" ? manualMeetingPoint.trim() : null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Treffpunkt konnte nicht gespeichert werden.");
+      setMeetingPoint(data as MeetingPointData);
+      setMeetingPointMode(data.mode);
+      setManualMeetingPoint(data.manualText);
+    } catch (error) {
+      setMeetingPointError(error instanceof Error ? error.message : "Fehler beim Speichern.");
+    } finally { setSavingMeetingPoint(false); }
+  }
+
   async function notifyTeams() {
+    if (meetingPointChanged) { alert("Bitte Treffpunkt zuerst speichern."); return; }
+    if (!meetingPoint?.text) { alert("Bitte einen Treffpunkt festlegen, bevor Benachrichtigungen gesendet werden."); return; }
+    if (!meetingTime || savingMeetingTime) { alert("Bitte zuerst die Treffzeit speichern."); return; }
     const confirmed = window.confirm(
-      `Möchtest du alle Teammitglieder für den ${selectedDate} benachrichtigen?`
+      `Einsatz am ${selectedDate}\nTreffzeit: ${meetingTime || "nicht angegeben"}\nTreffpunkt:\n${meetingPoint?.text}\n\nHelfer benachrichtigen und Revierpächter-Mails senden?`
     );
 
     if (!confirmed) return;
@@ -543,7 +603,7 @@ export default function DayAssignmentsPageClient() {
       }
 
       alert(
-        `Benachrichtigung gesendet.\nNutzer: ${data.notifiedUsers}\nPushs: ${data.sentPushes}`
+        `Benachrichtigungen ausgelöst.\nGeplante Helfer: ${data.plannedUsers ?? 0}\nPushs: ${data.sentPushes ?? 0}\nRevierpächter-Mails: ${data.revierOwnerEmails?.sent ?? 0} von ${data.revierOwnerEmails?.recipients ?? 0}`
       );
     } catch (error: any) {
       console.error("Fehler beim Benachrichtigen:", error);
@@ -595,6 +655,39 @@ export default function DayAssignmentsPageClient() {
             )}
           </div>
 
+          {/* Treffpunkt des Einsatztages */}
+          <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+            <h2 className="text-base font-bold text-gray-950">Treffpunkt für diesen Einsatztag</h2>
+            <p className="mt-1 text-sm text-gray-700">Standard: Treffpunkt der Fläche des ersten zugeteilten Auftrags. Du kannst stattdessen einen anderen Treffpunkt eingeben.</p>
+            <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold text-gray-900">
+              <label className="flex items-center gap-2">
+                <input type="radio" checked={meetingPointMode === "AUTO"} onChange={() => setMeetingPointMode("AUTO")} /> Automatisch
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" checked={meetingPointMode === "MANUELL"} onChange={() => setMeetingPointMode("MANUELL")} /> Manuell festlegen
+              </label>
+            </div>
+            {meetingPointMode === "AUTO" ? (
+              <div className="mt-3 rounded-xl bg-white p-3">
+                <div className="text-xs font-semibold text-gray-500">Erster Auftrag: {meetingPoint?.sourceOrder || "Noch keiner zugeteilt"}</div>
+                <pre className="mt-2 whitespace-pre-wrap break-all font-sans text-sm text-gray-900">{meetingPoint?.autoText || "Für den ersten Auftrag ist noch kein Treffpunkt hinterlegt. Bitte in der Fläche einen Treffpunkt setzen oder manuell festlegen."}</pre>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <label htmlFor="manual-day-point" className="block text-sm font-semibold text-gray-900">Treffpunkt / Adresse / GPS-Koordinaten</label>
+                <textarea id="manual-day-point" rows={3} maxLength={500} value={manualMeetingPoint} onChange={e => setManualMeetingPoint(e.target.value)} placeholder="z. B. Parkplatz am Sportplatz, Musterstraße 12, Hittfeld" className="mt-2 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-950" />
+              </div>
+            )}
+            {meetingPointError && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{meetingPointError}</p>}
+            {meetingPointChanged && <p className="mt-2 text-sm font-bold text-amber-800">Änderung noch nicht gespeichert. Erst speichern, dann benachrichtigen.</p>}
+            {meetingPointChanged && (
+              <button type="button" onClick={() => void saveMeetingPoint()} disabled={savingMeetingPoint} className="mt-3 rounded-xl bg-blue-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+                {savingMeetingPoint ? "Speichert ..." : "Treffpunkt speichern"}
+              </button>
+            )}
+            {!meetingPointChanged && meetingPoint?.text && <p className="mt-2 text-xs font-semibold text-green-900">Dieser Treffpunkt wird in Helfer-Benachrichtigungen und Revierpächter-Mails verwendet.</p>}
+          </div>
+
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
               href={`/team-planning?date=${selectedDate}`}
@@ -606,7 +699,7 @@ export default function DayAssignmentsPageClient() {
             <button
               type="button"
               onClick={notifyTeams}
-              disabled={notifying || dayTeams.length === 0}
+              disabled={notifying || dayTeams.length === 0 || savingMeetingPoint || savingMeetingTime || !meetingTime || meetingPointChanged || !meetingPoint?.text}
               className="rounded-2xl bg-black px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:opacity-50"
             >
               {notifying ? "Sendet..." : "Teams benachrichtigen"}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_REV_OWNER_MAIL_BODY, DEFAULT_REV_OWNER_MAIL_SUBJECT,
   EXAMPLE_REV_OWNER_MAIL_VALUES, REV_OWNER_MAIL_PLACEHOLDERS,
-  renderRevierMailText, validateRevierMailTemplate,
+  renderRevierMailText, ensureRevierMailMeetingPoint, validateRevierMailTemplate,
 } from "@/lib/revier-owner-mail-template";
 
 type TemplateResponse = { subject: string; body: string; updatedAt: string | null; error?: string };
@@ -25,7 +25,7 @@ export default function RevierEmailTemplateClient() {
   const dirty = subject !== saved.subject || body !== saved.body;
   const issue = useMemo(() => validateRevierMailTemplate(subject, body), [subject, body]);
   const previewSubject = useMemo(() => renderRevierMailText(subject, EXAMPLE_REV_OWNER_MAIL_VALUES), [subject]);
-  const previewBody = useMemo(() => renderRevierMailText(body, EXAMPLE_REV_OWNER_MAIL_VALUES), [body]);
+  const previewBody = useMemo(() => renderRevierMailText(ensureRevierMailMeetingPoint(body), EXAMPLE_REV_OWNER_MAIL_VALUES), [body]);
 
   useEffect(() => {
     let cancelled = false;

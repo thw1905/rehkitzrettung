@@ -2,12 +2,13 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { getOperationDayMeetingPoint } from "@/lib/operation-day-meeting-point";
 import { db } from "@/lib/db";
 import { requireAdminApi } from "@/lib/admin";
 import { sendWebPushToUser } from "@/lib/web-push";
 import { sendMail } from "@/lib/mail";
 import { getRevierOwnerMailTemplate } from "@/lib/revier-owner-mail-template-store";
-import { renderRevierMailText } from "@/lib/revier-owner-mail-template";
+import { renderRevierMailText, ensureRevierMailMeetingPoint } from "@/lib/revier-owner-mail-template";
 
 function parseDateOnlyToUtc(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number);
@@ -151,6 +152,7 @@ async function notifyAffectedRevierOwnersByEmail(params: {
   dateString: string;
   displayDate: string;
   meetingText: string;
+  meetingPointText: string;
   operationDayId: string;
 }) {
   const operationDay = await db.operationDay.findUnique({
@@ -296,12 +298,13 @@ async function notifyAffectedRevierOwnersByEmail(params: {
         ? params.meetingText.replace(/^Treffzeit:\s*/, "").replace(/\.$/, "").trim()
         : "noch nicht festgelegt",
       treffzeit: params.meetingText.trim(),
+      treffpunkt: params.meetingPointText,
       reviere: revierLines,
       flaechen: fieldLines,
       landwirte: landwirtLines,
     };
     const subject = renderRevierMailText(mailTemplate.subject, templateValues);
-    const text = renderRevierMailText(mailTemplate.body, templateValues);
+    const text = renderRevierMailText(ensureRevierMailMeetingPoint(mailTemplate.body), templateValues);
 
     try {
       await sendMail({
@@ -378,6 +381,22 @@ export async function POST(req: NextRequest) {
       ? `Treffzeit: ${operationDay.meetingTime} Uhr.`
       : "";
 
+    if (!operationDay.meetingTime?.trim()) {
+      return NextResponse.json(
+        { error: "Bitte zuerst eine Treffzeit für den Einsatztag speichern." },
+        { status: 400 },
+      );
+    }
+
+    // Server entscheidet ueber den Treffpunkt (nicht der Browser).
+    const point = await getOperationDayMeetingPoint(operationDay.id);
+    if (!point.text) {
+      return NextResponse.json(
+        { error: "Kein Treffpunkt vorhanden. Bitte in der Tagesplanung einen Treffpunkt festlegen und speichern." },
+        { status: 400 },
+      );
+    }
+
     const plannedUserIds = new Set<string>();
 
     for (const dayTeam of operationDay.teams) {
@@ -414,9 +433,7 @@ export async function POST(req: NextRequest) {
     let notPlannedPushes = 0;
 
     if (plannedUserIds.size > 0) {
-      const plannedMessage = `Du bist für den Einsatz am ${displayDate}${
-        meetingText ? `, ${meetingText}` : ""
-      } eingeplant. Bitte öffne die App, prüfe deine Aufträge und bestätige die Kenntnisnahme.`;
+      const plannedMessage = `Du bist für den Einsatz am ${displayDate} eingeplant.\n${meetingText}\nTreffpunkt:\n${point.text}\nBitte öffne die App, prüfe deine Aufträge und bestätige die Kenntnisnahme.`;
 
       const result = await createNotificationForUsers({
         title: "🚨 Einsatz geplant",
@@ -448,6 +465,7 @@ export async function POST(req: NextRequest) {
       dateString,
       displayDate,
       meetingText,
+      meetingPointText: point.text,
       operationDayId: operationDay.id,
     });
 

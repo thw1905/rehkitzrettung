@@ -6,7 +6,7 @@ import { getCurrentUserWithTeams } from "@/lib/current-user";
 import { db } from "@/lib/db";
 import { sendMail } from "@/lib/mail";
 import { getRevierOwnerMailTemplate } from "@/lib/revier-owner-mail-template-store";
-import { EXAMPLE_REV_OWNER_MAIL_VALUES, renderRevierMailText, validateRevierMailTemplate } from "@/lib/revier-owner-mail-template";
+import { EXAMPLE_REV_OWNER_MAIL_VALUES, renderRevierMailText, ensureRevierMailMeetingPoint, validateRevierMailTemplate } from "@/lib/revier-owner-mail-template";
 
 const lastTestMailAt = new Map<string, number>();
 const sendingUsers = new Set<string>();
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   try {
     const saved = await getRevierOwnerMailTemplate();
     const subject = `[TEST] ${renderRevierMailText(saved.subject, EXAMPLE_REV_OWNER_MAIL_VALUES)}`;
-    const body = renderRevierMailText(saved.body, EXAMPLE_REV_OWNER_MAIL_VALUES);
+    const body = renderRevierMailText(ensureRevierMailMeetingPoint(saved.body), EXAMPLE_REV_OWNER_MAIL_VALUES);
     await sendMail({ to: email, subject, text: body });
     lastTestMailAt.set(user.id, Date.now());
     return NextResponse.json({ ok: true, message: `Testmail an ${email} vom SMTP-Server angenommen. Bitte auch den Spamordner prüfen.` });

@@ -65,6 +65,7 @@ model OperationDay {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   meetingTime String?
+  meetingPointText String?
   orders      Order[]
   teams       OperationDayTeam[]
 }
@@ -205,6 +206,7 @@ model Team {
 }
 
 model OperationDayTeam {
+  meetingPointText String?
   id              String                   @id @default(cuid())
   operationDayId  String
   teamId          String
@@ -539,4 +541,41 @@ model FlightCertificateDispatch {
 
   @@unique([ownerId, date])
   @@index([date, status])
+}
+
+
+// DJI_STAGE1_BEGIN
+// DJI-Pilot-Sitzungen sind zeitlich begrenzt und an einen ausgewaehlten Auftrag gebunden.
+model DjiPilotSession {
+  id          String   @id @default(cuid())
+  tokenHash   String   @unique
+  pilotUserId String
+  orderId     String
+  workspaceId String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([pilotUserId, expiresAt])
+}
+
+model DjiMapElement {
+  id          String   @id @default(cuid())
+  workspaceId String
+  elementId   String
+  groupId     String
+  pilotUserId String
+  orderId     String
+  name        String
+  latitude    Float
+  longitude   Float
+  resource    Json
+  status      String   @default("PENDING")
+  pinpointId  String?  @unique
+  receivedAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([workspaceId, elementId])
+  @@index([pilotUserId, receivedAt])
+  @@index([orderId])
 }

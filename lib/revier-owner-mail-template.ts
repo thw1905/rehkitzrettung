@@ -6,6 +6,9 @@ export const DEFAULT_REV_OWNER_MAIL_BODY = `Hallo {{paechter}},
 für den {{datum}} ist eine Rehkitzsuche in deinem Revier geplant.
 {{treffzeit}}
 
+Treffpunkt:
+{{treffpunkt}}
+
 Betroffene Reviere:
 {{reviere}}
 
@@ -25,12 +28,33 @@ export const REV_OWNER_MAIL_PLACEHOLDERS = [
   { key: "datum", label: "Einsatzdatum, z. B. 12.05.2027" },
   { key: "uhrzeit", label: "Treffzeit ohne Zusatz, z. B. 06:00 Uhr" },
   { key: "treffzeit", label: "Komplette Treffzeit-Zeile; leer, falls keine festgelegt ist" },
+  { key: "treffpunkt", label: "Treffpunkt des Einsatztages mit Standortangabe und ggf. Kartenlink" },
   { key: "reviere", label: "Liste der betroffenen Reviere" },
   { key: "flaechen", label: "Liste der betroffenen Flächen" },
   { key: "landwirte", label: "Landwirte und die zugehörigen Flächen (je Revierpächter)" },
 ] as const;
 
 export type RevierMailValues = Record<(typeof REV_OWNER_MAIL_PLACEHOLDERS)[number]["key"], string>;
+
+/**
+ * Bei aelteren gespeicherten Vorlagen den Treffpunkt in die Mail einfuegen,
+ * ohne den in der Datenbank bearbeiteten Text zu veraendern.
+ * Der Block erscheint niemals hinter der Grussformel.
+ */
+export function ensureRevierMailMeetingPoint(body: string): string {
+  if (/{{\s*treffpunkt\s*}}/i.test(body)) return body;
+  const block = "\n\nTreffpunkt:\n{{treffpunkt}}";
+  const time = /{{\s*treffzeit\s*}}/i.exec(body);
+  if (time) {
+    const at = time.index + time[0].length;
+    return body.slice(0, at) + block + body.slice(at);
+  }
+  const header = /(?:^|\n)\s*Betroffene Reviere\s*:/i.exec(body);
+  if (header) return body.slice(0, header.index) + block + "\n" + body.slice(header.index);
+  const footer = /(?:^|\n)\s*(?:Viele Grüße|Mit freundlichen Grüßen|Freundliche Grüße|Beste Grüße|Herzliche Grüße|Diese Nachricht wurde automatisch erstellt)/i.exec(body);
+  if (footer) return body.slice(0, footer.index) + block + "\n" + body.slice(footer.index);
+  return body.trimEnd() + block;
+}
 
 export function renderRevierMailText(template: string, data: RevierMailValues): string {
   const result = template.replace(/{{\s*([a-zA-Z]+)\s*}}/g, (whole, name: string) => {
@@ -67,6 +91,7 @@ export const EXAMPLE_REV_OWNER_MAIL_VALUES: RevierMailValues = {
   datum: "12.05.2027",
   uhrzeit: "06:00 Uhr",
   treffzeit: "Treffzeit: 06:00 Uhr.",
+  treffpunkt: "Wiesenweg bei Hittfeld\nGPS: 53.384000, 9.977000\nKarte: https://www.google.com/maps/search/?api=1&query=53.384000%2C9.977000",
   reviere: "- 12 · Revier Musterwald\n- 13 · Revier Wiesenbach",
   flaechen: "- Nordwiese · Fläche 17\n- Hofwiese · Fläche 42",
   landwirte: "- Hans Meyer: Nordwiese · Fläche 17\n- Sabine Schulz: Hofwiese · Fläche 42",

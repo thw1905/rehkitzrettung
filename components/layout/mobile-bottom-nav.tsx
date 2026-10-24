@@ -203,14 +203,34 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
             ⚙️ Verwaltungsübersicht öffnen
           </Link>
 
-          <section className="rounded-xl border border-purple-200 bg-purple-50 p-2">
+          <section className="mb-2 rounded-xl border border-purple-200 bg-purple-50 p-2">
+            <div className="px-2 py-2 text-sm font-extrabold text-purple-950">Hilfe</div>
+            <div className="space-y-2">
+              <Link
+                href="/hilfe"
+                onClick={() => setManagementMenuOpen(false)}
+                className="block rounded-xl border border-purple-200 bg-white px-3 py-3 text-sm font-semibold text-purple-950 hover:bg-purple-100"
+              >
+                ❓ Bedienungsanleitung
+              </Link>
+              <Link
+                href="/admin/help"
+                onClick={() => setManagementMenuOpen(false)}
+                className="block rounded-xl border border-purple-200 bg-white px-3 py-3 text-sm font-semibold text-purple-950 hover:bg-purple-100"
+              >
+                Anleitung bearbeiten
+              </Link>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-slate-50 p-2">
             <button
               type="button"
               onClick={() => setSystemSectionOpen((open) => !open)}
               aria-expanded={systemSectionOpen}
-              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm font-extrabold text-purple-950"
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm font-extrabold text-slate-950"
             >
-              <span>Hilfe / System</span>
+              <span>System / Werkzeuge</span>
               <span aria-hidden="true">{systemSectionOpen ? "−" : "+"}</span>
             </button>
             {systemSectionOpen && (
@@ -259,13 +279,6 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
                 >
                   {deletingDemoOrders ? "Lösche Demo-Aufträge ..." : "🗑️ Demo-Aufträge löschen"}
                 </button>
-                <Link
-                  href="/admin/help"
-                  onClick={() => setManagementMenuOpen(false)}
-                  className="block rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                >
-                  Anleitung bearbeiten
-                </Link>
                 <Link
                   href="/admin/db-check"
                   onClick={() => setManagementMenuOpen(false)}

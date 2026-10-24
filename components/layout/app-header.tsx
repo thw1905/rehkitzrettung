@@ -282,11 +282,17 @@ export default function AppHeader({ user }: AppHeaderProps) {
       ],
     },
     {
-      title: "Hilfe / System",
+      title: "Hilfe",
       color: "border-purple-200 bg-purple-50 text-purple-950",
       items: [
-        { href: "/hilfe", label: "Hilfe / Bedienungsanleitung" },
+        { href: "/hilfe", label: "Bedienungsanleitung" },
         { href: "/admin/help", label: "Anleitung bearbeiten" },
+      ],
+    },
+    {
+      title: "System / Werkzeuge",
+      color: "border-slate-200 bg-slate-50 text-slate-950",
+      items: [
         { href: "/admin/db-check", label: "DB-Check" },
         { href: "/admin/email-test", label: "✉️ E-Mail-Test" },
         { href: "/admin/revier-email-template", label: "✉️ E-Mail-Vorlage Revierpächter" },
@@ -414,27 +420,6 @@ export default function AppHeader({ user }: AppHeaderProps) {
                 </div>
               )}
 
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={handleCreateDemoOrder}
-                  disabled={creatingDemoOrder}
-                  className="rounded-xl border border-yellow-300 bg-yellow-100 px-3 py-2 text-sm font-semibold text-yellow-900 transition hover:bg-yellow-200 disabled:opacity-50"
-                >
-                  {creatingDemoOrder ? "Erstelle..." : "🟡 Demo-Auftrag"}
-                </button>
-              )}
-
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={handleDeleteDemoOrders}
-                  className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-100"
-                >
-                  Demo löschen
-                </button>
-              )}
-
               <NotificationBell />
               <SupportContactButton />
 
@@ -555,6 +540,26 @@ export default function AppHeader({ user }: AppHeaderProps) {
                               );
                             })}
                           </div>
+
+                          {section.title === "System / Werkzeuge" && (
+                            <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => void handleCreateDemoOrder()}
+                                disabled={creatingDemoOrder}
+                                className="block w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:opacity-60"
+                              >
+                                {creatingDemoOrder ? "Erstelle Demo-Auftrag ..." : "🟡 Demo-Auftrag erstellen (PIN)"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteDemoOrders()}
+                                className="block w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-semibold text-red-900 hover:bg-red-100"
+                              >
+                                🗑️ Demo-Aufträge löschen
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
