@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 type Bridge = {
   platformVerifyLicense?: (id: string, key: string, license: string) => string;
   platformIsVerified?: () => boolean | string;
+  platformGetVersion?: () => string;
+  platformIsComponentLoaded?: (name: string) => string | boolean;
   platformLoadComponent?: (name: string, params: string) => string;
   platformSetWorkspaceId?: (id: string) => string;
   platformSetInformation?: (platform: string, name: string, description: string) => string;
@@ -36,10 +38,51 @@ function parseReply(raw: unknown): BridgeReply {
   return raw && typeof raw === "object" ? raw as BridgeReply : {};
 }
 
+function safeDjiMessage(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.slice(0, 300)
+    .replace(/https?:\/\/\S+/gi, "[URL verdeckt]")
+    .replace(/(token|authorization|password|secret|license|appkey|apikey)\s*[:=]\s*[^\s,;]+/gi, "$1=[verdeckt]")
+    .replace(/[A-Za-z0-9_-]{24,}/g, "[Wert verdeckt]")
+    .slice(0, 180);
+}
+
+function bridgeDiagnostics(bridge?: Bridge): string {
+  if (!bridge) return "";
+  const info: string[] = [];
+  try {
+    const raw = bridge.platformGetVersion?.();
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        const obj = parsed as Record<string, unknown>;
+        const v = obj.data && typeof obj.data === "object" ? obj.data as Record<string, unknown> : obj;
+        for (const k of ["appVersion", "modelVersion"]) {
+          if (typeof v[k] === "string" && /^[a-zA-Z0-9._-]{1,32}$/.test(v[k] as string)) {
+            info.push(k + ": " + v[k]);
+          }
+        }
+      }
+    }
+  } catch { /* optional */ }
+  try {
+    const raw = bridge.platformIsComponentLoaded?.("api");
+    if (typeof raw === "boolean") info.push("API-Modul geladen: " + (raw ? "ja" : "nein"));
+    if (typeof raw === "string") {
+      const obj: unknown = JSON.parse(raw);
+      if (obj && typeof obj === "object" && typeof (obj as {data?:unknown}).data === "boolean") {
+        info.push("API-Modul geladen: " + ((obj as {data:boolean}).data ? "ja" : "nein"));
+      }
+    }
+  } catch { /* optional */ }
+  return info.length ? " | DJI-Diagnose: " + info.join(", ") : "";
+}
+
 function assertSuccess(raw: unknown, step: string) {
   const result = parseReply(raw);
   if (result.code !== 0) {
-    throw new Error(`${step}: DJI antwortet mit Fehlercode ${result.code ?? "unbekannt"}.`);
+    const msg = safeDjiMessage(result.message);
+    throw new Error(`${step}: DJI-Fehlercode ${result.code ?? "unbekannt"}${msg ? " – " + msg : ""}.`);
   }
 }
 
@@ -104,7 +147,7 @@ export default function Pilot2BridgeSetup({ token }: { token: string | null }) {
       setStatus("DJI-Lizenz, API-Modul und Workspace: erfolgreich vorbereitet. MQTT/WebSocket noch NICHT verbunden.");
     } catch (reason) {
       setStatus("Verbindungsvorbereitung fehlgeschlagen");
-      setError(reason instanceof Error ? reason.message : "Unbekannter DJI-Fehler.");
+      setError((reason instanceof Error ? reason.message : "Unbekannter DJI-Fehler.") + bridgeDiagnostics(window.djiBridge));
     } finally {
       setBusy(false);
     }
