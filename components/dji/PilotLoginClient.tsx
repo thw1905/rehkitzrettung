@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import Pilot2BridgeSetup from "@/components/dji/Pilot2BridgeSetup";
+import Pilot2WsTest from "@/components/dji/Pilot2WsTest";
 
 type Order = { id: string; orderCode: string | null; title: string };
 type SetupStatus = {
@@ -222,6 +223,7 @@ export default function PilotLoginClient() {
         </>
       )}
       {authStatus === "authenticated" && hasRole && <Pilot2BridgeSetup token={pilotToken} />}
+      {authStatus === "authenticated" && hasRole && <Pilot2WsTest token={pilotToken} />}
       {message && <p className="rounded-xl border bg-white p-3 text-sm" role="status">{message}</p>}
       <p className="text-center text-xs text-gray-600">Es werden keine DJI-Zugangsschlüssel in dieser Seite angezeigt oder protokolliert.</p>
     </main>
