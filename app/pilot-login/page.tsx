@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import PilotLoginClient from "@/components/dji/PilotLoginClient";
+import PilotSimpleClient from "@/components/dji/PilotSimpleClient";
 
 export const metadata: Metadata = {
-  title: "DJI Pilot 2 – Rehkitzrettung",
+  title: "Rehkitzrettung Hegering Hittfeld – DJI",
   robots: { index: false, follow: false },
 };
 
@@ -12,5 +12,5 @@ export const metadata: Metadata = {
  * Does NOT enable an MQTT connection or map element auto-import.
  */
 export default function PilotLoginPage() {
-  return <PilotLoginClient />;
+  return <PilotSimpleClient />;
 }
