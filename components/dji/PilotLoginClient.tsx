@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import Pilot2BridgeSetup from "@/components/dji/Pilot2BridgeSetup";
 import Pilot2WsTest from "@/components/dji/Pilot2WsTest";
+import Pilot2MapTest from "@/components/dji/Pilot2MapTest";
 
 type Order = { id: string; orderCode: string | null; title: string };
 type SetupStatus = {
@@ -174,9 +175,9 @@ export default function PilotLoginClient() {
     <main className="mx-auto max-w-xl space-y-4 px-4 py-8 text-gray-900">
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <h1 className="text-2xl font-bold">Rehkitzrettung – DJI Pilot 2</h1>
-        <p className="mt-2 text-sm text-gray-700">Stufe 2A: Anmeldung und Verbindungsprüfung. Der automatische Live-Import ist noch deaktiviert.</p>
+        <p className="mt-2 text-sm text-gray-700">Stufe 3B: DJI-Anmeldung, WebSocket und Kartensynchronisierung testen. Der automatische Auftragsimport bleibt deaktiviert.</p>
         <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">
-          Diese Testseite stellt <strong>noch keine Verbindung</strong> zu DJI-MQTT oder WebSocket her. Kein Fluggerät und kein Fundpunkt werden dadurch automatisch übertragen.
+          Die DJI-Verbindung wird schrittweise getestet. Kartenpunkte werden zunächst nur als DJI-Testeinträge gespeichert. Der automatische Auftrags-PinPoint-Import ist deaktiviert.
         </div>
       </section>
       {authStatus === "loading" ? <p>Benutzerkonto wird geprüft …</p> : authStatus === "unauthenticated" ? (
@@ -224,6 +225,7 @@ export default function PilotLoginClient() {
       )}
       {authStatus === "authenticated" && hasRole && <Pilot2BridgeSetup token={pilotToken} />}
       {authStatus === "authenticated" && hasRole && <Pilot2WsTest token={pilotToken} />}
+      {authStatus === "authenticated" && hasRole && <Pilot2MapTest token={pilotToken} />}
       {message && <p className="rounded-xl border bg-white p-3 text-sm" role="status">{message}</p>}
       <p className="text-center text-xs text-gray-600">Es werden keine DJI-Zugangsschlüssel in dieser Seite angezeigt oder protokolliert.</p>
     </main>
