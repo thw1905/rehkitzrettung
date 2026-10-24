@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type BridgeReply = { code?: number; message?: string; data?: unknown };
 type DjiMapBridge = {
@@ -61,6 +61,20 @@ export default function Pilot2MapTest({ token }: { token: string | null }) {
   const [error, setError] = useState("");
   const [points, setPoints] = useState<Point[]>([]);
   const [listStatus, setListStatus] = useState("");
+
+  useEffect(() => {
+    if (!token) return;
+    const bridge = (window as Window & { djiBridge?: DjiMapBridge }).djiBridge;
+    if (!bridge?.platformIsComponentLoaded) return;
+    try {
+      const loaded = isYes(bridge.platformIsComponentLoaded("map"));
+      setStatus(loaded === true
+        ? "DJI-Kartenmodul laut Pilot 2 bereits aktiv. Empfang unten kontrollieren."
+        : loaded === false
+          ? "DJI-Kartenmodul nach Rueckkehr nicht geladen. Erneut aktivieren, falls erforderlich."
+          : "DJI-Kartenmodulstatus nicht eindeutig. Empfang unten kontrollieren.");
+    } catch { setStatus("Kartenmodulstatus nach Rueckkehr nicht verfuegbar."); }
+  }, [token]);
 
   async function activate() {
     if (!token || working) return;

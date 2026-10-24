@@ -74,6 +74,13 @@ export default function PilotLoginClient() {
         setTodayKey(typeof orderJson.date === "string" ? orderJson.date : "");
         setAdminView(Boolean(orderJson.adminView));
         setSetup(statusJson);
+        // Restore the same pilot's active, server-validated assignment after a webview reload.
+        const restored = orderJson.activeSession;
+        if (restored && typeof restored.token === "string" && typeof restored.orderId === "string") {
+          setOrderId(restored.orderId);
+          setPilotToken(restored.token);
+          setMessage("Aktive DJI-Testsitzung und Auftrag wiederhergestellt. Verbindungsstatus unten pruefen.");
+        }
       }
     }).catch((error) => {
       if (!cancelled) setMessage(error instanceof Error ? error.message : "Fehler beim Laden.");
@@ -142,6 +149,26 @@ export default function PilotLoginClient() {
     }
   }
 
+  async function logout() {
+    if (pilotToken) {
+      setBusy(true);
+      try {
+        const response = await fetch("/api/dji/pilot-sessions", {
+          method: "DELETE", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: pilotToken }),
+        });
+        if (!response.ok) throw new Error("Die DJI-Sitzung konnte nicht beendet werden.");
+        setPilotToken(null);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Abmeldung fehlgeschlagen.");
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+    }
+    await signOut({ callbackUrl: "/pilot-login" });
+  }
+
   async function testLicense() {
     setMessage("");
     setBridgeReport("");
@@ -198,7 +225,7 @@ export default function PilotLoginClient() {
           <section className="space-y-3 rounded-2xl border bg-white p-5">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Pilot angemeldet</h2>
-              <button type="button" onClick={() => signOut({ callbackUrl: "/pilot-login" })} className="rounded-lg border px-3 py-2 text-sm">Abmelden</button>
+              <button type="button" onClick={() => void logout()} className="rounded-lg border px-3 py-2 text-sm">Abmelden</button>
             </div>
             <p className="text-sm">{session?.user?.name || session?.user?.email}</p>
             <p className="text-sm font-semibold text-gray-800">Heutiger Einsatztag{todayKey ? `: ${todayKey.slice(8, 10)}.${todayKey.slice(5, 7)}.${todayKey.slice(0, 4)}` : ""}</p>

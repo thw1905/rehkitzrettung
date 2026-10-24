@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 import { db } from "@/lib/db";
-import { createDjiSession, hashDjiToken } from "@/lib/dji/token";
+import { createDjiSession, hashDjiToken, checkDjiSession } from "@/lib/dji/token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "private, no-store" };
+const DJI_COOKIE = "rk_dji_pilot_session";
+const cookieConfig = {
+  httpOnly: true, secure: process.env.NODE_ENV === "production",
+  sameSite: "strict" as const, path: "/api/dji", maxAge: 8 * 60 * 60,
+};
 
 /** Tagesplanung speichert ein deutsches Kalenderdatum als 00:00 UTC. */
 function getGermanOperationDay(now = new Date()) {
@@ -18,7 +23,7 @@ function getGermanOperationDay(now = new Date()) {
   return { dateKey, date: new Date(`${dateKey}T00:00:00.000Z`) };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const user = await getCurrentUserWithTeams();
   if (!user || (!user.isAdmin && user.role !== "PILOT")) {
     return NextResponse.json({ error: "Nicht berechtigt." }, { status: 403 });
@@ -42,9 +47,16 @@ export async function GET() {
     take: 200,
   });
 
-  return NextResponse.json({
-    orders, date: today.dateKey, adminView: user.isAdmin,
-  }, { headers: noStore });
+  // Recover only a nonrevoked, unexpired session of this authenticated pilot.
+  const cookieToken = req.cookies.get(DJI_COOKIE)?.value || "";
+  const djiSession = cookieToken
+    ? await checkDjiSession(cookieToken, process.env.DJI_WORKSPACE_ID || "")
+    : null;
+  const orderStillToday = djiSession && orders.some((item) => item.id === djiSession.orderId);
+  const activeSession = djiSession && djiSession.pilotUserId === user.id && orderStillToday
+    ? { token: cookieToken, orderId: djiSession.orderId, expiresAt: djiSession.expiresAt.toISOString() }
+    : null;
+  return NextResponse.json({ orders, date: today.dateKey, adminView: user.isAdmin, activeSession }, { headers: noStore });
 }
 
 // Vorbereitung einer DJI-Testsitzung – keine Live-Cloud-Verbindung.
@@ -80,7 +92,9 @@ export async function POST(req: NextRequest) {
   }
 
   const token = await createDjiSession(user.id, orderId, workspaceId);
-  return NextResponse.json({ token, expiresInSeconds: 28800 }, { headers: noStore });
+  const response = NextResponse.json({ token, expiresInSeconds: 28800 }, { headers: noStore });
+  response.cookies.set(DJI_COOKIE, token, cookieConfig);
+  return response;
 }
 
 export async function DELETE(req: NextRequest) {
@@ -92,5 +106,7 @@ export async function DELETE(req: NextRequest) {
   const session = await db.djiPilotSession.findUnique({ where: { tokenHash: hashDjiToken(token) } });
   if (!session || (session.pilotUserId !== user.id && !user.isAdmin)) return NextResponse.json({ error: "Nicht berechtigt." }, { status: 403 });
   await db.djiPilotSession.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
-  return NextResponse.json({ success: true }, { headers: noStore });
+  const response = NextResponse.json({ success: true }, { headers: noStore });
+  response.cookies.set(DJI_COOKIE, "", { ...cookieConfig, maxAge: 0 });
+  return response;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type DjiBridge = {
   platformLoadComponent?: (name: string, params: string) => string;
@@ -52,6 +52,14 @@ export default function Pilot2WsTest({ token }: { token: string | null }) {
   const [working, setWorking] = useState(false);
   const [state, setState] = useState("Nicht gestartet");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!token) return;
+    const bridge = bridgeInstance();
+    if (!bridge?.wsGetConnectState) return;
+    try { setState("Status nach Rueckkehr: " + stateText(bridge.wsGetConnectState())); }
+    catch { setState("Verbindungsstatus nach Rueckkehr unbekannt"); }
+  }, [token]);
 
   async function start() {
     if (!token || working) return;
