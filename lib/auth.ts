@@ -73,14 +73,11 @@ export const authOptions: NextAuthOptions = {
         }
 
         const updatedUser = await db.user.update({
-          where: { id: user.id },
-          data: {
-            sessionVersion: {
-              increment: 1,
-            },
-            lastSeenAt: new Date(),
-          },
-        });
+  where: { id: user.id },
+  data: {
+    lastSeenAt: new Date(),
+  },
+});
 
         return {
           id: updatedUser.id,
