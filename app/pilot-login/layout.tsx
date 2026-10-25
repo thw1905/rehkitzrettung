@@ -81,6 +81,10 @@ const compatibleCss = String.raw`/* DJI Pilot 2 UI compatibility layer. Only act
   .dji-view-root main > header, .dji-view-root main > section, .dji-view-root main > details { padding: 16px !important; }
   .dji-view-root h1 { font-size: 25px !important; }
 }
+/* DJI_HEADER_CENTER_V2 */
+.dji-view-root main > header,
+.dji-view-root main > header h1,
+.dji-view-root main > header p { text-align: center !important; }
 `;
 
 export default function DjiPilotLayout({ children }: { children: ReactNode }) {

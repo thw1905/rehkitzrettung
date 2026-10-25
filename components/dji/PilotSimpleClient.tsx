@@ -6,6 +6,7 @@ import { signIn, signOut, useSession } from "next-auth/react";
 type BridgeResult = { code?: number; data?: unknown };
 type DjiBridge = {
   platformVerifyLicense?: (appId: string, appKey: string, license: string) => string;
+  platformIsVerified?: () => string | boolean;
   platformSetWorkspaceId?: (id: string) => string;
   platformSetInformation?: (platform: string, name: string, description: string) => string;
   platformLoadComponent?: (name: string, params: string) => string;
@@ -51,6 +52,33 @@ function truthy(value: unknown): boolean | null {
 function assertDji(result: unknown, step: string) {
   const r = reply(result);
   if (r.code !== 0) throw new Error(`${step} nicht erfolgreich (DJI-Code ${r.code ?? "unbekannt"}).`);
+}
+// DJI_VERIFIED_MAIN_V2: Lizenzaufruf ist nicht mit erfolgreicher Verifizierung gleichzusetzen.
+function djiVerified(raw: unknown): boolean {
+  if (typeof raw === "boolean") return raw;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  const parsed = reply(raw);
+  if (typeof parsed.code === "number" && parsed.code !== 0) return false;
+  const data = parsed.data;
+  if (typeof data === "boolean") return data;
+  if (data === "true") return true;
+  if (data && typeof data === "object") {
+    const nested = data as { verified?: unknown; isVerified?: unknown };
+    if (typeof nested.verified === "boolean") return nested.verified;
+    if (typeof nested.isVerified === "boolean") return nested.isVerified;
+  }
+  return false;
+}
+async function waitForVerifiedApp(dji: DjiBridge): Promise<void> {
+  if (!dji.platformIsVerified) {
+    throw new Error("DJI kann den App-Verifizierungsstatus nicht abfragen.");
+  }
+  for (let attempt = 0; attempt < 11; attempt += 1) {
+    if (djiVerified(dji.platformIsVerified())) return;
+    if (attempt < 10) await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("DJI meldet die App noch als unverifiziert. Bitte in Technik und Fehlersuche die Lizenz prüfen.");
 }
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, cache: "no-store", credentials: "same-origin" });
@@ -136,8 +164,10 @@ export default function PilotSimpleClient() {
       const license = await api<License>("/api/dji/pilot2/bridge-license");
       const workspace = await api<Bootstrap>("/api/dji/pilot2/bridge-bootstrap", post(sessionToken));
       assertDji(b.platformVerifyLicense(license.appId, license.appKey, license.license), "DJI-Lizenz");
+      setPhase("DJI-App-Verifizierung wird bestätigt …");
+      await waitForVerifiedApp(b);
       setPhase("API und Workspace werden eingerichtet …");
-      assertDji(b.platformLoadComponent("api", JSON.stringify({ host: window.location.origin, token: sessionToken })), "API-Modul");
+      assertDji(b.platformLoadComponent("api", JSON.stringify({ host: window.location.origin + "/", token: sessionToken })), "API-Modul");
       assertDji(b.platformSetWorkspaceId(workspace.workspaceId), "Workspace");
       assertDji(b.platformSetInformation(workspace.platformName, workspace.workspaceName, workspace.description), "Workspace-Informationen");
       setPhase("WebSocket wird verbunden …");
@@ -259,10 +289,10 @@ export default function PilotSimpleClient() {
             </div>}
           </section>
           <details className="rounded-2xl border bg-white p-4 text-sm">
-            <summary className="cursor-pointer font-semibold">Technik und Fehlersuche</summary>
+            <summary className="cursor-pointer font-semibold">Technik und Fehlersuche (PIN-geschützt)</summary>
             <div className="mt-3 space-y-3">
               <p>Bei Verbindungsproblemen stehen die bisherigen DJI-Einzeltests weiterhin zur Verfügung.</p>
-              <a className="block underline" href="/pilot-login/technik">Technische Testansicht öffnen</a>
+              {user?.isAdmin ? <a className="block underline" href="/pilot-login/technik">Technische Testansicht öffnen (Demo-/GPS-Test-PIN)</a> : <p>Technikzugang nur für Administratoren.</p>}
               <button type="button" disabled={busy || !token} onClick={() => void endSession()} className="rounded-lg border border-rose-300 px-3 py-2 disabled:opacity-50">DJI-Sitzung beenden</button>
             </div>
           </details>
