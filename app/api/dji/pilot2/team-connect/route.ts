@@ -66,6 +66,37 @@ async function restoredToken(req: NextRequest, pilotId: string, teamId: string) 
   return { token, expiresAt: session.expiresAt.toISOString() };
 }
 
+function isAllowedDjiOrigin(req: NextRequest): boolean {
+  const origin = req.headers.get("origin");
+
+  // Bisheriges Verhalten für Aufrufe ohne Origin beibehalten.
+  if (!origin) return true;
+
+  const publicUrl =
+    process.env.DJI_PUBLIC_ORIGIN ||
+    process.env.NEXTAUTH_URL ||
+    process.env.AUTH_URL ||
+    req.nextUrl.origin;
+
+  try {
+    const expected = new URL(publicUrl).origin;
+    const received = new URL(origin).origin;
+
+    if (received !== expected) {
+      console.warn("DJI-Origin abgelehnt", {
+        received,
+        expected,
+        internal: req.nextUrl.origin,
+      });
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function allowed() {
   if (process.env.DJI_IMPORT_ENABLED === "true") return "Automatischer PinPoint-Import ist bereits aktiv. Diese Teststufe darf so nicht gestartet werden.";
   if (!process.env.DJI_WORKSPACE_ID || !process.env.DJI_MAP_GROUP_ID) return "DJI Workspace oder Kartenebene fehlt.";
@@ -84,7 +115,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (req.headers.get("origin") && req.headers.get("origin") !== req.nextUrl.origin) {
+  if (!isAllowedDjiOrigin(req)) {
     return NextResponse.json({ error: "Ungültiger Aufruf." }, { status: 403, headers });
   }
   const result = await pilotTeam();
@@ -108,7 +139,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (req.headers.get("origin") && req.headers.get("origin") !== req.nextUrl.origin) {
+  if (!isAllowedDjiOrigin(req)) {
     return NextResponse.json({ error: "Ungültiger Aufruf." }, { status: 403, headers });
   }
   const user = await getCurrentUserWithTeams();
