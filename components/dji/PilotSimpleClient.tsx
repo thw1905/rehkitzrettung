@@ -215,7 +215,15 @@ export default function PilotSimpleClient() {
           <button type="button" className="w-full rounded-xl bg-slate-900 p-4 font-semibold text-white disabled:opacity-50" disabled={busy} onClick={() => void login()}>Anmelden</button>
         </section>
       ) : !allowed ? (
-        <section className="rounded-2xl border bg-white p-5">Für diese Seite wird die Rolle Pilot benötigt.</section>
+        <section className="space-y-3 rounded-2xl border bg-white p-5">
+          <h2 className="text-lg font-semibold">Als Pilot anmelden</h2>
+          <p>Auf dieser Fernsteuerung ist bereits ein Benutzer angemeldet, der derzeit nicht als Pilot oder Administrator erkannt wird.</p>
+          <p className="text-sm">{session?.user?.email || session?.user?.name || "Angemeldetes Konto"}</p>
+          <p>Bitte melde dieses Konto ab. Danach kannst du dich mit deinem Piloten-Konto anmelden.</p>
+          <button type="button" className="w-full rounded-xl bg-slate-900 p-4 font-semibold text-white" onClick={() => void signOut({ callbackUrl: "/pilot-login" })}>
+            Abmelden und als Pilot anmelden
+          </button>
+        </section>
       ) : (
         <>
           <section className="space-y-3 rounded-2xl border bg-white p-5 shadow-sm">
