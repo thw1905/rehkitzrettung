@@ -20,7 +20,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ worksp
     const received = await receiveDjiMapElement({
       workspaceId, groupId, pilotUserId: session.pilotUserId,
       orderId: session.orderId, element,
-      allowImport: false, // Stufe 4A: keine echten Auftrags-PinPoints erzeugen.
+      allowImport: true, // DJI_AUTO_TEAM_ROUTE_V5: sofort automatisch importieren
+      matchByTeam: true, // nur bei eindeutigem Treffer innerhalb einer Team-Auftragsflaeche
     });
     return NextResponse.json({ code: 0, message: "success", data: { id: received.elementId } }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
