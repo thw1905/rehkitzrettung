@@ -116,6 +116,13 @@ export default function PilotSimpleClient() {
   const user = session?.user as { role?: string; isAdmin?: boolean } | undefined;
   const allowed = Boolean(user?.isAdmin || user?.role === "PILOT");
 
+  // Nur eine bestätigte DJI-Verbindung sperrt den Button.
+  // Ein vorhandenes Sitzungstoken allein reicht nicht: Die Bridge
+  // kann nach einem Neustart erneut verbunden werden müssen.
+  const isConnected =
+    phase === "DJI-Verbindung weiterhin aktiv" ||
+    phase.startsWith("Verbunden –");
+
   useEffect(() => {
     if (auth !== "authenticated" || !allowed) { setLoading(false); return; }
     let cancelled = false;
@@ -228,76 +235,196 @@ export default function PilotSimpleClient() {
   return (
     <main className="mx-auto max-w-md space-y-4 px-4 py-5 text-slate-900">
       <header className="rounded-2xl border border-slate-200 bg-white px-4 py-5 text-center shadow-sm">
-        <h1 className="text-2xl font-bold leading-tight">Rehkitzrettung<br /><span className="text-xl">Hegering Hittfeld</span></h1>
+        <h1 className="text-2xl font-bold leading-tight">
+          Rehkitzrettung
+          <br />
+          <span className="text-xl">Hegering Hittfeld</span>
+        </h1>
         <p className="mt-2 text-sm text-slate-600">DJI-Einsatzverbindung</p>
       </header>
-      {auth === "loading" || loading && auth === "authenticated" ? (
-        <section className="rounded-2xl border bg-white p-5">Einsatzdaten werden geladen …</section>
+
+      {auth === "loading" || (loading && auth === "authenticated") ? (
+        <section className="rounded-2xl border bg-white p-5">
+          Einsatzdaten werden geladen …
+        </section>
       ) : auth === "unauthenticated" ? (
         <section className="space-y-3 rounded-2xl border bg-white p-5">
-          <h2 className="font-semibold">Als Pilot anmelden</h2>
-          <label className="block text-sm">E-Mail
-            <input autoComplete="username" type="email" className="mt-1 w-full rounded-lg border p-3" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <h2 className="font-semibold">Anmeldung</h2>
+          <label className="block text-sm">
+            E-Mail
+            <input
+              autoComplete="username"
+              type="email"
+              className="mt-1 w-full rounded-lg border p-3"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </label>
-          <label className="block text-sm">Passwort
-            <input autoComplete="current-password" type="password" className="mt-1 w-full rounded-lg border p-3" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void login(); }} />
+          <label className="block text-sm">
+            Passwort
+            <input
+              autoComplete="current-password"
+              type="password"
+              className="mt-1 w-full rounded-lg border p-3"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void login(); }}
+            />
           </label>
-          <button type="button" className="w-full rounded-xl bg-slate-900 p-4 font-semibold text-white disabled:opacity-50" disabled={busy} onClick={() => void login()}>Anmelden</button>
+          <button
+            type="button"
+            className="w-full rounded-xl bg-slate-900 p-4 font-semibold text-white disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void login()}
+          >
+            Anmelden
+          </button>
         </section>
       ) : !allowed ? (
         <section className="space-y-3 rounded-2xl border bg-white p-5">
-          <h2 className="text-lg font-semibold">Anmeldung</h2>
-          
-          <button type="button" className="w-full rounded-xl bg-slate-900 p-4 font-semibold text-white" onClick={() => void signOut({ callbackUrl: "/pilot-login" })}>
-            Anmelden
+          <h2 className="font-semibold">Anmeldung</h2>
+          <button
+            type="button"
+            className="w-full rounded-xl bg-slate-900 p-4 font-semibold text-white"
+            onClick={() => void signOut({ callbackUrl: "/pilot-login" })}
+          >
+            Konto wechseln
           </button>
         </section>
       ) : (
         <>
           <section className="space-y-3 rounded-2xl border bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-2">
-              <div><p className="font-semibold">Pilot angemeldet</p><p className="text-sm text-slate-600">{session?.user?.name || session?.user?.email}</p></div>
-              <button type="button" onClick={() => void signOut({ callbackUrl: "/pilot-login" })} className="rounded-lg border px-3 py-2 text-sm">Abmelden</button>
+              <div>
+                <p className="font-semibold">Pilot angemeldet</p>
+                <p className="text-sm text-slate-600">
+                  {session?.user?.name || session?.user?.email}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void signOut({ callbackUrl: "/pilot-login" })}
+                className="rounded-lg border px-3 py-2 text-sm"
+              >
+                Abmelden
+              </button>
             </div>
-            {info && <div className="rounded-lg bg-slate-100 p-3 text-sm">
-              <p><strong>Einsatztag:</strong> {info.date}</p>
-              <p><strong>Team:</strong> {info.team}</p>
-              <p><strong>Tagesaufträge:</strong> {info.ordersCount}</p>
-            </div>}
-            {info?.disabledReason && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950" role="alert">{info.disabledReason}</p>}
-            <button type="button" disabled={busy || !info || Boolean(info.disabledReason)} onClick={() => void startConnection()}
-              className="w-full rounded-xl bg-emerald-700 px-4 py-5 text-lg font-bold text-white disabled:opacity-50">
-              {busy ? "DJI wird vorbereitet …" : "Einsatz verbinden"}
+
+            {info && (
+              <div className="rounded-lg bg-slate-100 p-3 text-sm">
+                <p><strong>Einsatztag:</strong> {info.date}</p>
+                <p><strong>Team:</strong> {info.team}</p>
+                <p><strong>Tagesaufträge:</strong> {info.ordersCount}</p>
+              </div>
+            )}
+
+            {info?.disabledReason && (
+              <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950" role="alert">
+                {info.disabledReason}
+              </p>
+            )}
+
+            <button
+              type="button"
+              disabled={busy || !info || Boolean(info.disabledReason) || isConnected}
+              onClick={() => void startConnection()}
+              className="w-full rounded-xl bg-emerald-700 px-4 py-5 text-lg font-bold text-white disabled:opacity-50"
+              // Im DJI-Kompatibilitätslayout hat die Hintergrundfarbe !important.
+              // Graustufen + disabled machen den bestehenden Button sichtbar inaktiv,
+              // ohne die funktionierende Layout-Datei verändern zu müssen.
+              style={isConnected ? { filter: "grayscale(1)", cursor: "not-allowed" } : undefined}
+            >
+              {busy
+                ? "DJI wird vorbereitet …"
+                : isConnected
+                  ? "Einsatz verbunden"
+                  : "Einsatz verbinden"}
             </button>
-            <p className="rounded-lg bg-slate-100 p-3 text-center text-sm" role="status">{phase}</p>
-            <p className="text-center text-xs text-slate-600">Danach in DJI Pilot 2 wechseln und Kartenmarkierungen setzen.</p>
+
+            <p className="rounded-lg bg-slate-100 p-3 text-center text-sm" role="status">
+              {isConnected
+                ? "DJI verbunden – PinPoints werden automatisch übertragen."
+                : phase}
+            </p>
+
+            {!isConnected && (
+              <p className="text-center text-xs text-slate-600">
+                Nach dem Verbinden in DJI Pilot 2 wechseln und PinPoints setzen.
+              </p>
+            )}
           </section>
-          <section className="space-y-3 rounded-2xl border bg-white p-4">
-            <h2 className="font-semibold">GPS-Zuordnung kontrollieren</h2>
-            <p className="text-sm text-slate-600">DJI-Punkte werden probeweise den Flächen deines Teams zugeordnet. Noch keine echten Auftrags-PinPoints.</p>
-            <button type="button" disabled={busy || !token} className="w-full rounded-lg border p-3 font-semibold disabled:opacity-50" onClick={() => void checkPoints()}>
-              Empfangene Punkte prüfen
-            </button>
-            {preview && <div className="space-y-2 text-sm">
-              <p><strong>{preview.matched}</strong> eindeutig zugeordnet · <strong>{preview.unclear}</strong> unklar · <strong>{preview.outside}</strong> außerhalb</p>
-              <p className="text-xs text-slate-500">{preview.examined} von {preview.total} Punkten betrachtet (max. 50).</p>
-              <ul className="space-y-2">{preview.points.slice(0, 10).map((p) => <li key={p.id} className="rounded-lg bg-slate-50 p-2">
-                <strong>{p.name}</strong> – {p.state === "MATCH" ? p.orderLabel : p.state === "AMBIGUOUS" ? "Mehrere passende Aufträge" : "Außerhalb der Auftragsflächen"}
-              </li>)}</ul>
-            </div>}
-          </section>
+
           <details className="rounded-2xl border bg-white p-4 text-sm">
-            <summary className="cursor-pointer font-semibold">Technik und Fehlersuche (PIN-geschützt)</summary>
+            <summary className="cursor-pointer font-semibold">
+              Weitere Funktionen und Fehlersuche
+            </summary>
             <div className="mt-3 space-y-3">
-              <p>Bei Verbindungsproblemen stehen die bisherigen DJI-Einzeltests weiterhin zur Verfügung.</p>
-              {user?.isAdmin ? <a className="block underline" href="/pilot-login/technik">Technische Testansicht öffnen (Demo-/GPS-Test-PIN)</a> : <p>Technikzugang nur für Administratoren.</p>}
-              <button type="button" disabled={busy || !token} onClick={() => void endSession()} className="rounded-lg border border-rose-300 px-3 py-2 disabled:opacity-50">DJI-Sitzung beenden</button>
+              {user?.isAdmin && (
+                <section className="space-y-3 rounded-xl border bg-slate-50 p-3">
+                  <h2 className="font-semibold">GPS-Zuordnung kontrollieren</h2>
+                  <p className="text-sm text-slate-600">
+                    Empfangene DJI-Punkte und ihre Flächenzuordnung anzeigen.
+                    Die Übernahme der PinPoints erfolgt automatisch.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={busy || !token}
+                    className="w-full rounded-lg border p-3 font-semibold disabled:opacity-50"
+                    onClick={() => void checkPoints()}
+                  >
+                    Empfangene Punkte prüfen
+                  </button>
+                  {preview && (
+                    <div className="space-y-2 text-sm">
+                      <p>
+                        <strong>{preview.matched}</strong> eindeutig zugeordnet ·{" "}
+                        <strong>{preview.unclear}</strong> unklar ·{" "}
+                        <strong>{preview.outside}</strong> außerhalb
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {preview.examined} von {preview.total} Punkten betrachtet (max. 50).
+                      </p>
+                      <ul className="space-y-2">
+                        {preview.points.slice(0, 10).map((p) => (
+                          <li key={p.id} className="rounded-lg bg-white p-2">
+                            <strong>{p.name}</strong> –{" "}
+                            {p.state === "MATCH"
+                              ? p.orderLabel
+                              : p.state === "AMBIGUOUS"
+                                ? "Mehrere passende Aufträge"
+                                : "Außerhalb der Auftragsflächen"}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {user?.isAdmin && (
+                <a className="block underline" href="/pilot-login/technik">
+                  PIN-geschützte technische Testansicht öffnen
+                </a>
+              )}
+
+              <button
+                type="button"
+                disabled={busy || !token}
+                onClick={() => void endSession()}
+                className="rounded-lg border border-rose-300 px-3 py-2 disabled:opacity-50"
+              >
+                DJI-Sitzung beenden
+              </button>
             </div>
           </details>
         </>
       )}
-      {error && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" role="alert">{error}</p>}
-      <p className="text-center text-xs text-slate-500">Die bisherigen Flächen- und Gesamteinsatz-Timer bleiben unverändert.</p>
+
+      {error && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" role="alert">
+          {error}
+        </p>
+      )}
     </main>
   );
 }
