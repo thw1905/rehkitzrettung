@@ -13,8 +13,9 @@ type DjiBridge = {
   platformIsComponentLoaded?: (name: string) => string | boolean;
   wsGetConnectState?: () => string | boolean;
   wsDisconnect?: () => string;
+  thingGetConnectState?: () => string | boolean;
 };
-type DjiWindow = Window & { djiBridge?: DjiBridge; rehkitzQuickWsCallback?: (value: unknown) => void };
+type DjiWindow = Window & { djiBridge?: DjiBridge; rehkitzQuickWsCallback?: (value: unknown) => void; rehkitzThingCallback?: (value: unknown) => void };
 type TeamInfo = {
   team: string; date: string; ordersCount: number;
   activeSession: { token: string; expiresAt: string } | null;
@@ -28,6 +29,7 @@ type Preview = { total: number; examined: number; matched: number; unclear: numb
 type Bootstrap = { workspaceId: string; platformName: string; workspaceName: string; description: string };
 type License = { appId: string; appKey: string; license: string };
 type MapConfig = { workspaceId: string; groupId: string; autoImportEnabled: boolean };
+type ThingConfig = { host: string; username: string; password: string };
 
 function bridge(): DjiBridge | null { return (window as DjiWindow).djiBridge || null; }
 function reply(value: unknown): BridgeResult {
@@ -112,6 +114,8 @@ export default function PilotSimpleClient() {
   const [phase, setPhase] = useState("Noch nicht verbunden");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [thingBusy, setThingBusy] = useState(false);
+  const [thingStatus, setThingStatus] = useState("Noch nicht getestet.");
 
   const user = session?.user as { role?: string; isAdmin?: boolean } | undefined;
   const allowed = Boolean(user?.isAdmin || user?.role === "PILOT");
@@ -210,6 +214,41 @@ export default function PilotSimpleClient() {
       setError(e instanceof Error ? e.message : "DJI-Verbindung fehlgeschlagen.");
       setPhase("Verbindung nicht vollständig eingerichtet");
     } finally { setBusy(false); }
+  }
+
+  // DJI_AKKU_THING_TEST_V3: Separate Admin-Diagnose, kein Einfluss auf Map/WS/PinPoints.
+  async function testThingConnection() {
+    if (!user?.isAdmin || !isConnected || !token || thingBusy || busy) return;
+    setThingBusy(true);
+    setThingStatus("DJI-Telemetrieverbindung wird gestartet ...");
+    try {
+      const b = bridge();
+      if (!b?.platformLoadComponent) throw new Error("Nur in DJI Pilot 2 verfuegbar.");
+      const config = await api<ThingConfig>("/api/dji/pilot2/thing-test", post(token));
+      (window as DjiWindow).rehkitzThingCallback = (value: unknown) => {
+        const connection = b.thingGetConnectState
+          ? truthy(b.thingGetConnectState()) : truthy(value);
+        setThingStatus(connection === true
+          ? "MQTT-Verbindung von DJI bestaetigt."
+          : connection === false
+            ? "DJI meldet MQTT nicht verbunden (Zertifikat/Host pruefen)."
+            : "DJI-Rueckmeldung vorhanden; MQTT-Status noch nicht eindeutig.");
+      };
+      assertDji(b.platformLoadComponent("thing", JSON.stringify({
+        host: config.host,
+        username: config.username,
+        password: config.password,
+        connectCallback: "rehkitzThingCallback",
+      })), "DJI-Telemetriemodul");
+      const connection = b.thingGetConnectState ? truthy(b.thingGetConnectState()) : null;
+      setThingStatus(connection === true
+        ? "MQTT-Verbindung von DJI bestaetigt."
+        : "DJI-Modul gestartet; auf MQTT-Rueckmeldung warten.");
+    } catch (e) {
+      setThingStatus(e instanceof Error ? e.message : "DJI-Telemetrietest fehlgeschlagen.");
+    } finally {
+      setThingBusy(false);
+    }
   }
 
   async function checkPoints() {
@@ -359,6 +398,24 @@ export default function PilotSimpleClient() {
               Weitere Funktionen und Fehlersuche
             </summary>
             <div className="mt-3 space-y-3">
+              {user?.isAdmin && (
+                <section className="space-y-2 rounded-xl border bg-slate-50 p-3">
+                  <h2 className="font-semibold">Akku-Telemetrie (Test)</h2>
+                  <p className="text-sm text-slate-600">
+                    Nur fuer Administratoren. Startet das DJI-MQTT-Modul zusaetzlich zur bestehenden PinPoint-Verbindung.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={!isConnected || !token || thingBusy || busy}
+                    onClick={() => void testThingConnection()}
+                    className="w-full rounded-lg border p-3 font-semibold disabled:opacity-50"
+                  >
+                    {thingBusy ? "MQTT wird gestartet ..." : "DJI-Akkudaten-Verbindung testen"}
+                  </button>
+                  <p className="text-sm" role="status">{thingStatus}</p>
+                </section>
+              )}
+
               {user?.isAdmin && (
                 <section className="space-y-3 rounded-xl border bg-slate-50 p-3">
                   <h2 className="font-semibold">GPS-Zuordnung kontrollieren</h2>
