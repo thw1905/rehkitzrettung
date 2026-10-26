@@ -14,6 +14,7 @@ type DjiBridge = {
   wsGetConnectState?: () => string | boolean;
   wsDisconnect?: () => string;
   thingGetConnectState?: () => string | boolean;
+  platformGetAircraftSN?: () => string;
 };
 type DjiWindow = Window & { djiBridge?: DjiBridge; rehkitzQuickWsCallback?: (value: unknown) => void; rehkitzThingCallback?: (value: unknown) => void };
 type TeamInfo = {
@@ -32,6 +33,30 @@ type MapConfig = { workspaceId: string; groupId: string; autoImportEnabled: bool
 type ThingConfig = { enabled: boolean; reason?: string; host?: string; username?: string; password?: string };
 type AircraftChoice = { id: string; label: string };
 type BatteryChoice = { aircraft: AircraftChoice[]; recommendation: { number: number | null; note: string } | null };
+
+// DJI_AIRCRAFT_JSBRIDGE_V7: DJI returns SN as plain text or bridge response JSON.
+function parseDjiAircraftSn(raw: unknown): string | null {
+  let value: unknown = raw;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith('"')) {
+      try { value = JSON.parse(trimmed) as unknown; }
+      catch { value = trimmed; }
+    } else value = trimmed;
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const reply = value as { code?: unknown; data?: unknown; sn?: unknown };
+    if (typeof reply.code === "number" && reply.code !== 0) return null;
+    value = reply.data ?? reply.sn;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const details = value as { sn?: unknown; serialNumber?: unknown; aircraftSN?: unknown };
+      value = details.sn ?? details.serialNumber ?? details.aircraftSN;
+    }
+  }
+  if (typeof value !== "string") return null;
+  const sn = value.trim();
+  return /^[A-Za-z0-9_-]{5,80}$/.test(sn) && !/^(undefined|null|unknown|false)$/i.test(sn) ? sn : null;
+}
 
 function bridge(): DjiBridge | null { return (window as DjiWindow).djiBridge || null; }
 function reply(value: unknown): BridgeResult {
@@ -119,6 +144,7 @@ export default function PilotSimpleClient() {
   const [thingStatus, setThingStatus] = useState("Akku-Verbindung wird vorbereitet ...");
   const [aircraftChoices, setAircraftChoices] = useState<AircraftChoice[]>([]);
   const [selectedAircraft, setSelectedAircraft] = useState("");
+  const [aircraftDetection, setAircraftDetection] = useState("Drohne wird automatisch erkannt ...");
   const [batteryRecommendation, setBatteryRecommendation] = useState<BatteryChoice["recommendation"]>(null);
 
   const user = session?.user as { role?: string; isAdmin?: boolean } | undefined;
@@ -272,6 +298,44 @@ export default function PilotSimpleClient() {
     return () => { cancelled = true; };
   }, [auth, allowed]);
 
+  // DJI_AIRCRAFT_JSBRIDGE_V7: die Drohne ohne MQTT und ohne Tagesauftrag erkennen.
+  useEffect(() => {
+    if (auth !== "authenticated" || !allowed) return;
+    const b = bridge();
+    if (!b?.platformGetAircraftSN) {
+      setAircraftDetection("Automatische Erkennung nur in DJI Pilot 2 moeglich.");
+      return;
+    }
+    let cancelled = false;
+    let inFlight = false;
+    let lastDetectedSn = "";
+    async function syncAircraft() {
+      if (cancelled || inFlight) return;
+      let sn: string | null;
+      try { sn = parseDjiAircraftSn(b?.platformGetAircraftSN?.()); }
+      catch { return; }
+      if (!sn || sn === lastDetectedSn) return;
+      inFlight = true;
+      try {
+        const detected = await api<{ aircraft: AircraftChoice }>("/api/dji/pilot2/aircraft-detect", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ serialNumber: sn }),
+        });
+        if (cancelled) return;
+        lastDetectedSn = sn;
+        setAircraftChoices((old) => old.some((a) => a.id === detected.aircraft.id)
+          ? old : [...old, detected.aircraft].sort((a, z) => a.label.localeCompare(z.label)));
+        setSelectedAircraft(detected.aircraft.id);
+        setAircraftDetection("Verbundene DJI-Drohne automatisch erkannt.");
+      } catch (error) {
+        if (!cancelled) setAircraftDetection(error instanceof Error ? error.message : "Drohne konnte nicht erkannt werden.");
+      } finally { inFlight = false; }
+    }
+    void syncAircraft();
+    const timer = window.setInterval(() => void syncAircraft(), 10000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [auth, allowed]);
+
   // Aktuelles Fluggeraet ist eine Auswahl fuer die Sitzung, KEINE dauerhafte Piloten-Zuordnung.
   useEffect(() => {
     if (auth !== "authenticated" || !allowed) return;
@@ -406,6 +470,7 @@ export default function PilotSimpleClient() {
                 <option value="">Drohne auswaehlen</option>
                 {aircraftChoices.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
               </select>
+              <p className="text-xs text-slate-600" role="status">{aircraftDetection}</p>
               {selectedAircraft && batteryRecommendation && (
                 <p className="rounded-lg bg-slate-100 p-2" role="status">
                   {batteryRecommendation.number != null && <><strong>Naechster Akku: Nr. {batteryRecommendation.number}</strong>. </>}

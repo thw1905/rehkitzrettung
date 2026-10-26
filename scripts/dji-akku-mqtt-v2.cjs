@@ -14,6 +14,20 @@ const topicOsd = "thing/product/+/osd";
 async function registerDrone(db, entry) {
   let existing = await db.djiAircraft.findUnique({ where: { serialNumber: entry.serialNumber } });
   if (existing) {
+    // DJI_AIRCRAFT_JSBRIDGE_V7: V7 hat die Seriennummer ggf. schon vor MQTT erkannt.
+    // Die DJI-Modellinformation nachtragen, manuelle Beschriftung respektieren.
+    if (existing.model === "Noch nicht ermittelt") {
+      const autoLabel = `DJI (${entry.serialNumber.slice(-8)})`;
+      const data = { model: entry.model,
+        ...(existing.label === autoLabel ? { label: `${entry.model} (${entry.serialNumber.slice(-8)})` } : {}),
+      };
+      try { return await db.djiAircraft.update({ where: { id: existing.id }, data }); }
+      catch (error) {
+        // Bei gleichlautenden automatisch generierten Namen nur das Modell aktualisieren.
+        if (error?.code !== "P2002") throw error;
+        return await db.djiAircraft.update({ where: { id: existing.id }, data: { model: entry.model } });
+      }
+    }
     // Bereits manuell vergebene Bezeichnung niemals aendern, inaktive nicht reaktivieren.
     return existing;
   }
