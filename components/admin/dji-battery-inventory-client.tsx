@@ -38,6 +38,7 @@ export default function DjiBatteryInventoryClient() {
   const [batteryNumber, setBatteryNumber] = useState("1");
   const [batterySerial, setBatterySerial] = useState("");
   const [serialInputs, setSerialInputs] = useState<Record<string, string>>({});
+  const [numberInputs, setNumberInputs] = useState<Record<string, string>>({});
   const [showRetired, setShowRetired] = useState(false);
 
   async function refresh() {
@@ -84,10 +85,11 @@ export default function DjiBatteryInventoryClient() {
     <main className="mx-auto max-w-4xl space-y-5 px-4 py-6 text-slate-900">
       <header className="rounded-2xl bg-slate-900 p-5 text-white">
         <h1 className="text-2xl font-bold">Drohnen- und Akkuverwaltung</h1>
-        <p className="mt-2 text-sm text-slate-200">Hegering-Bestand, unabhängig vom jeweiligen Piloten. Seriennummern werden einmalig den Nummern auf euren Akkus zugeordnet.</p>
+        <p className="mt-2 text-sm text-slate-200">Hegering-Bestand, unabhängig vom jeweiligen Piloten. Drohnen und Akkus werden per DJI-Telemetrie automatisch erkannt. Nur die Aufklebernummern werden einmalig eingetragen.</p>
       </header>
       {error && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">{error}</p>}
       {message && <p role="status" className="rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900">{message}</p>}
+      <p className="text-sm text-slate-600">Die folgenden manuellen Formulare sind nur als Ausnahmefall gedacht; für die automatische Erkennung musst du nichts anlegen.</p>
       <div className="grid gap-4 md:grid-cols-2">
         <form className="space-y-3 rounded-2xl border bg-white p-4" onSubmit={(event) => {
           event.preventDefault();
@@ -145,7 +147,7 @@ export default function DjiBatteryInventoryClient() {
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showRetired} onChange={e => setShowRetired(e.target.checked)} /> Ausgemusterte Akkus anzeigen</label>
         </div>
         {loading && <p>Geräte werden geladen …</p>}
-        {!loading && !items.length && <p className="rounded-lg bg-slate-100 p-4 text-sm">Noch keine Drohne eingetragen. Bitte zuerst oben eine Drohne anlegen.</p>}
+        {!loading && !items.length && <p className="rounded-lg bg-slate-100 p-4 text-sm">Noch keine Drohne erkannt. Sie erscheint automatisch bei eingehender DJI-Telemetrie.</p>}
         {items.map(aircraft => {
           const batteries = aircraft.batteries.filter(b => showRetired || b.status !== "RETIRED");
           const available = aircraft.batteries.filter(b => b.status === "ACTIVE" && b.cycles != null && b.labelNumber != null);
@@ -165,6 +167,12 @@ export default function DjiBatteryInventoryClient() {
                 <div className="mt-1 text-slate-600">Ladezyklen: <strong>{battery.cycles ?? "noch nicht ausgelesen"}</strong> · Zuletzt gemeldeter Ladestand: {battery.capacityPercent == null ? "–" : `${battery.capacityPercent} %`}</div>
                 <p className="mt-1 break-all text-xs text-slate-500">Seriennummer: {battery.serialNumber || "noch nicht zugeordnet"}</p>
                 {battery.status !== "RETIRED" && <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {battery.serialNumber && battery.labelNumber == null && <>
+                    <label className="text-sm">Aufklebernummer
+                      <input aria-label="Aufklebernummer" type="number" min={1} max={99} className="ml-2 w-20 rounded-lg border p-2" value={numberInputs[battery.id] ?? ""} onChange={e => setNumberInputs(old => ({ ...old, [battery.id]: e.target.value }))} />
+                    </label>
+                    <button type="button" disabled={busy || !/^[1-9]\d?$/.test(numberInputs[battery.id] || "")} className="rounded-lg border p-2 disabled:opacity-50" onClick={() => void save("set-label", { batteryId: battery.id, labelNumber: Number(numberInputs[battery.id]) }, "Aufklebernummer zugeordnet.")}>Nummer zuordnen</button>
+                  </>}
                   {!battery.serialNumber && <>
                     <input aria-label={`Seriennummer fuer Akku ${battery.labelNumber}`} className="min-w-0 flex-1 rounded-lg border p-2" placeholder="DJI-Seriennummer" value={serialInputs[battery.id] ?? ""} onChange={e => setSerialInputs(old => ({ ...old, [battery.id]: e.target.value }))} />
                     <button type="button" disabled={busy || !serialInputs[battery.id]?.trim()} className="rounded-lg border bg-slate-100 p-2 disabled:opacity-50" onClick={() => void save("assign-serial", { batteryId: battery.id, serialNumber: serialInputs[battery.id] }, "Seriennummer zugeordnet.")}>Zuordnen</button>
@@ -182,7 +190,7 @@ export default function DjiBatteryInventoryClient() {
           </article>;
         })}
       </section>
-      <p className="text-xs text-slate-500">DJI-Telemetrie V4: Daten werden aktualisiert, wenn der Cloud-Transport verbunden ist, der MQTT-Empfaenger laeuft und die Seriennummern zugeordnet sind. Gemeldete Ladestaende koennen veraltet sein. PinPoints bleiben unabhaengig.</p>
+      <p className="text-xs text-slate-500">DJI Autoerkennung V5: Seriennummern und Ladezyklen werden bei aktiver MQTT-Verbindung automatisch erfasst. Nur die Aufklebernummer ist einmalig einzutragen. Gemeldete Ladestaende koennen veraltet sein.</p>
     </main>
   );
 }

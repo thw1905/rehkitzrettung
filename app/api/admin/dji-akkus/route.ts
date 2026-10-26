@@ -75,6 +75,18 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ success: true, id: created.id }, { headers: noCache });
     }
+    // DJI_AUTOERKENNUNG_V5: die physische Nummer eines automatisch gelesenen Akkus zuordnen.
+    if (action === "set-label") {
+      const batteryId = field(input, "batteryId");
+      const number = labelNumber(input.labelNumber);
+      const battery = await db.djiBattery.findUnique({ where: { id: batteryId } });
+      if (!battery || battery.status === "RETIRED" || !battery.serialNumber) {
+        return fail("Akku nicht gefunden, ausgemustert oder noch nicht automatisch erkannt.", 409);
+      }
+      if (battery.labelNumber != null) return fail("Akku ist bereits nummeriert.", 409);
+      await db.djiBattery.update({ where: { id: battery.id }, data: { labelNumber: number, lastLabelNumber: number } });
+      return NextResponse.json({ success: true }, { headers: noCache });
+    }
     if (action === "assign-serial") {
       const batteryId = field(input, "batteryId");
       const serialNumber = optionalSerial(field(input, "serialNumber", 80));
