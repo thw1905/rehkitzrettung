@@ -29,7 +29,9 @@ type Preview = { total: number; examined: number; matched: number; unclear: numb
 type Bootstrap = { workspaceId: string; platformName: string; workspaceName: string; description: string };
 type License = { appId: string; appKey: string; license: string };
 type MapConfig = { workspaceId: string; groupId: string; autoImportEnabled: boolean };
-type ThingConfig = { host: string; username: string; password: string };
+type ThingConfig = { enabled: boolean; reason?: string; host?: string; username?: string; password?: string };
+type AircraftChoice = { id: string; label: string };
+type BatteryChoice = { aircraft: AircraftChoice[]; recommendation: { number: number | null; note: string } | null };
 
 function bridge(): DjiBridge | null { return (window as DjiWindow).djiBridge || null; }
 function reply(value: unknown): BridgeResult {
@@ -114,8 +116,10 @@ export default function PilotSimpleClient() {
   const [phase, setPhase] = useState("Noch nicht verbunden");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [thingBusy, setThingBusy] = useState(false);
-  const [thingStatus, setThingStatus] = useState("Noch nicht getestet.");
+  const [thingStatus, setThingStatus] = useState("Akku-Verbindung wird vorbereitet ...");
+  const [aircraftChoices, setAircraftChoices] = useState<AircraftChoice[]>([]);
+  const [selectedAircraft, setSelectedAircraft] = useState("");
+  const [batteryRecommendation, setBatteryRecommendation] = useState<BatteryChoice["recommendation"]>(null);
 
   const user = session?.user as { role?: string; isAdmin?: boolean } | undefined;
   const allowed = Boolean(user?.isAdmin || user?.role === "PILOT");
@@ -216,40 +220,78 @@ export default function PilotSimpleClient() {
     } finally { setBusy(false); }
   }
 
-  // DJI_AKKU_THING_TEST_V3: Separate Admin-Diagnose, kein Einfluss auf Map/WS/PinPoints.
-  async function testThingConnection() {
-    if (!user?.isAdmin || !isConnected || !token || thingBusy || busy) return;
-    setThingBusy(true);
-    setThingStatus("DJI-Telemetrieverbindung wird gestartet ...");
-    try {
-      const b = bridge();
-      if (!b?.platformLoadComponent) throw new Error("Nur in DJI Pilot 2 verfuegbar.");
-      const config = await api<ThingConfig>("/api/dji/pilot2/thing-test", post(token));
-      (window as DjiWindow).rehkitzThingCallback = (value: unknown) => {
-        const connection = b.thingGetConnectState
-          ? truthy(b.thingGetConnectState()) : truthy(value);
-        setThingStatus(connection === true
-          ? "MQTT-Verbindung von DJI bestaetigt."
-          : connection === false
-            ? "DJI meldet MQTT nicht verbunden (Zertifikat/Host pruefen)."
-            : "DJI-Rueckmeldung vorhanden; MQTT-Status noch nicht eindeutig.");
-      };
-      assertDji(b.platformLoadComponent("thing", JSON.stringify({
-        host: config.host,
-        username: config.username,
-        password: config.password,
-        connectCallback: "rehkitzThingCallback",
-      })), "DJI-Telemetriemodul");
-      const connection = b.thingGetConnectState ? truthy(b.thingGetConnectState()) : null;
-      setThingStatus(connection === true
-        ? "MQTT-Verbindung von DJI bestaetigt."
-        : "DJI-Modul gestartet; auf MQTT-Rueckmeldung warten.");
-    } catch (e) {
-      setThingStatus(e instanceof Error ? e.message : "DJI-Telemetrietest fehlgeschlagen.");
-    } finally {
-      setThingBusy(false);
+  // DJI_AKKU_V4: automatischer Cloud-Start NACH Anmeldung, ohne Team-/Auftragsbezug.
+  // Bestehender "Einsatz verbinden"-Ablauf fuer API, WS, Karten und PinPoints wird nicht veraendert.
+  useEffect(() => {
+    if (auth !== "authenticated" || !allowed) return;
+    let cancelled = false;
+    async function connectTelemetry() {
+      try {
+        const b = bridge();
+        if (!b?.platformLoadComponent || !b.platformVerifyLicense || !b.platformIsVerified) {
+          if (!cancelled) setThingStatus("Akku-Telemetrie nur innerhalb von DJI Pilot 2 verfuegbar.");
+          return;
+        }
+        const config = await api<ThingConfig>("/api/dji/pilot2/thing-connect");
+        if (!config.enabled) {
+          if (!cancelled) setThingStatus(config.reason || "Akku-Telemetrie nicht aktiviert.");
+          return;
+        }
+        if (!config.host || !config.username || !config.password) throw new Error("DJI-MQTT-Konfiguration fehlt.");
+        if (cancelled) return;
+        // Erfolgreiche Lizenz-Verifizierung ist Voraussetzung fuer das DJI-Bridge-Modul.
+        if (!djiVerified(b.platformIsVerified())) {
+          const license = await api<License>("/api/dji/pilot2/bridge-license");
+          assertDji(b.platformVerifyLicense(license.appId, license.appKey, license.license), "DJI-Lizenz");
+          await waitForVerifiedApp(b);
+        }
+        if (cancelled) return;
+        (window as DjiWindow).rehkitzThingCallback = (value: unknown) => {
+          if (cancelled) return;
+          const connected = b.thingGetConnectState ? truthy(b.thingGetConnectState()) : truthy(value);
+          setThingStatus(connected === true ? "Akku-Telemetrie: mit DJI verbunden"
+            : connected === false ? "Akku-Telemetrie: MQTT-Verbindung fehlgeschlagen"
+              : "Akku-Telemetrie: DJI-Rueckmeldung erhalten");
+        };
+        if (b.platformIsComponentLoaded && truthy(b.platformIsComponentLoaded("thing")) === true &&
+            b.thingGetConnectState && truthy(b.thingGetConnectState()) === true) {
+          setThingStatus("Akku-Telemetrie: mit DJI verbunden");
+          return;
+        }
+        assertDji(b.platformLoadComponent("thing", JSON.stringify({
+          host: config.host, username: config.username, password: config.password,
+          connectCallback: "rehkitzThingCallback",
+        })), "DJI-Akkumodul");
+        if (!cancelled) setThingStatus("Akku-Telemetrie: Modul gestartet – MQTT wird verbunden");
+        // DJI meldet den MQTT-Verbindungsstatus asynchron ueber den Callback.
+      } catch (error) {
+        if (!cancelled) setThingStatus(error instanceof Error ? error.message : "Akku-Verbindung fehlgeschlagen.");
+      }
     }
-  }
+    void connectTelemetry();
+    return () => { cancelled = true; };
+  }, [auth, allowed]);
+
+  // Aktuelles Fluggeraet ist eine Auswahl fuer die Sitzung, KEINE dauerhafte Piloten-Zuordnung.
+  useEffect(() => {
+    if (auth !== "authenticated" || !allowed) return;
+    let cancelled = false;
+    api<BatteryChoice>("/api/dji/pilot2/battery-recommendation").then((data) => {
+      if (!cancelled) setAircraftChoices(data.aircraft);
+    }).catch(() => { /* Akku-Info ist optional; PinPoint-Funktionen bleiben verfuegbar. */ });
+    return () => { cancelled = true; };
+  }, [auth, allowed]);
+  useEffect(() => {
+    if (!selectedAircraft || auth !== "authenticated" || !allowed) {
+      setBatteryRecommendation(null);
+      return;
+    }
+    let cancelled = false;
+    api<BatteryChoice>(`/api/dji/pilot2/battery-recommendation?aircraftId=${encodeURIComponent(selectedAircraft)}`)
+      .then((data) => { if (!cancelled) setBatteryRecommendation(data.recommendation); })
+      .catch(() => { if (!cancelled) setBatteryRecommendation(null); });
+    return () => { cancelled = true; };
+  }, [selectedAircraft, auth, allowed]);
 
   async function checkPoints() {
     if (busy || !token) return;
@@ -357,6 +399,21 @@ export default function PilotSimpleClient() {
               </div>
             )}
 
+            <div className="space-y-2 rounded-lg border border-slate-200 p-3 text-sm">
+              <label className="block font-semibold" htmlFor="pilot-current-aircraft">Heute verwendete Drohne</label>
+              <select id="pilot-current-aircraft" className="w-full rounded-lg border p-2"
+                value={selectedAircraft} onChange={(event) => setSelectedAircraft(event.target.value)}>
+                <option value="">Drohne auswaehlen</option>
+                {aircraftChoices.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              </select>
+              {selectedAircraft && batteryRecommendation && (
+                <p className="rounded-lg bg-slate-100 p-2" role="status">
+                  {batteryRecommendation.number != null && <><strong>Naechster Akku: Nr. {batteryRecommendation.number}</strong>. </>}
+                  {batteryRecommendation.note}
+                </p>
+              )}
+            </div>
+
             {info?.disabledReason && (
               <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950" role="alert">
                 {info.disabledReason}
@@ -398,23 +455,11 @@ export default function PilotSimpleClient() {
               Weitere Funktionen und Fehlersuche
             </summary>
             <div className="mt-3 space-y-3">
-              {user?.isAdmin && (
-                <section className="space-y-2 rounded-xl border bg-slate-50 p-3">
-                  <h2 className="font-semibold">Akku-Telemetrie (Test)</h2>
-                  <p className="text-sm text-slate-600">
-                    Nur fuer Administratoren. Startet das DJI-MQTT-Modul zusaetzlich zur bestehenden PinPoint-Verbindung.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={!isConnected || !token || thingBusy || busy}
-                    onClick={() => void testThingConnection()}
-                    className="w-full rounded-lg border p-3 font-semibold disabled:opacity-50"
-                  >
-                    {thingBusy ? "MQTT wird gestartet ..." : "DJI-Akkudaten-Verbindung testen"}
-                  </button>
-                  <p className="text-sm" role="status">{thingStatus}</p>
-                </section>
-              )}
+              <section className="space-y-2 rounded-xl border bg-slate-50 p-3">
+                <h2 className="font-semibold">Akku-Telemetrie</h2>
+                <p className="text-sm" role="status">{thingStatus}</p>
+                <p className="text-xs text-slate-600">Verbindung startet bei der Anmeldung automatisch, unabhaengig vom Einsatz.</p>
+              </section>
 
               {user?.isAdmin && (
                 <section className="space-y-3 rounded-xl border bg-slate-50 p-3">
