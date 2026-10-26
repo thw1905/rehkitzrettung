@@ -579,3 +579,76 @@ model DjiMapElement {
   @@index([pilotUserId, receivedAt])
   @@index([orderId])
 }
+
+// DJI_AKKUVERWALTUNG_V1
+// Hegering-Geraetebestand: unabhaengig von Piloten oder wechselnden Tages-Teams.
+model DjiAircraft {
+  id           String    @id @default(cuid())
+  label        String    @unique
+  model        String
+  serialNumber String?   @unique
+  isActive     Boolean   @default(true)
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  batteries    DjiBattery[]
+  usageEntries DjiBatteryUsage[]
+}
+
+// Beschriftete Nummern sind nur INNERHALB einer Drohne eindeutig.
+// Bei Ersatz wird der alte Akku archiviert, seine Seriennummer bleibt erhalten,
+// sein labelNumber wird NULL und lastLabelNumber behaelt die alte Aufklebernummer.
+model DjiBattery {
+  id                String           @id @default(cuid())
+  aircraftId        String
+  labelNumber       Int?
+  lastLabelNumber   Int?
+  serialNumber      String?          @unique
+  status            String           @default("ACTIVE") // ACTIVE, BLOCKED, RETIRED
+  cycles            Int?
+  cycleSource       String?          // DJI or MANUAL
+  capacityPercent   Int?
+  temperatureC      Float?
+  voltageMv         Int?
+  lastSeenAt        DateTime?
+  retiredAt         DateTime?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  aircraft          DjiAircraft      @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  usageEntries      DjiBatteryUsage[]
+
+  @@unique([aircraftId, labelNumber])
+  @@index([aircraftId, status])
+  @@index([lastSeenAt])
+}
+
+// Spaetere Verbrauchsbilanz je Akku / Flug / Auftrag.
+// Pilot-ID und Auftrag-ID sind lediglich historische Kontextangaben,
+// niemals Eigentuemer des Akkus.
+model DjiBatteryUsage {
+  id             String      @id @default(cuid())
+  aircraftId     String
+  batteryId      String
+  operationDayId String?
+  orderId        String?
+  pilotUserId    String?
+  startedAt      DateTime
+  endedAt        DateTime?
+  startPercent   Int?
+  endPercent     Int?
+  usedPercent    Int?
+  flightSeconds  Int?
+  source         String      @default("DJI_MQTT")
+  createdAt      DateTime    @default(now())
+
+  aircraft       DjiAircraft @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  battery        DjiBattery  @relation(fields: [batteryId], references: [id], onDelete: Restrict)
+
+  @@index([batteryId, startedAt])
+  @@index([aircraftId, startedAt])
+  @@index([operationDayId, startedAt])
+  @@index([orderId, startedAt])
+}
