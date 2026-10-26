@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const host = process.env.DJI_MQTT_PILOT_HOST || "";
   const username = process.env.DJI_MQTT_PILOT_USER || "";
   const password = process.env.DJI_MQTT_PILOT_PASSWORD || "";
-  if (!/^tcp:\/\/[a-z0-9.-]+:\d{2,5}$/i.test(host) || !username || !password) {
+  if (!/^(?:tcp|ssl):\/\/[a-z0-9.-]+:\d{2,5}$/i.test(host) || !username || !password) {
     return responseError("MQTT-Testkonfiguration fehlt oder ist ungueltig.", 503);
   }
   // Keine Speicherung, keine Protokollierung der Zugangsdaten.
