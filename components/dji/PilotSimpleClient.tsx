@@ -298,27 +298,41 @@ export default function PilotSimpleClient() {
     return () => { cancelled = true; };
   }, [auth, allowed]);
 
-  // DJI_AIRCRAFT_JSBRIDGE_V7: die Drohne ohne MQTT und ohne Tagesauftrag erkennen.
+  // DJI_AIRCRAFT_JSBRIDGE_V7_1: DJI-Lizenz vor Seriennummernabfrage sicherstellen.
+  // Kein geplanter Einsatz erforderlich. Die Bridge wird bei jedem Versuch neu gesucht.
   useEffect(() => {
     if (auth !== "authenticated" || !allowed) return;
-    const b = bridge();
-    if (!b?.platformGetAircraftSN) {
-      setAircraftDetection("Automatische Erkennung nur in DJI Pilot 2 moeglich.");
-      return;
-    }
     let cancelled = false;
     let inFlight = false;
     let lastDetectedSn = "";
+
     async function syncAircraft() {
       if (cancelled || inFlight) return;
-      let sn: string | null;
-      try { sn = parseDjiAircraftSn(b?.platformGetAircraftSN?.()); }
-      catch { return; }
-      if (!sn || sn === lastDetectedSn) return;
       inFlight = true;
       try {
+        const b = bridge();
+        if (!b?.platformGetAircraftSN || !b.platformVerifyLicense || !b.platformIsVerified) {
+          if (!cancelled) setAircraftDetection("DJI-Schnittstelle noch nicht bereit. Bitte die Seite in DJI Pilot 2 öffnen.");
+          return;
+        }
+        if (!djiVerified(b.platformIsVerified())) {
+          if (!cancelled) setAircraftDetection("DJI-Lizenz wird für die Drohnenerkennung geprüft …");
+          const license = await api<License>("/api/dji/pilot2/bridge-license");
+          if (cancelled) return;
+          assertDji(b.platformVerifyLicense(license.appId, license.appKey, license.license), "DJI-Lizenz für Drohnenerkennung");
+          await waitForVerifiedApp(b);
+        }
+        if (cancelled) return;
+        const sn = parseDjiAircraftSn(b.platformGetAircraftSN());
+        if (!sn) {
+          setAircraftDetection("DJI meldet noch keine Drohnenseriennummer. Drohne einschalten und verbinden.");
+          return;
+        }
+        if (sn === lastDetectedSn) return;
+        setAircraftDetection("DJI-Drohne erkannt – Registrierung wird geprüft …");
         const detected = await api<{ aircraft: AircraftChoice }>("/api/dji/pilot2/aircraft-detect", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ serialNumber: sn }),
         });
         if (cancelled) return;
@@ -328,9 +342,15 @@ export default function PilotSimpleClient() {
         setSelectedAircraft(detected.aircraft.id);
         setAircraftDetection("Verbundene DJI-Drohne automatisch erkannt.");
       } catch (error) {
-        if (!cancelled) setAircraftDetection(error instanceof Error ? error.message : "Drohne konnte nicht erkannt werden.");
-      } finally { inFlight = false; }
+        if (!cancelled) {
+          setAircraftDetection("Drohnen-Erkennung: " +
+            (error instanceof Error ? error.message : "Unbekannter Fehler."));
+        }
+      } finally {
+        inFlight = false;
+      }
     }
+
     void syncAircraft();
     const timer = window.setInterval(() => void syncAircraft(), 10000);
     return () => { cancelled = true; window.clearInterval(timer); };
