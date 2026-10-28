@@ -10,8 +10,17 @@ function result(error: string, status = 400) {
   return NextResponse.json({ error }, { status, headers });
 }
 export async function POST(req: NextRequest) {
+  // DJI_AIRCRAFT_ORIGIN_FIX_V7_2:
+  // In production NextRequest.nextUrl.origin may resolve to an internal reverse-proxy
+  // address, not the origin seen by DJI Pilot 2. Do not trust incoming forwarded
+  // host headers here; only accept the explicitly configured public site origin.
   const origin = req.headers.get("origin");
-  if (origin && origin !== req.nextUrl.origin) return result("Ungueltiger Ursprung.", 403);
+  const expectedOrigin = process.env.NODE_ENV === "production"
+    ? (process.env.DJI_AIRCRAFT_ALLOWED_ORIGIN || "https://kitzrettung-hegering-hittfeld.de").replace(/\/+$/, "")
+    : req.nextUrl.origin;
+  if (origin && origin !== expectedOrigin) {
+    return result("Ungueltiger Ursprung.", 403);
+  }
   const user = await getCurrentUserWithTeams();
   if (!user?.isApproved || (!user.isAdmin && user.role !== "PILOT")) {
     return result("Nicht berechtigt.", 403);
