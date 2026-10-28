@@ -289,6 +289,18 @@ export default function AppHeader({ user }: AppHeaderProps) {
         { href: "/admin/help", label: "Anleitung bearbeiten" },
       ],
     },
+    // DJI_MENU_V11_4: geschuetzte DJI-Verwaltung (GPS-Test weiterhin freigabeabhaengig).
+    {
+      title: "DJI / Drohnen",
+      color: "border-sky-200 bg-sky-50 text-sky-950",
+      items: [
+        { href: "/admin/dji", label: "DJI-Verbindung" },
+        { href: "/admin/dji-akkus", label: "Drohnen und Akkus" },
+        { href: "/admin/dji-akku-historie", label: "Akkuhistorie" },
+        { href: "/admin/dji-flugzeiten", label: "GPS-Flugzeiten je Fläche" },
+        ...(canOpenGpsTest ? [{ href: "/admin/gps-test", label: "🔒 GPS-Testmodus" }] : []),
+      ],
+    },
     {
       title: "System / Werkzeuge",
       color: "border-slate-200 bg-slate-50 text-slate-950",
@@ -297,7 +309,6 @@ export default function AppHeader({ user }: AppHeaderProps) {
         { href: "/admin/email-test", label: "✉️ E-Mail-Test" },
         { href: "/admin/revier-email-template", label: "✉️ E-Mail-Vorlage Revierpächter" },
         { href: "/admin/flight-certificates", label: "📄 Befliegungsnachweise" },
-        ...(canOpenGpsTest ? [{ href: "/admin/gps-test", label: "🔒 GPS-Testmodus" }] : []),
       ],
     },
   ];
