@@ -85,6 +85,8 @@ export default function DjiBatteryInventoryClient() {
     <main className="mx-auto max-w-4xl space-y-5 px-4 py-6 text-slate-900">
       <header className="rounded-2xl bg-slate-900 p-5 text-white">
         <h1 className="text-2xl font-bold">Drohnen- und Akkuverwaltung</h1>
+          {/* DJI_BATTERY_HISTORY_V9: read-only history; only administrator page grants access. */}
+          <a href="/admin/dji-akku-historie" className="mt-3 inline-block rounded-lg border border-white/50 px-3 py-2 text-sm text-white hover:bg-white/10">Akkuhistorie ansehen</a>
         <p className="mt-2 text-sm text-slate-200">Hegering-Bestand, unabhängig vom jeweiligen Piloten. Drohnen und Akkus werden per DJI-Telemetrie automatisch erkannt. Nur die Aufklebernummern werden einmalig eingetragen.</p>
       </header>
       {error && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">{error}</p>}
