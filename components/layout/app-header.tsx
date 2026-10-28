@@ -1,3 +1,4 @@
+// DJI_ADMIN_UI_V11_5: DJI-Verbindung nur aus Navigation ausgeblendet.
 "use client";
 
 import Link from "next/link";
@@ -294,7 +295,6 @@ export default function AppHeader({ user }: AppHeaderProps) {
       title: "DJI / Drohnen",
       color: "border-sky-200 bg-sky-50 text-sky-950",
       items: [
-        { href: "/admin/dji", label: "DJI-Verbindung" },
         { href: "/admin/dji-akkus", label: "Drohnen und Akkus" },
         { href: "/admin/dji-akku-historie", label: "Akkuhistorie" },
         { href: "/admin/dji-flugzeiten", label: "GPS-Flugzeiten je Fläche" },

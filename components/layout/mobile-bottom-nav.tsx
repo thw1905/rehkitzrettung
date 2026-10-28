@@ -1,3 +1,4 @@
+// DJI_ADMIN_UI_V11_5: DJI-Verbindung nur aus Navigation ausgeblendet.
 "use client";
 
 import Link from "next/link";
@@ -239,7 +240,6 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
                 <div className="rounded-xl border border-sky-200 bg-sky-50 p-2">
                   <div className="mb-2 px-2 text-xs font-extrabold uppercase text-sky-950">DJI / Drohnen</div>
                   <div className="space-y-2">
-                    <Link href="/admin/dji" onClick={() => setManagementMenuOpen(false)} className="block rounded-xl border border-sky-200 bg-white px-3 py-3 text-sm font-semibold text-sky-950 hover:bg-sky-100">DJI-Verbindung</Link>
                     <Link href="/admin/dji-akkus" onClick={() => setManagementMenuOpen(false)} className="block rounded-xl border border-sky-200 bg-white px-3 py-3 text-sm font-semibold text-sky-950 hover:bg-sky-100">Drohnen und Akkus</Link>
                     <Link href="/admin/dji-akku-historie" onClick={() => setManagementMenuOpen(false)} className="block rounded-xl border border-sky-200 bg-white px-3 py-3 text-sm font-semibold text-sky-950 hover:bg-sky-100">Akkuhistorie</Link>
                     <Link href="/admin/dji-flugzeiten" onClick={() => setManagementMenuOpen(false)} className="block rounded-xl border border-sky-200 bg-white px-3 py-3 text-sm font-semibold text-sky-950 hover:bg-sky-100">GPS-Flugzeiten je Fläche</Link>

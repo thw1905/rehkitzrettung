@@ -49,6 +49,21 @@ export async function POST(req: NextRequest) {
 
   try {
     const action = field(input, "action", 40);
+    // DJI_ADMIN_UI_V11_5: Eindeutige Aufklebernummer der Drohne als Anzeigename. Seriennummer bleibt unveraendert.
+    if (action === "set-aircraft-number") {
+      const aircraftId = field(input, "aircraftId");
+      const raw = input.number;
+      if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1 || raw > 99) {
+        return fail("Drohnennummer muss eine ganze Zahl von 1 bis 99 sein.");
+      }
+      const aircraft = await db.djiAircraft.findUnique({ where: { id: aircraftId } });
+      if (!aircraft) return fail("Drohne nicht gefunden.", 404);
+      const label = `Drohne ${raw}`;
+      const existing = await db.djiAircraft.findUnique({ where: { label }, select: { id: true } });
+      if (existing && existing.id !== aircraftId) return fail("Diese Drohnennummer ist bereits vergeben.", 409);
+      await db.djiAircraft.update({ where: { id: aircraftId }, data: { label } });
+      return NextResponse.json({ success: true }, { headers: noCache });
+    }
     if (action === "create-aircraft") {
       const label = field(input, "label", 64);
       const model = field(input, "model", 64);

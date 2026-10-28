@@ -38,6 +38,7 @@ export default function DjiBatteryInventoryClient() {
   const [batteryNumber, setBatteryNumber] = useState("1");
   const [batterySerial, setBatterySerial] = useState("");
   const [serialInputs, setSerialInputs] = useState<Record<string, string>>({});
+  const [aircraftNumberInputs, setAircraftNumberInputs] = useState<Record<string, string>>({}); // DJI_ADMIN_UI_V11_5
   const [numberInputs, setNumberInputs] = useState<Record<string, string>>({});
   const [showRetired, setShowRetired] = useState(false);
 
@@ -91,57 +92,60 @@ export default function DjiBatteryInventoryClient() {
       </header>
       {error && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">{error}</p>}
       {message && <p role="status" className="rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900">{message}</p>}
-      <p className="text-sm text-slate-600">Die folgenden manuellen Formulare sind nur als Ausnahmefall gedacht; für die automatische Erkennung musst du nichts anlegen.</p>
-      <div className="grid gap-4 md:grid-cols-2">
-        <form className="space-y-3 rounded-2xl border bg-white p-4" onSubmit={(event) => {
-          event.preventDefault();
-          void save("create-aircraft", { label: droneName, model: droneModel, serialNumber: droneSerial, batteryCount: Number(initialBatteryCount) }, "Drohne und nummerierte Akkuplaetze angelegt.");
-        }}>
-          <h2 className="text-lg font-semibold">Drohne hinzufügen</h2>
-          <label className="block text-sm">Bezeichnung
-            <input required maxLength={64} className="mt-1 w-full rounded-lg border p-2" placeholder="z. B. Drohne 1" value={droneName} onChange={e => setDroneName(e.target.value)} />
-          </label>
-          <label className="block text-sm">Modell
-            <select className="mt-1 w-full rounded-lg border p-2" value={droneModel} onChange={e => setDroneModel(e.target.value)}>
-              <option value="DJI M3T">DJI Mavic 3 Thermal (M3T)</option>
-              <option value="DJI M4T">DJI Matrice 4 Thermal (M4T)</option>
-              <option value="Sonstiges">Sonstiges DJI-Modell</option>
-            </select>
-          </label>
-          <label className="block text-sm">Anzahl bereits beschrifteter Akkus (1 bis N automatisch anlegen)
-            <select className="mt-1 w-full rounded-lg border p-2" value={initialBatteryCount} onChange={e => setInitialBatteryCount(e.target.value)}>
-              <option value="0">0 – später erfassen</option>
-              <option value="3">3 Akkus</option>
-              <option value="4">4 Akkus</option>
-              <option value="5">5 Akkus</option>
-              <option value="6">6 Akkus</option>
-            </select>
-          </label>
-          <label className="block text-sm">Drohnen-Seriennummer (optional)
-            <input maxLength={80} className="mt-1 w-full rounded-lg border p-2" value={droneSerial} onChange={e => setDroneSerial(e.target.value)} />
-          </label>
-          <button disabled={busy || loading} className="w-full rounded-lg bg-slate-900 p-3 font-semibold text-white disabled:opacity-50">Drohne speichern</button>
-        </form>
-        <form className="space-y-3 rounded-2xl border bg-white p-4" onSubmit={(event) => {
-          event.preventDefault();
-          void save("register-battery", { aircraftId: selectedAircraft, labelNumber: Number(batteryNumber), serialNumber: batterySerial }, "Akku registriert.");
-        }}>
-          <h2 className="text-lg font-semibold">Beschrifteten Akku erfassen</h2>
-          <label className="block text-sm">Zugehörige Drohne
-            <select required className="mt-1 w-full rounded-lg border p-2" value={selectedAircraft} onChange={e => setSelectedAircraft(e.target.value)}>
-              {!items.length && <option value="">Zuerst Drohne anlegen</option>}
-              {items.filter(x => x.isActive).map(x => <option key={x.id} value={x.id}>{x.label} ({x.model})</option>)}
-            </select>
-          </label>
-          <label className="block text-sm">Nummer auf dem Akku
-            <input required min={1} max={99} type="number" className="mt-1 w-full rounded-lg border p-2" value={batteryNumber} onChange={e => setBatteryNumber(e.target.value)} />
-          </label>
-          <label className="block text-sm">Seriennummer (optional – später zuordnen)
-            <input maxLength={80} className="mt-1 w-full rounded-lg border p-2" value={batterySerial} onChange={e => setBatterySerial(e.target.value)} />
-          </label>
-          <button disabled={busy || loading || !selectedAircraft} className="w-full rounded-lg bg-emerald-700 p-3 font-semibold text-white disabled:opacity-50">Akku speichern</button>
-        </form>
-      </div>
+      <details className="rounded-2xl border border-slate-300 bg-slate-50 p-4">
+        <summary className="cursor-pointer text-base font-semibold text-slate-900">Manuelle Erfassung (nur Notfall) – aufklappen</summary>
+        <p className="my-3 text-sm text-slate-600">Normalerweise werden Drohnen und Akkus automatisch über DJI erkannt. Nur bei Bedarf manuell hinzufügen.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <form className="space-y-3 rounded-2xl border bg-white p-4" onSubmit={(event) => {
+            event.preventDefault();
+            void save("create-aircraft", { label: droneName, model: droneModel, serialNumber: droneSerial, batteryCount: Number(initialBatteryCount) }, "Drohne und nummerierte Akkuplaetze angelegt.");
+          }}>
+            <h2 className="text-lg font-semibold">Drohne hinzufügen</h2>
+            <label className="block text-sm">Bezeichnung
+              <input required maxLength={64} className="mt-1 w-full rounded-lg border p-2" placeholder="z. B. Drohne 1" value={droneName} onChange={e => setDroneName(e.target.value)} />
+            </label>
+            <label className="block text-sm">Modell
+              <select className="mt-1 w-full rounded-lg border p-2" value={droneModel} onChange={e => setDroneModel(e.target.value)}>
+                <option value="DJI M3T">DJI Mavic 3 Thermal (M3T)</option>
+                <option value="DJI M4T">DJI Matrice 4 Thermal (M4T)</option>
+                <option value="Sonstiges">Sonstiges DJI-Modell</option>
+              </select>
+            </label>
+            <label className="block text-sm">Anzahl bereits beschrifteter Akkus (1 bis N automatisch anlegen)
+              <select className="mt-1 w-full rounded-lg border p-2" value={initialBatteryCount} onChange={e => setInitialBatteryCount(e.target.value)}>
+                <option value="0">0 – später erfassen</option>
+                <option value="3">3 Akkus</option>
+                <option value="4">4 Akkus</option>
+                <option value="5">5 Akkus</option>
+                <option value="6">6 Akkus</option>
+              </select>
+            </label>
+            <label className="block text-sm">Drohnen-Seriennummer (optional)
+              <input maxLength={80} className="mt-1 w-full rounded-lg border p-2" value={droneSerial} onChange={e => setDroneSerial(e.target.value)} />
+            </label>
+            <button disabled={busy || loading} className="w-full rounded-lg bg-slate-900 p-3 font-semibold text-white disabled:opacity-50">Drohne speichern</button>
+          </form>
+          <form className="space-y-3 rounded-2xl border bg-white p-4" onSubmit={(event) => {
+            event.preventDefault();
+            void save("register-battery", { aircraftId: selectedAircraft, labelNumber: Number(batteryNumber), serialNumber: batterySerial }, "Akku registriert.");
+          }}>
+            <h2 className="text-lg font-semibold">Beschrifteten Akku erfassen</h2>
+            <label className="block text-sm">Zugehörige Drohne
+              <select required className="mt-1 w-full rounded-lg border p-2" value={selectedAircraft} onChange={e => setSelectedAircraft(e.target.value)}>
+                {!items.length && <option value="">Zuerst Drohne anlegen</option>}
+                {items.filter(x => x.isActive).map(x => <option key={x.id} value={x.id}>{x.label} ({x.model})</option>)}
+              </select>
+            </label>
+            <label className="block text-sm">Nummer auf dem Akku
+              <input required min={1} max={99} type="number" className="mt-1 w-full rounded-lg border p-2" value={batteryNumber} onChange={e => setBatteryNumber(e.target.value)} />
+            </label>
+            <label className="block text-sm">Seriennummer (optional – später zuordnen)
+              <input maxLength={80} className="mt-1 w-full rounded-lg border p-2" value={batterySerial} onChange={e => setBatterySerial(e.target.value)} />
+            </label>
+            <button disabled={busy || loading || !selectedAircraft} className="w-full rounded-lg bg-emerald-700 p-3 font-semibold text-white disabled:opacity-50">Akku speichern</button>
+          </form>
+        </div>
+      </details>
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -158,6 +162,27 @@ export default function DjiBatteryInventoryClient() {
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h3 className="text-lg font-bold">{aircraft.label} <span className="text-sm font-normal text-slate-600">({aircraft.model})</span></h3>
               <span className="text-xs text-slate-500">{aircraft.batteries.filter(b => b.status !== "RETIRED").length} aktive/gesperrte Akkus</span>
+            </div>
+            {/* DJI_ADMIN_UI_V11_5: die Drohne wird weiterhin allein per DJI-Seriennummer erkannt. */}
+            <div className="rounded-xl border border-sky-100 bg-sky-50 p-3">
+              <label className="block text-sm font-medium text-slate-800" htmlFor={`dji-aircraft-number-${aircraft.id}`}>Nummer auf der Drohne</label>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  id={`dji-aircraft-number-${aircraft.id}`}
+                  type="number" min={1} max={99} step={1}
+                  className="w-24 rounded-lg border bg-white p-2 text-sm"
+                  placeholder="1–99"
+                  value={aircraftNumberInputs[aircraft.id] ?? (/^Drohne ([1-9]\d?)$/.exec(aircraft.label)?.[1] ?? "")}
+                  onChange={(event) => setAircraftNumberInputs(old => ({ ...old, [aircraft.id]: event.target.value }))}
+                />
+                <button
+                  type="button"
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  disabled={busy || loading || !/^(?:[1-9]|[1-9]\d)$/.test(aircraftNumberInputs[aircraft.id] ?? (/^Drohne ([1-9]\d?)$/.exec(aircraft.label)?.[1] ?? ""))}
+                  onClick={() => void save("set-aircraft-number", { aircraftId: aircraft.id, number: Number(aircraftNumberInputs[aircraft.id] ?? (/^Drohne ([1-9]\d?)$/.exec(aircraft.label)?.[1] ?? "")) }, "Drohnennummer gespeichert.")}
+                >Nummer speichern</button>
+                <span className="text-xs text-slate-600">Die DJI-Seriennummer und automatische Erkennung bleiben bestehen.</span>
+              </div>
             </div>
             {recommendation && <p className="rounded-lg bg-emerald-50 p-2 text-sm text-emerald-900">Geringste bekannte Ladezyklen: <strong>Akku {recommendation.labelNumber}</strong>. Ladezustand und technischen Zustand vor Nutzung prüfen.</p>}
             <div className="space-y-2">
