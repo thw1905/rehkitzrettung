@@ -1,3 +1,4 @@
+import DjiGlobalBatteryRecommendation from "@/components/dji/DjiGlobalBatteryRecommendation";
 import "./globals.css";
 import Providers from "./providers";
 import AppHeader from "@/components/layout/app-header";
@@ -37,7 +38,9 @@ export default async function RootLayout({
           
           {session?.user ? <MobileBottomNav user={user} /> : null}
         </Providers>
-      </body>
+        {/* DJI_BATTERY_GLOBAL_V8: always available to authenticated pilots. */}
+  <DjiGlobalBatteryRecommendation />
+</body>
     </html>
   );
 }

@@ -89,8 +89,39 @@ async function registerAndUpdateBattery(db, lastWritten, aircraftSerial, item) {
   if (item.temperatureC != null) data.temperatureC = item.temperatureC;
   if (item.voltageMv != null) data.voltageMv = item.voltageMv;
   await db.djiBattery.update({ where: { id: battery.id }, data });
+  // DJI_BATTERY_GLOBAL_V8: sichtbarer, aktiver Akku gilt als heute eingesetzt.
+  if (battery.status === "ACTIVE" && battery.labelNumber != null) {
+    await v8MarkDetectedToday(db, drone.id, battery.id, new Date(now));
+  }
   lastWritten.set(battery.id, now);
   console.log(`AKKU AKTUALISIERT: ${drone.label}, Nummer ${battery.labelNumber ?? "noch offen"}, Zyklen ${item.cycles ?? "?"}, Stand ${item.capacityPercent ?? "?"}%`);
+}
+
+// DJI_BATTERY_GLOBAL_V8: "today used" means detected in the aircraft today, not proven in-flight.
+// The day boundary is Europe/Berlin. Detection alone must not count as a flown mission.
+const v8Recorded = new Set();
+function v8GermanDay(date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(date);
+  const part = (name) => parts.find((p) => p.type === name)?.value || "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+async function v8MarkDetectedToday(db, aircraftId, batteryId, now) {
+  const day = v8GermanDay(now);
+  const key = `${batteryId}:${day}`;
+  if (v8Recorded.has(key)) return;
+  const existing = await db.djiBatteryUsage.findMany({
+    where: { batteryId, startedAt: { gte: new Date(now.getTime() - 48 * 3600_000) } },
+    select: { startedAt: true },
+  });
+  if (!existing.some((item) => v8GermanDay(item.startedAt) === day)) {
+    await db.djiBatteryUsage.create({
+      data: { aircraftId, batteryId, startedAt: now, source: "DJI_DETECTED" },
+    });
+    console.log("AKKU HEUTE ERKANNT: Einsatzwechsel-Empfehlung wird aktualisiert.");
+  }
+  v8Recorded.add(key);
 }
 
 function selfTest() {

@@ -340,6 +340,9 @@ export default function PilotSimpleClient() {
         setAircraftChoices((old) => old.some((a) => a.id === detected.aircraft.id)
           ? old : [...old, detected.aircraft].sort((a, z) => a.label.localeCompare(z.label)));
         setSelectedAircraft(detected.aircraft.id);
+        // DJI_BATTERY_GLOBAL_V8: mit dem seitenweiten Overlay synchronisieren.
+        window.localStorage.setItem("rk-dji-preferred-aircraft", detected.aircraft.id);
+        window.dispatchEvent(new Event("rk-dji-aircraft-change"));
         setAircraftDetection("Verbundene DJI-Drohne automatisch erkannt.");
       } catch (error) {
         if (!cancelled) {
@@ -491,12 +494,8 @@ export default function PilotSimpleClient() {
                 {aircraftChoices.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
               </select>
               <p className="text-xs text-slate-600" role="status">{aircraftDetection}</p>
-              {selectedAircraft && batteryRecommendation && (
-                <p className="rounded-lg bg-slate-100 p-2" role="status">
-                  {batteryRecommendation.number != null && <><strong>Naechster Akku: Nr. {batteryRecommendation.number}</strong>. </>}
-                  {batteryRecommendation.note}
-                </p>
-              )}
+              {/* DJI_BATTERY_GLOBAL_V8: die bisherige, ladestandsabhaengige Empfehlung ausblenden. */}
+             
             </div>
 
             {info?.disabledReason && (
