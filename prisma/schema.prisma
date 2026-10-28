@@ -652,3 +652,16 @@ model DjiBatteryUsage {
   @@index([operationDayId, startedAt])
   @@index([orderId, startedAt])
 }
+
+// DJI_FLIGHT_AREA_V11: aggregierte Flugzeit; KEINE GPS-Rohpositionen werden gespeichert.
+model DjiFlightAreaTime {
+  id            String   @id @default(cuid())
+  flightUsageId String
+  orderId       String?
+  bucket        String
+  seconds       Int
+  createdAt     DateTime @default(now())
+
+  @@unique([flightUsageId, bucket, orderId])
+  @@index([orderId, createdAt])
+}
