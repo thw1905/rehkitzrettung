@@ -1,5 +1,5 @@
 "use client";
-// DJI_BATTERY_GLOBAL_V8: unobtrusive global pilot overlay, including DJI Pilot 2 webview.
+// DJI_BATTERY_PLACEMENT_V8_1: inline card for My Orders and DJI Pilot 2; never a floating overlay.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
@@ -85,8 +85,8 @@ export default function DjiGlobalBatteryRecommendation() {
   const chosen = Boolean(data.aircraftId);
   const mainText = data.nextNumber !== null ? `Akku ${data.nextNumber}` : "Keine Empfehlung";
   return (
-    <aside aria-label="DJI Akkuempfehlung" className="pointer-events-none fixed bottom-3 right-3 z-[9999] w-[min(350px,calc(100vw-24px))] text-slate-900">
-      <section className="pointer-events-auto overflow-hidden rounded-xl border border-slate-300 bg-white shadow-xl">
+    <aside aria-label="DJI Akkuempfehlung" className="w-full text-slate-900">
+      <section className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-2 bg-slate-900 px-3 py-2 text-sm font-semibold text-white">
           <span>🔋 DJI-Akkuempfehlung</span>
           <button type="button" onClick={() => setMinimized((value) => !value)}

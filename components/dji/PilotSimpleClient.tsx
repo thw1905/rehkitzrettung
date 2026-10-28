@@ -1,5 +1,7 @@
 "use client";
 
+import DjiGlobalBatteryRecommendation from "@/components/dji/DjiGlobalBatteryRecommendation";
+
 import { useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 
@@ -461,6 +463,8 @@ export default function PilotSimpleClient() {
         </section>
       ) : (
         <>
+          {/* DJI_BATTERY_PLACEMENT_V8_1: Akkuempfehlung vor dem ersten Start sichtbar, auch ohne Tagesauftrag. */}
+          <DjiGlobalBatteryRecommendation />
           <section className="space-y-3 rounded-2xl border bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-2">
               <div>
