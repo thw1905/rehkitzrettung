@@ -221,12 +221,14 @@ export default function AppHeader({ user }: AppHeaderProps) {
   const fullName =
     `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Unbekannt";
 
+  // REHKITZ_WILD_DIALOG_MENUE_V2 – Sicherungsorte fuer alle Rollen im persoenlichen Menue.
   const personalNavSections = [
     {
       title: "Meine Einsätze",
       color: "border-blue-200 bg-blue-50 text-blue-950",
       items: [
         { href: "/my-orders", label: "Meine Aufträge" },
+        { href: "/sicherungsorte", label: "Wild-Sicherungsorte" },
         { href: "/my-notifications", label: "Meine Benachrichtigungen" },
         { href: "/team-members", label: "Mein Team" },
       ],

@@ -1,3 +1,4 @@
+// REHKITZ_WILD_DIALOG_MENUE_V2 – Handy: Wild-Sicherungsorte fuer alle angemeldeten Rollen.
 // DJI_ADMIN_UI_V11_5: DJI-Verbindung nur aus Navigation ausgeblendet.
 "use client";
 
@@ -121,11 +122,13 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
         { href: "/personal", label: "Persönlich", icon: "👤" },
         { href: "/management", label: "Verwaltung", icon: "⚙️" },
         { href: "/operations", label: "Einsatz", icon: "📊" },
+        { href: "/sicherungsorte", label: "Sicherungsorte", icon: "\uD83D\uDCCD" },
         { href: "/hilfe", label: "Hilfe", icon: "❓" },
       ]
     : [
         { href: "/personal", label: "Persönlich", icon: "👤" },
         { href: "/dashboard", label: "Dashboard", icon: "🏠" },
+        { href: "/sicherungsorte", label: "Sicherungsorte", icon: "\uD83D\uDCCD" },
         { href: "/hilfe", label: "Hilfe", icon: "❓" },
       ];
 

@@ -1,3 +1,4 @@
+// REHKITZ_WILD_DIALOG_MENUE_V2 – vereinfachter Sicherungsort-Dialog.
 "use client";
 // REHKITZ_WILD_KONTRAST_V1 – explizit dunkle Schrift auf hellem Untergrund.
 import { useState } from "react";
@@ -35,14 +36,12 @@ export default function SecuredWildCaptureModal({ orderId, pinpointId, onClose }
   }
   return <div className="fixed inset-0 z-[160] flex items-center justify-center bg-black/60 p-4">
     <section role="dialog" aria-modal="true" aria-label="Sicherungsort erfassen" className={`max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-300 bg-white p-5 text-slate-950 shadow-2xl space-y-4 ${styles.modalSurface}`}>
-      <h2 className={`text-xl font-bold text-slate-950 ${styles.dialogTitle}`}>Wild-Sicherungsort erfassen?</h2>
+      <h2 className={`text-xl font-bold text-slate-950 ${styles.dialogTitle}`}>Wild-Sicherungsort erfassen</h2>
       {!site ? <>
-        <p className="text-base leading-relaxed text-slate-900">Du hast gesichertes Wild erfasst. Soll dein jetziger Handy-Standort als Sicherungsort gespeichert werden?</p>
+        <p className="text-base leading-relaxed text-slate-900">Du hast gesichertes Wild erfasst. Übernimm jetzt den aktuellen GPS-Standort direkt am gesicherten Tier.</p>
         <button type="button" disabled={busy} onClick={() => void capture()} className="w-full rounded-xl bg-green-800 p-3 font-semibold text-white hover:bg-green-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-800 disabled:opacity-50">
           {busy ? "GPS wird ermittelt …" : "Aktuellen Standort übernehmen"}
         </button>
-        <button type="button" disabled={busy} onClick={onClose} className={`w-full rounded-xl border border-slate-500 bg-white p-3 font-semibold text-slate-950 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 ${styles.secondaryButton}`}>Ohne Sicherungsort fortfahren</button>
-        <p className="text-sm leading-relaxed text-slate-700">Das Wildzahlergebnis ist bereits gespeichert. Der Sicherungsort wird um Mitternacht gelöscht. Keine Freilass-Bestätigung erforderlich.</p>
       </> : <>
         <p className="font-semibold text-green-900">Sicherungsort gespeichert.</p>
         {accuracy != null && <p className={`text-sm text-slate-900 ${styles.accuracyText}`}>GPS-Genauigkeit ca. {Math.round(accuracy)} m{accuracy > 50 ? " – bitte Standort prüfen." : "."}</p>}
