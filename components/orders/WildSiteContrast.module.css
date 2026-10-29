@@ -1,0 +1,53 @@
+/* REHKITZ_WILD_KONTRAST_V2 - CSS gilt nur in den neuen Wild-Sicherungsort-Fenstern. */
+.modalSurface.modalSurface {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  color-scheme: light;
+}
+.modalSurface .dialogTitle.dialogTitle {
+  color: #111827 !important;
+}
+.modalSurface .accuracyText.accuracyText {
+  color: #334155 !important;
+  opacity: 1 !important;
+}
+.modalSurface .secondaryButton.secondaryButton {
+  background-color: #e2e8f0 !important;
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+  border: 1px solid #64748b !important;
+  opacity: 1 !important;
+}
+.modalSurface .secondaryButton.secondaryButton:hover {
+  background-color: #cbd5e1 !important;
+}
+.sharePanel.sharePanel {
+  background-color: #f8fafc !important;
+  color: #111827 !important;
+  color-scheme: light;
+}
+.sharePanel .copyButton.copyButton {
+  background-color: #e2e8f0 !important;
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+  border: 1px solid #64748b !important;
+  opacity: 1 !important;
+}
+.sharePanel .copyButton.copyButton:hover {
+  background-color: #cbd5e1 !important;
+}
+.sharePanel .linkLabel.linkLabel {
+  color: #111827 !important;
+  opacity: 1 !important;
+}
+.sharePanel .linkInput.linkInput {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+  opacity: 1 !important;
+  border: 1px solid #94a3b8 !important;
+}
+.sharePanel .shareHint.shareHint {
+  color: #334155 !important;
+  opacity: 1 !important;
+}

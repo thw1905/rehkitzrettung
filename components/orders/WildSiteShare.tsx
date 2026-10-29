@@ -2,6 +2,7 @@
 // REHKITZ_WILD_KONTRAST_V1 – explizit dunkle Schrift auf hellem Untergrund.
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
+import styles from "./WildSiteContrast.module.css";
 
 type Props = { url: string; expiresAt: string };
 export default function WildSiteShare({ url, expiresAt }: Props) {
@@ -28,17 +29,17 @@ export default function WildSiteShare({ url, expiresAt }: Props) {
       if (e instanceof Error && e.name !== "AbortError") setError("Teilen fehlgeschlagen.");
     }
   }
-  return <div className="space-y-3 rounded-xl border border-slate-400 bg-slate-50 p-3 text-slate-950">
+  return <div className={`space-y-3 rounded-xl border border-slate-400 bg-slate-50 p-3 text-slate-950 ${styles.sharePanel}`}>
     {expired ? <p className="font-semibold text-red-900">Dieser Punkt ist abgelaufen.</p> : <>
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => void share()} className="rounded-xl bg-green-800 px-4 py-2 font-semibold text-white hover:bg-green-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-800">Teilen</button>
-        <button type="button" onClick={() => void copy()} className="rounded-xl border border-slate-500 bg-white px-4 py-2 font-semibold text-slate-950 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700">{copied ? "Link kopiert" : "Link kopieren"}</button>
+        <button type="button" onClick={() => void copy()} className={`rounded-xl border border-slate-500 bg-white px-4 py-2 font-semibold text-slate-950 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 ${styles.copyButton}`}>{copied ? "Link kopiert" : "Link kopieren"}</button>
       </div>
-      <label className="block text-sm font-semibold text-slate-900">Freigabelink
-        <input readOnly value={url} onFocus={e => e.currentTarget.select()} className="mt-1 w-full rounded-lg border border-slate-500 bg-white p-3 text-sm text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-800" />
+      <label className={`block text-sm font-semibold text-slate-900 ${styles.linkLabel}`}>Freigabelink
+        <input readOnly value={url} onFocus={e => e.currentTarget.select()} className={`mt-1 w-full rounded-lg border border-slate-500 bg-white p-3 text-sm text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-800 ${styles.linkInput}`} />
       </label>
       {qr && <div className="inline-block rounded-xl bg-white p-3 ring-1 ring-slate-300"><img src={qr} alt="QR-Code zum Wild-Sicherungsort" width={240} height={240} /></div>}
-      <p className="text-sm leading-relaxed text-slate-700">Der QR-Code enthält denselben Link. Empfänger benötigen keine Anmeldung. Gültig bis 24:00 Uhr.</p>
+      <p className={`text-sm leading-relaxed text-slate-700 ${styles.shareHint}`}>Der QR-Code enthält denselben Link. Empfänger benötigen keine Anmeldung. Gültig bis 24:00 Uhr.</p>
     </>}
     {error && <p role="alert" className="rounded-lg bg-red-50 p-2 text-sm font-semibold text-red-900">{error}</p>}
   </div>;
