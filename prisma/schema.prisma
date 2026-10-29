@@ -665,3 +665,22 @@ model DjiFlightAreaTime {
   @@unique([flightUsageId, bucket, orderId])
   @@index([orderId, createdAt])
 }
+
+// REHKITZ_WILD_SITES_V1: Temporaere GPS-Standorte gesicherter Tiere (NICHT DJI-PinPoints).
+model SecuredWildLocation {
+  id                     String   @id @default(cuid())
+  orderId                String
+  pinpointId             String   @unique
+  createdByUserId        String
+  latitude               Float
+  longitude              Float
+  accuracyMeters         Float?
+  rehkitzeGesichert      Int      @default(0)
+  sonstigesWildGesichert Int      @default(0)
+  shareToken             String   @unique
+  expiresAt              DateTime
+  createdAt              DateTime @default(now())
+
+  @@index([expiresAt])
+  @@index([orderId])
+}

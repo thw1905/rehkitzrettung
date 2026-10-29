@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import QrScannerModal from "@/components/orders/qr-scanner-modal";
+import SecuredWildCaptureModal from "@/components/orders/SecuredWildCaptureModal";
 import DirectFindingsCorrectionModal from "@/components/orders/direct-findings-correction-modal";
 import type { Pinpoint } from "@/components/orders/order-field-map";
 import { useTeamLiveLocation } from "@/components/orders/use-team-live-location";
@@ -528,6 +529,7 @@ export default function MyOrdersPageClient({
   }, [finishModal]);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [pinpointModalId, setPinpointModalId] = useState<string | null>(null);
+  const [wildLocationPrompt, setWildLocationPrompt] = useState<{ orderId: string; pinpointId: string } | null>(null); // REHKITZ_WILD_SITES_V1
   const editingPinpointIdRef = useRef<string | null>(null);
   useEffect(() => { editingPinpointIdRef.current = pinpointModalId; }, [pinpointModalId]);
   const [claimingPinpoint, setClaimingPinpoint] = useState(false);
@@ -1205,6 +1207,9 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
         sonstigesWildAbgesprungen: toNumber(draft.sonstigesWildAbgesprungen),
         maulwurfhuegelFehlstelle: toNumber(draft.maulwurfhuegelFehlstelle),
       });
+      if (toNumber(draft.rehkitzeGesichert) > 0 || toNumber(draft.sonstigesWildGesichert) > 0) {
+        setWildLocationPrompt({ orderId: order.id, pinpointId: pinpoint.id });
+      }
 
       setPinpointModalId(null);
       if (correctionMode) {
@@ -2323,6 +2328,14 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
           </div>
         </div>
       )}
+      {wildLocationPrompt && (
+        <SecuredWildCaptureModal
+          orderId={wildLocationPrompt.orderId}
+          pinpointId={wildLocationPrompt.pinpointId}
+          onClose={() => setWildLocationPrompt(null)}
+        />
+      )}
+      <a href="/sicherungsorte" className="fixed bottom-3 right-3 z-[80] rounded-xl bg-green-700 px-4 py-3 text-sm font-semibold text-white shadow-xl">Wild-Sicherungsorte teilen</a>
       <QrScannerModal
   open={qrScannerOrderId !== null}
   onClose={() => setQrScannerOrderId(null)}
