@@ -1,3 +1,4 @@
+// REHKITZ_WILD_KONTRAST_V1 – explizit dunkle Schrift auf hellem Untergrund.
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 
@@ -18,18 +19,18 @@ export default async function PublicWildSitePage({ params }: Props) {
   const destination = `${site.latitude},${site.longitude}`;
   const maps = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
   return (
-    <main className="mx-auto max-w-lg space-y-5 p-6" style={{ minHeight: "75vh" }}>
-      <h1 className="text-2xl font-bold">Wild-Sicherungsort</h1>
-      <p>Dieser GPS-Punkt wurde durch die Rehkitzrettung Hegering Hittfeld freigegeben.</p>
-      <div className="rounded-xl border p-4 space-y-2">
-        <p className="font-semibold">Standort: {site.latitude.toFixed(6)}, {site.longitude.toFixed(6)}</p>
-        <p className="text-sm">Gültig bis heute 24:00 Uhr (deutsche Ortszeit).</p>
+    <main className="mx-auto max-w-lg space-y-5 rounded-xl bg-white p-6 text-slate-950" style={{ minHeight: "75vh" }}>
+      <h1 className="text-2xl font-bold text-slate-950">Wild-Sicherungsort</h1>
+      <p className="text-base leading-relaxed text-slate-900">Dieser GPS-Punkt wurde durch die Rehkitzrettung Hegering Hittfeld freigegeben.</p>
+      <div className="rounded-xl border border-slate-300 bg-slate-50 p-4 text-slate-950 space-y-2">
+        <p className="font-semibold text-slate-950">Standort: {site.latitude.toFixed(6)}, {site.longitude.toFixed(6)}</p>
+        <p className="text-sm text-slate-700">Gültig bis heute 24:00 Uhr (deutsche Ortszeit).</p>
       </div>
       <a href={maps} target="_blank" rel="noopener noreferrer"
-         className="block rounded-xl bg-green-700 p-4 text-center font-bold text-white">
+         className="block rounded-xl bg-green-800 p-4 text-center font-bold text-white hover:bg-green-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-800">
         Mit Google Maps navigieren
       </a>
-      <p className="text-sm text-gray-600">Es ist keine Anmeldung erforderlich. Dieser Link wird um Mitternacht ungültig. Ein bereits geöffneter Kartenstandort kann von der Rehkitzrettung nicht aus Google Maps entfernt werden.</p>
+      <p className="text-sm leading-relaxed text-slate-700">Es ist keine Anmeldung erforderlich. Dieser Link wird um Mitternacht ungültig. Ein bereits geöffneter Kartenstandort kann von der Rehkitzrettung nicht aus Google Maps entfernt werden.</p>
     </main>
   );
 }
