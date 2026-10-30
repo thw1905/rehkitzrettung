@@ -1,0 +1,128 @@
+  return (
+    <>
+      <style>{String.raw`/* DJI_VIEW_COMPAT_V1: intentionally simple CSS for older Android WebViews. */
+.dji-only-view, .dji-only-view * { box-sizing: border-box; }
+.dji-only-view main {
+  display: block !important;
+  width: 100% !important;
+  max-width: 760px !important;
+  margin: 0 auto !important;
+  padding: 20px 16px 40px !important;
+  background: transparent !important;
+  color: #1b293b !important;
+  font: 16px/1.45 Arial, Helvetica, sans-serif !important;
+}
+.dji-only-view section {
+  display: block !important;
+  background: #fff !important;
+  border: 1px solid #d5deea !important;
+  border-radius: 14px !important;
+  padding: 20px !important;
+  margin: 0 0 16px !important;
+  box-shadow: 0 3px 12px rgba(18, 39, 67, 0.10) !important;
+  color: #1b293b !important;
+}
+.dji-only-view h1, .dji-only-view h2 {
+  display: block !important;
+  margin: 0 0 12px !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+  color: #12324d !important;
+}
+.dji-only-view h1 { font-size: 26px !important; }
+.dji-only-view h2 { font-size: 21px !important; }
+.dji-only-view section p, .dji-only-view section li {
+  margin: 8px 0 !important;
+  color: #304255 !important;
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+}
+.dji-only-view label {
+  display: block !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #22374b !important;
+  margin: 14px 0 10px !important;
+}
+.dji-only-view input, .dji-only-view select, .dji-only-view textarea {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 49px !important;
+  margin: 8px 0 !important;
+  padding: 10px 12px !important;
+  background: #fff !important;
+  color: #142b43 !important;
+  font: 17px Arial, Helvetica, sans-serif !important;
+  border: 1px solid #9eadbc !important;
+  border-radius: 8px !important;
+}
+.dji-only-view section button {
+  display: block !important;
+  width: 100% !important;
+  min-height: 48px !important;
+  padding: 11px 15px !important;
+  margin: 10px 0 !important;
+  font: 600 16px/1.3 Arial, Helvetica, sans-serif !important;
+  color: #12324d !important;
+  background: #eaf0f7 !important;
+  border: 1px solid #aabbd0 !important;
+  border-radius: 9px !important;
+  cursor: pointer;
+  white-space: normal !important;
+}
+.dji-only-view section button[class*="bg-slate-900"] {
+  background: #164468 !important;
+  color: #fff !important;
+  border-color: #164468 !important;
+}
+.dji-only-view section button:disabled {
+  opacity: 0.55 !important;
+  cursor: default !important;
+}
+.dji-only-view section [role="status"],
+.dji-only-view section [role="alert"] {
+  display: block !important;
+  margin: 12px 0 !important;
+  padding: 12px !important;
+  border: 1px solid #c8d8eb !important;
+  border-radius: 8px !important;
+  background: #f2f7fc !important;
+  color: #1b334a !important;
+  font-size: 16px !important;
+  overflow-wrap: break-word;
+}
+.dji-only-view section [class*="bg-amber"],
+.dji-only-view section [class*="text-amber"] {
+  background: #fff4d6 !important;
+  color: #704d00 !important;
+  padding: 12px !important;
+  border-radius: 8px !important;
+}
+.dji-only-view main > p {
+  padding: 7px !important;
+  margin: 10px 0 !important;
+  color: #3f5266 !important;
+  font-size: 14px !important;
+  text-align: center !important;
+}
+@media (max-width: 600px) {
+  .dji-only-view main { padding: 12px 10px 30px !important; }
+  .dji-only-view section { padding: 15px !important; }
+  .dji-only-view h1 { font-size: 23px !important; }
+}`}</style>
+      <div
+        className="dji-only-view"
+        style={{
+          position: "fixed", top: 0, right: 0, bottom: 0, left: 0,
+          zIndex: 2147483000, overflowY: "auto",
+          backgroundColor: "#edf3f9", color: "#1b293b",
+          WebkitOverflowScrolling: "touch", fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 16,
+        }}
+      >
+        <PilotLoginClient />
+      </div>
+    </>
+  );

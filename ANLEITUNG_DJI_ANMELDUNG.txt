@@ -1,0 +1,28 @@
+DJI Pilot 2 – Anmeldung wieder anzeigen
+
+Problem: Bei einer gespeicherten Anmeldung ohne Pilot-/Adminrolle zeigte /pilot-login
+nur "Für diese Seite wird die Rolle Pilot benötigt." und keinen Abmelden-Knopf.
+
+INSTALLATION (NUR WINDOWS, NICHT AUF UBUNTU ENTpacken):
+1. ZIP nach C:\Projekte\rehkitzrettung entpacken.
+2. In der Windows-Eingabeaufforderung im Projektordner ausführen:
+   node install-dji-anmeldung-fix.cjs --check
+   node install-dji-anmeldung-fix.cjs
+   npx.cmd tsc --noEmit
+   npm.cmd run build
+3. Git (ausschließlich diese Datei vormerken):
+   git add components/dji/PilotSimpleClient.tsx
+   git --no-pager diff --cached --name-only
+   git commit -m "DJI Pilot Login Konto wechseln"
+   git push origin main
+4. Ubuntu nach erfolgreichem Windows-Build:
+   cd /root/rehkitzrettung
+   git pull --ff-only origin main
+   npm run build
+   pm2 restart rehkitzrettung
+5. DJI Pilot 2: Cloud-Seite ganz schließen, wieder öffnen, dann
+   "Abmelden und als Pilot anmelden" wählen. Die Anmeldung erscheint danach.
+
+Das Update hebt keine Rollenprüfungen auf und ändert keine Datenbank.
+Sicherheitskopie wird außerhalb des Projektordners erstellt.
+Bitte keine DJI-Schlüssel oder Passwörter in den Chat kopieren.

@@ -1,0 +1,162 @@
+"use strict";
+/**
+ * DJI Einsatz/PIN v2 - targeted, fail-closed patch for the October 2026 app.
+ * Does not touch database, authentication keys, or DJI settings.
+ * No unvalidated partial writes; backups outside project root.
+ */
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const root = process.cwd();
+const paths = [
+  "components/dji/PilotSimpleClient.tsx",
+  "app/pilot-login/technik/page.tsx",
+  "app/pilot-login/layout.tsx",
+];
+function fail(message) { throw new Error("ABBRUCH: " + message + " (keine Programmdateien verändert)"); }
+function once(source, oldText, newText, desc) {
+  const pos = source.indexOf(oldText);
+  if (pos < 0 || source.indexOf(oldText, pos + oldText.length) !== -1) fail(`Unerwarteter Codeabschnitt: ${desc}. Bitte aktuelle Datei prüfen.`);
+  return source.slice(0, pos) + newText + source.slice(pos + oldText.length);
+}
+function patchPilot(src) {
+  if (src.includes("// DJI_VERIFIED_MAIN_V2")) return src;
+  let s = src;
+  s = once(s,
+    '  platformVerifyLicense?: (appId: string, appKey: string, license: string) => string;\n',
+    '  platformVerifyLicense?: (appId: string, appKey: string, license: string) => string;\n  platformIsVerified?: () => string | boolean;\n',
+    "DJI-Bridge-Definition");
+  const nextMarker = 'async function api<T>(url: string, init?: RequestInit): Promise<T> {';
+  const helper = `// DJI_VERIFIED_MAIN_V2: Lizenzaufruf ist nicht mit erfolgreicher Verifizierung gleichzusetzen.
+function djiVerified(raw: unknown): boolean {
+  if (typeof raw === "boolean") return raw;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  const parsed = reply(raw);
+  if (typeof parsed.code === "number" && parsed.code !== 0) return false;
+  const data = parsed.data;
+  if (typeof data === "boolean") return data;
+  if (data === "true") return true;
+  if (data && typeof data === "object") {
+    const nested = data as { verified?: unknown; isVerified?: unknown };
+    if (typeof nested.verified === "boolean") return nested.verified;
+    if (typeof nested.isVerified === "boolean") return nested.isVerified;
+  }
+  return false;
+}
+async function waitForVerifiedApp(dji: DjiBridge): Promise<void> {
+  if (!dji.platformIsVerified) {
+    throw new Error("DJI kann den App-Verifizierungsstatus nicht abfragen.");
+  }
+  for (let attempt = 0; attempt < 11; attempt += 1) {
+    if (djiVerified(dji.platformIsVerified())) return;
+    if (attempt < 10) await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("DJI meldet die App noch als unverifiziert. Bitte in Technik und Fehlersuche die Lizenz prüfen.");
+}
+`;
+  s = once(s, nextMarker, helper + nextMarker, "Hilfsfunktion vor API");
+  const chainPattern = /^([ \t]*)assertDji\(b\.platformVerifyLicense\(license\.appId, license\.appKey, license\.license\), "DJI-Lizenz"\);\n\1setPhase\("API und Workspace werden eingerichtet …"\);\n\1assertDji\(b\.platformLoadComponent\("api", JSON\.stringify\(\{ host: window\.location\.origin, token: sessionToken \}\)\), "API-Modul"\);/gm;
+  const hits = [...s.matchAll(chainPattern)];
+  if (hits.length !== 1) fail("Unerwarteter Stand bei API-Initialisierung. Bitte aktuelle Datei prüfen.");
+  const indent = hits[0][1];
+  s = s.replace(chainPattern, `${indent}assertDji(b.platformVerifyLicense(license.appId, license.appKey, license.license), "DJI-Lizenz");
+${indent}setPhase("DJI-App-Verifizierung wird bestätigt …");
+${indent}await waitForVerifiedApp(b);
+${indent}setPhase("API und Workspace werden eingerichtet …");
+${indent}assertDji(b.platformLoadComponent("api", JSON.stringify({ host: window.location.origin + "/", token: sessionToken })), "API-Modul");`);
+  s = once(s,
+    '<summary className="cursor-pointer font-semibold">Technik und Fehlersuche</summary>',
+    '<summary className="cursor-pointer font-semibold">Technik und Fehlersuche (PIN-geschützt)</summary>',
+    "Technik-Link");
+  s = once(s,
+    '<a className="block underline" href="/pilot-login/technik">Technische Testansicht öffnen</a>',
+    '{user?.isAdmin ? <a className="block underline" href="/pilot-login/technik">Technische Testansicht öffnen (Demo-/GPS-Test-PIN)</a> : <p>Technikzugang nur für Administratoren.</p>}',
+    "Admin-Link zur Technikseite");
+  // The server page is the actual access boundary: a URL entered manually is protected too.
+  return s;
+}
+function patchTechPage(src) {
+  if (src.includes("// DJI_TECH_PIN_V2")) return src;
+  if (!src.includes('import PilotLoginClient from "@/components/dji/PilotLoginClient";') || !src.includes('export default function PilotTechnicalPage() { return <PilotLoginClient />; }')) {
+    fail("Die Technikseite hat eine andere Struktur. PIN-Schutz wird nicht unsicher ergänzt.");
+  }
+  return `// DJI_TECH_PIN_V2: Technik nur für angemeldete Admins mit gültiger Demo/GPS-Test-PIN.
+import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { notFound } from "next/navigation";
+import PilotLoginClient from "@/components/dji/PilotLoginClient";
+import GpsTestPinGate from "@/components/admin/gps-test-pin-gate";
+import { gpsTestPrincipal, GPS_TEST_COOKIE_NAME, isValidGpsTestToken } from "@/lib/gps-test-access";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+  title: "DJI-Technik – Rehkitzrettung Hegering Hittfeld",
+  robots: { index: false, follow: false },
+};
+export default async function PilotTechnicalPage() {
+  const admin = await gpsTestPrincipal();
+  if (!admin) notFound();
+  const jar = await cookies();
+  if (!isValidGpsTestToken(jar.get(GPS_TEST_COOKIE_NAME)?.value, admin.id)) {
+    return <GpsTestPinGate />;
+  }
+  return <PilotLoginClient />;
+}
+`;
+}
+function patchLayout(src) {
+  if (src.includes("/* DJI_HEADER_CENTER_V2 */")) return src;
+
+  return once(
+    src,
+    '\n`;\n\nexport default function DjiPilotLayout',
+    '\n/* DJI_HEADER_CENTER_V2 */\n.dji-view-root main > header,\n.dji-view-root main > header h1,\n.dji-view-root main > header p { text-align: center !important; }\n`;\n\nexport default function DjiPilotLayout',
+    "DJI-Layout-CSS"
+  );
+}
+try {
+  const changes = [];
+  const patchers = [patchPilot, patchTechPage, patchLayout];
+  for (let i = 0; i < paths.length; i++) {
+    const absolute = path.join(root, paths[i]);
+    if (!fs.existsSync(absolute)) fail(`Datei fehlt: ${paths[i]}`);
+    const original = fs.readFileSync(absolute, "utf8");
+    const crlf = original.includes("\r\n");
+    const normalized = original.replace(/\r\n/g, "\n");
+    let updated = patchers[i](normalized);
+    if (crlf) updated = updated.replace(/\n/g, "\r\n");
+    if (updated !== original) changes.push({ absolute, original, updated, relative: paths[i] });
+  }
+  if (!changes.length) { console.log("DJI Einsatz/PIN V2 ist bereits installiert. Keine Änderung."); process.exit(0); }
+  const outside = path.join(root, "..", "rehkitzrettung-dji-backups");
+  fs.mkdirSync(outside, { recursive: true });
+  const backupDir = path.join(outside, `einsatz-pin-v2-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+  fs.mkdirSync(backupDir);
+  for (const c of changes) {
+    const backup = path.join(backupDir, c.relative);
+    fs.mkdirSync(path.dirname(backup), { recursive: true });
+    fs.writeFileSync(backup, c.original, { flag: "wx" });
+  }
+  const written = [];
+  try {
+    for (const c of changes) {
+      const tmp = c.absolute + ".dji-tmp-" + crypto.randomBytes(4).toString("hex");
+      fs.writeFileSync(tmp, c.updated, { flag: "wx" });
+      try { fs.renameSync(tmp, c.absolute); } catch (err) { try { fs.unlinkSync(tmp); } catch {} throw err; }
+      written.push(c);
+    }
+  } catch (err) {
+    for (const c of written.reverse()) fs.writeFileSync(c.absolute, c.original);
+    throw err;
+  }
+  console.log("Erfolgreich angepasst:");
+  changes.forEach(c => console.log("  " + c.relative));
+  console.log("Backups außerhalb des Projekts: " + backupDir);
+  console.log("Keine Prisma-, Server-, MQTT- oder Zugangsdaten geändert.");
+  console.log("Als Nächstes: npx.cmd tsc --noEmit && npm.cmd run build");
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exitCode = 1;
+}

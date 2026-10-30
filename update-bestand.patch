@@ -1,0 +1,521 @@
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -205,6 +205,7 @@
+ }
+ 
+ model OperationDayTeam {
++  meetingPointText String?
+   id              String                   @id @default(cuid())
+   operationDayId  String
+   teamId          String
+--- a/components/day-assignments/day-assignments-page-client.tsx
++++ b/components/day-assignments/day-assignments-page-client.tsx
+@@ -138,13 +138,16 @@
+   return getOrderLabel(a).localeCompare(getOrderLabel(b), "de");
+ }
+ 
+-type MeetingPointData = {
++type TeamMeetingPoint = {
++  operationDayTeamId: string;
++  teamName: string;
+   mode: "AUTO" | "MANUELL";
+   text: string;
+   autoText: string;
+   manualText: string;
+   sourceOrder: string | null;
+ };
++type TeamMeetingDraft = { mode: "AUTO" | "MANUELL"; manualText: string };
+ 
+ export default function DayAssignmentsPageClient() {
+   const searchParams = useSearchParams();
+@@ -164,11 +167,11 @@
+   const [meetingTime, setMeetingTime] = useState("");
+   const [savingMeetingTime, setSavingMeetingTime] = useState(false);
+   /* Treffpunkt Einsatztag */
+-  const [meetingPoint, setMeetingPoint] = useState<MeetingPointData | null>(null);
+-  const [meetingPointMode, setMeetingPointMode] = useState<"AUTO" | "MANUELL">("AUTO");
+-  const [manualMeetingPoint, setManualMeetingPoint] = useState("");
+-  const [savingMeetingPoint, setSavingMeetingPoint] = useState(false);
+-  const [meetingPointError, setMeetingPointError] = useState("");
++  const [teamPoints, setTeamPoints] = useState<Record<string, TeamMeetingPoint>>({});
++  const [teamDrafts, setTeamDrafts] = useState<Record<string, TeamMeetingDraft>>({});
++  const [savingPointTeamId, setSavingPointTeamId] = useState<string | null>(null);
++  const [optimizingTeamId, setOptimizingTeamId] = useState<string | null>(null);
++  const [routeInfo, setRouteInfo] = useState("");
+ 
+ 
+   function handleDateChange(date: string) {
+@@ -178,8 +181,9 @@
+ 
+   async function loadData(date: string) {
+     setLoading(true);
+-    setMeetingPoint(null);
+-    setMeetingPointError("");
++    setTeamPoints({});
++    setTeamDrafts({});
++    setRouteInfo("");
+ 
+     try {
+       const res = await fetch(
+@@ -196,14 +200,14 @@
+       setOrders(Array.isArray(data.orders) ? data.orders : []);
+       setDayTeams(Array.isArray(data.dayTeams) ? data.dayTeams : []);
+       const pointResponse = await fetch(
+-        `/api/operation-days/meeting-point?date=${encodeURIComponent(date)}`,
++        `/api/operation-day-teams/meeting-points?date=${encodeURIComponent(date)}`,
+         { cache: "no-store" },
+       );
+       const pointData = await pointResponse.json();
+-      if (!pointResponse.ok) throw new Error(pointData.error || "Treffpunkt konnte nicht geladen werden.");
+-      setMeetingPoint(pointData as MeetingPointData);
+-      setMeetingPointMode(pointData.mode === "MANUELL" ? "MANUELL" : "AUTO");
+-      setManualMeetingPoint(pointData.manualText || "");
++      if (!pointResponse.ok) throw new Error(pointData.error || "Team-Treffpunkte konnten nicht geladen werden.");
++      const points = (pointData.points || []) as TeamMeetingPoint[];
++      setTeamPoints(Object.fromEntries(points.map(p => [p.operationDayTeamId, p])));
++      setTeamDrafts(Object.fromEntries(points.map(p => [p.operationDayTeamId, {mode:p.mode, manualText:p.manualText}])));
+       setMeetingTime(data.operationDay?.meetingTime || "");
+     } catch (error: any) {
+       console.error("Fehler beim Laden:", error);
+@@ -271,7 +275,22 @@
+         throw new Error(data?.error || "Auftrag konnte nicht zugewiesen werden.");
+       }
+ 
++      // Bei neuer Team-Zuweisung die offene Route neu berechnen.
++      const previousTeamId = orders.find(o => o.id === orderId)?.operationDayTeam?.id;
++      const affected = Array.from(new Set([previousTeamId, operationDayTeamId].filter(Boolean))) as string[];
++      const warnings: string[] = [];
++      for (const teamId of affected) {
++        try {
++          // Bereits bestehende erste Aufträge beim Hinzufügen beibehalten.
++          const firstBefore = teamId === operationDayTeamId
++            ? (ordersByTeamId.get(teamId)?.[0]?.id || undefined)
++            : undefined;
++          const result = await requestRouteOptimization(teamId, firstBefore);
++          if (result.missingCoordinates.length) warnings.push(`${teamId}: ${result.missingCoordinates.length} Fläche(n) ohne GPS, am Ende eingeordnet.`);
++        } catch (error) { warnings.push(error instanceof Error ? error.message : "Route konnte nicht berechnet werden."); }
++      }
+       await loadData(selectedDate);
++      if (warnings.length) alert(`Auftrag zugeordnet. Hinweis zur Route:\n${warnings.join("\n")}`);
+     } catch (error: any) {
+       console.error("Fehler beim Zuweisen:", error);
+       alert(error?.message || "Auftrag konnte nicht zugewiesen werden.");
+@@ -296,6 +315,12 @@
+     const temp = teamOrders[orderIndex];
+     teamOrders[orderIndex] = teamOrders[targetIndex];
+     teamOrders[targetIndex] = temp;
++
++    // Neuer erster Auftrag => verbleibende Reihenfolge automatisch neu optimieren.
++    if (targetIndex === 0 || orderIndex === 0) {
++      await optimizeTeamRoute(dayTeam.id, teamOrders[0].id);
++      return;
++    }
+ 
+     setSavingOrderTeamId(dayTeam.id);
+ 
+@@ -377,43 +402,74 @@
+     }
+   }
+ 
+-  const meetingPointChanged = meetingPoint !== null && (
+-    meetingPointMode !== meetingPoint.mode ||
+-    (meetingPointMode === "MANUELL" && manualMeetingPoint.trim() !== meetingPoint.manualText)
++  function isTeamPointDirty(teamId: string) {
++    const current = teamPoints[teamId];
++    const draft = teamDrafts[teamId];
++    if (!current || !draft) return false;
++    return current.mode !== draft.mode ||
++      (draft.mode === "MANUELL" && draft.manualText.trim() !== current.manualText);
++  }
++
++  const hasUnsavedPoints = dayTeams.some(t => isTeamPointDirty(t.id));
++  const teamsWithoutPoints = dayTeams.filter(t =>
++    (ordersByTeamId.get(t.id)?.length || 0) > 0 && !teamPoints[t.id]?.text
+   );
+ 
+-  async function saveMeetingPoint() {
+-    if (meetingPointMode === "MANUELL" && !manualMeetingPoint.trim()) {
+-      setMeetingPointError("Bitte einen manuellen Treffpunkt angeben.");
+-      return;
+-    }
+-    setSavingMeetingPoint(true);
+-    setMeetingPointError("");
++  async function saveTeamPoint(teamId: string) {
++    const draft = teamDrafts[teamId];
++    if (!draft) return;
++    if (draft.mode === "MANUELL" && !draft.manualText.trim()) {
++      alert("Bitte einen manuellen Treffpunkt eingeben."); return;
++    }
++    setSavingPointTeamId(teamId);
+     try {
+-      const response = await fetch("/api/operation-days/meeting-point", {
+-        method: "PATCH",
+-        headers: { "Content-Type": "application/json" },
+-        body: JSON.stringify({
+-          date: selectedDate,
+-          meetingPointText: meetingPointMode === "MANUELL" ? manualMeetingPoint.trim() : null,
+-        }),
++      const res = await fetch("/api/operation-day-teams/meeting-points", {
++        method: "PATCH", headers: {"Content-Type":"application/json"},
++        body: JSON.stringify({ operationDayTeamId:teamId,
++          meetingPointText:draft.mode === "MANUELL" ? draft.manualText.trim() : null }),
+       });
+-      const data = await response.json();
+-      if (!response.ok) throw new Error(data.error || "Treffpunkt konnte nicht gespeichert werden.");
+-      setMeetingPoint(data as MeetingPointData);
+-      setMeetingPointMode(data.mode);
+-      setManualMeetingPoint(data.manualText);
+-    } catch (error) {
+-      setMeetingPointError(error instanceof Error ? error.message : "Fehler beim Speichern.");
+-    } finally { setSavingMeetingPoint(false); }
++      const data=await res.json();
++      if (!res.ok) throw new Error(data.error || "Teamtreffpunkt konnte nicht gespeichert werden.");
++      const point=data.point as TeamMeetingPoint;
++      setTeamPoints(prev=>({...prev,[teamId]:point}));
++      setTeamDrafts(prev=>({...prev,[teamId]:{mode:point.mode,manualText:point.manualText}}));
++    } catch(error) {
++      alert(error instanceof Error ? error.message : "Fehler beim Speichern.");
++    } finally {setSavingPointTeamId(null);}
++  }
++
++  async function requestRouteOptimization(teamId: string, firstOrderId?: string) {
++    const res=await fetch("/api/day-assignments/optimize-route", {
++      method:"POST",headers:{"Content-Type":"application/json"},
++      body: JSON.stringify({operationDayTeamId:teamId,firstOrderId:firstOrderId || null}),
++    });
++    const data=await res.json();
++    if(!res.ok) throw new Error(data.error || "Routenoptimierung fehlgeschlagen.");
++    return data as { orderIds:string[];distanceKm:number|null;missingCoordinates:string[] };
++  }
++
++  async function optimizeTeamRoute(teamId: string, firstOrderId?: string) {
++    setOptimizingTeamId(teamId);
++    setRouteInfo("");
++    try {
++      const result=await requestRouteOptimization(teamId, firstOrderId);
++      const distance=result.distanceKm === null ? "" : ` · ca. ${result.distanceKm.toFixed(1).replace(".",",")} km Luftlinie`;
++      await loadData(selectedDate);
++      setRouteInfo(`Route optimiert${distance}${result.missingCoordinates.length ? ` · ${result.missingCoordinates.length} ohne GPS am Ende` : ""}`);
++    } catch(error) {
++      alert(error instanceof Error ? error.message : "Routenoptimierung fehlgeschlagen.");
++      await loadData(selectedDate);
++    } finally {setOptimizingTeamId(null);}
+   }
+ 
+   async function notifyTeams() {
+-    if (meetingPointChanged) { alert("Bitte Treffpunkt zuerst speichern."); return; }
+-    if (!meetingPoint?.text) { alert("Bitte einen Treffpunkt festlegen, bevor Benachrichtigungen gesendet werden."); return; }
++    if (hasUnsavedPoints) { alert("Bitte die geänderten Team-Treffpunkte zuerst speichern."); return; }
++    if (teamsWithoutPoints.length) { alert(`Für folgende Teams fehlt ein Treffpunkt: ${teamsWithoutPoints.map(t=>t.team.name).join(", ")}`); return; }
+     if (!meetingTime || savingMeetingTime) { alert("Bitte zuerst die Treffzeit speichern."); return; }
+-    const confirmed = window.confirm(
+-      `Einsatz am ${selectedDate}\nTreffzeit: ${meetingTime || "nicht angegeben"}\nTreffpunkt:\n${meetingPoint?.text}\n\nHelfer benachrichtigen und Revierpächter-Mails senden?`
++    const summary=dayTeams.filter(t=>(ordersByTeamId.get(t.id)?.length || 0)>0)
++      .map(t=>`${t.team.name}:\n${teamPoints[t.id]?.text || "FEHLT"}`).join("\n\n");
++    const confirmed=window.confirm(
++      `Einsatz am ${selectedDate}\nTreffzeit: ${meetingTime}\n\nTeam-Treffpunkte:\n${summary}\n\nHelfer benachrichtigen und Revierpächter-Mails senden?`
+     );
+ 
+     if (!confirmed) return;
+@@ -492,37 +548,9 @@
+             )}
+           </div>
+ 
+-          {/* Treffpunkt des Einsatztages */}
+-          <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+-            <h2 className="text-base font-bold text-gray-950">Treffpunkt für diesen Einsatztag</h2>
+-            <p className="mt-1 text-sm text-gray-700">Standard: Treffpunkt der Fläche des ersten zugeteilten Auftrags. Du kannst stattdessen einen anderen Treffpunkt eingeben.</p>
+-            <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold text-gray-900">
+-              <label className="flex items-center gap-2">
+-                <input type="radio" checked={meetingPointMode === "AUTO"} onChange={() => setMeetingPointMode("AUTO")} /> Automatisch
+-              </label>
+-              <label className="flex items-center gap-2">
+-                <input type="radio" checked={meetingPointMode === "MANUELL"} onChange={() => setMeetingPointMode("MANUELL")} /> Manuell festlegen
+-              </label>
+-            </div>
+-            {meetingPointMode === "AUTO" ? (
+-              <div className="mt-3 rounded-xl bg-white p-3">
+-                <div className="text-xs font-semibold text-gray-500">Erster Auftrag: {meetingPoint?.sourceOrder || "Noch keiner zugeteilt"}</div>
+-                <pre className="mt-2 whitespace-pre-wrap break-all font-sans text-sm text-gray-900">{meetingPoint?.autoText || "Für den ersten Auftrag ist noch kein Treffpunkt hinterlegt. Bitte in der Fläche einen Treffpunkt setzen oder manuell festlegen."}</pre>
+-              </div>
+-            ) : (
+-              <div className="mt-3">
+-                <label htmlFor="manual-day-point" className="block text-sm font-semibold text-gray-900">Treffpunkt / Adresse / GPS-Koordinaten</label>
+-                <textarea id="manual-day-point" rows={3} maxLength={500} value={manualMeetingPoint} onChange={e => setManualMeetingPoint(e.target.value)} placeholder="z. B. Parkplatz am Sportplatz, Musterstraße 12, Hittfeld" className="mt-2 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-950" />
+-              </div>
+-            )}
+-            {meetingPointError && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{meetingPointError}</p>}
+-            {meetingPointChanged && <p className="mt-2 text-sm font-bold text-amber-800">Änderung noch nicht gespeichert. Erst speichern, dann benachrichtigen.</p>}
+-            {meetingPointChanged && (
+-              <button type="button" onClick={() => void saveMeetingPoint()} disabled={savingMeetingPoint} className="mt-3 rounded-xl bg-blue-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+-                {savingMeetingPoint ? "Speichert ..." : "Treffpunkt speichern"}
+-              </button>
+-            )}
+-            {!meetingPointChanged && meetingPoint?.text && <p className="mt-2 text-xs font-semibold text-green-900">Dieser Treffpunkt wird in Helfer-Benachrichtigungen und Revierpächter-Mails verwendet.</p>}
++          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
++            Treffpunkte werden jetzt <strong>pro Team</strong> unter „Team-Reihenfolge“ verwaltet.
++            Die Treffzeit gilt weiterhin für alle Teams.
+           </div>
+ 
+           <div className="mt-4 flex flex-wrap gap-2">
+@@ -536,7 +564,7 @@
+             <button
+               type="button"
+               onClick={notifyTeams}
+-              disabled={notifying || dayTeams.length === 0 || savingMeetingPoint || savingMeetingTime || !meetingTime || meetingPointChanged || !meetingPoint?.text}
++              disabled={notifying || dayTeams.length === 0 || savingPointTeamId !== null || optimizingTeamId !== null || savingMeetingTime || !meetingTime || hasUnsavedPoints || teamsWithoutPoints.length > 0}
+               className="rounded-2xl bg-black px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:opacity-50"
+             >
+               {notifying ? "Sendet..." : "Teams benachrichtigen"}
+@@ -556,9 +584,12 @@
+               </h2>
+ 
+               <p className="mt-1 text-sm text-gray-600">
+-                Hier kannst du die Reihenfolge der Aufträge je Team anpassen.
+-                Diese Reihenfolge wird später auch in „Meine Aufträge“ genutzt.
++                Nach dem Zuweisen werden die Aufträge automatisch nach GPS-Luftlinien optimiert.
++                Den ersten Auftrag kannst du frei bestimmen. Bei einem neuen Startauftrag
++                wird die restliche Reihenfolge erneut berechnet. Mit ▲/▼ kannst du
++                die anderen Aufträge auch manuell verschieben.
+               </p>
++              {routeInfo && <p className="mt-2 text-sm font-semibold text-green-800">{routeInfo}</p>}
+ 
+               {dayTeams.length === 0 ? (
+                 <div className="mt-4 text-sm text-gray-600">
+@@ -606,6 +637,37 @@
+                             </div>
+                           )}
+                         </div>
++
++                        <div className="mt-4 rounded-xl border border-blue-200 bg-white p-3">
++                          <h3 className="text-sm font-bold text-gray-900">Treffpunkt für {dayTeam.team.name}</h3>
++                          <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-800">
++                            <label className="flex items-center gap-2"><input type="radio"
++                              checked={(teamDrafts[dayTeam.id]?.mode || "AUTO") === "AUTO"}
++                              onChange={()=>setTeamDrafts(prev=>({...prev,[dayTeam.id]:{...prev[dayTeam.id],mode:"AUTO",manualText:prev[dayTeam.id]?.manualText || ""}}))}/>
++                              Automatisch (erster Auftrag)</label>
++                            <label className="flex items-center gap-2"><input type="radio"
++                              checked={teamDrafts[dayTeam.id]?.mode === "MANUELL"}
++                              onChange={()=>setTeamDrafts(prev=>({...prev,[dayTeam.id]:{mode:"MANUELL",manualText:prev[dayTeam.id]?.manualText || ""}}))}/>
++                              Manuell</label>
++                          </div>
++                          {(teamDrafts[dayTeam.id]?.mode || "AUTO") === "AUTO" ?
++                            <pre className="mt-2 whitespace-pre-wrap break-all text-xs text-gray-800">{teamPoints[dayTeam.id]?.autoText || "Noch kein Treffpunkt am ersten Auftrag hinterlegt."}</pre> :
++                            <textarea rows={3} maxLength={500} value={teamDrafts[dayTeam.id]?.manualText || ""}
++                              onChange={e=>setTeamDrafts(prev=>({...prev,[dayTeam.id]:{mode:"MANUELL",manualText:e.target.value}}))}
++                              placeholder="Parkplatz, Adresse oder GPS-Koordinaten" className="mt-2 w-full rounded-lg border p-2 text-sm" />
++                          }
++                          {isTeamPointDirty(dayTeam.id) &&
++                            <button type="button" disabled={savingPointTeamId === dayTeam.id}
++                              onClick={()=>void saveTeamPoint(dayTeam.id)}
++                              className="mt-2 rounded-lg bg-blue-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
++                              {savingPointTeamId === dayTeam.id ? "Speichert..." : "Treffpunkt speichern"}</button>}
++                        </div>
++                        {teamOrders.length > 1 &&
++                          <button type="button" onClick={()=>void optimizeTeamRoute(dayTeam.id)}
++                            disabled={optimizingTeamId !== null || savingOrderTeamId !== null}
++                            className="mt-3 rounded-xl border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-900 disabled:opacity-50">
++                            {optimizingTeamId === dayTeam.id ? "Optimiert..." : "Route automatisch optimieren"}
++                          </button>}
+ 
+                         {teamOrders.length === 0 ? (
+                           <div className="mt-4 rounded-xl bg-white p-3 text-sm text-gray-600">
+@@ -643,6 +705,11 @@
+                                   </div>
+ 
+                                   <div className="flex shrink-0 flex-col gap-1">
++                                    {index > 0 && <button type="button"
++                                      onClick={()=>void optimizeTeamRoute(dayTeam.id, order.id)}
++                                      disabled={optimizingTeamId !== null || savingOrderTeamId !== null}
++                                      className="rounded-lg border border-blue-300 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-900 disabled:opacity-40"
++                                      title="Als ersten Auftrag wählen und danach automatisch optimieren">Als Start</button>}
+                                     <button
+                                       type="button"
+                                       onClick={() =>
+@@ -650,7 +717,7 @@
+                                       }
+                                       disabled={
+                                         index === 0 ||
+-                                        savingOrderTeamId === dayTeam.id
++                                        savingOrderTeamId === dayTeam.id || optimizingTeamId !== null
+                                       }
+                                       className="rounded-lg border border-gray-300 px-3 py-1 text-sm font-semibold text-gray-800 disabled:opacity-40"
+                                       title="Nach oben"
+@@ -665,7 +732,7 @@
+                                       }
+                                       disabled={
+                                         index === teamOrders.length - 1 ||
+-                                        savingOrderTeamId === dayTeam.id
++                                        savingOrderTeamId === dayTeam.id || optimizingTeamId !== null
+                                       }
+                                       className="rounded-lg border border-gray-300 px-3 py-1 text-sm font-semibold text-gray-800 disabled:opacity-40"
+                                       title="Nach unten"
+--- a/app/api/web-push/notify-operation-day/route.ts
++++ b/app/api/web-push/notify-operation-day/route.ts
+@@ -2,7 +2,7 @@
+ export const runtime = "nodejs";
+ 
+ import { NextRequest, NextResponse } from "next/server";
+-import { getOperationDayMeetingPoint } from "@/lib/operation-day-meeting-point";
++import { getTeamMeetingPointsByDay } from "@/lib/team-meeting-points";
+ import { db } from "@/lib/db";
+ import { requireAdminApi } from "@/lib/admin";
+ import { sendWebPushToUser } from "@/lib/web-push";
+@@ -101,6 +101,7 @@
+   reviere: Set<string>;
+   fields: Set<string>;
+   landwirtFields: Map<string, Set<string>>;
++  teamPoints: Map<string, string>;
+ };
+ 
+ function addRevierOwnerMailData(
+@@ -111,6 +112,8 @@
+     revierLabel: string;
+     fieldLabel: string;
+     landwirtName: string;
++    teamName: string;
++    teamPoint: string;
+   }
+ ) {
+   const email = String(params.email || "").trim().toLowerCase();
+@@ -124,6 +127,7 @@
+       reviere: new Set<string>(),
+       fields: new Set<string>(),
+       landwirtFields: new Map<string, Set<string>>(),
++      teamPoints: new Map<string, string>(),
+     });
+   }
+ 
+@@ -145,6 +149,7 @@
+     item.landwirtFields.set(landwirt, new Set<string>());
+   }
+   if (params.fieldLabel) item.landwirtFields.get(landwirt)!.add(params.fieldLabel);
++  item.teamPoints.set(params.teamName, params.teamPoint);
+ }
+ 
+ async function notifyAffectedRevierOwnersByEmail(params: {
+@@ -152,7 +157,7 @@
+   dateString: string;
+   displayDate: string;
+   meetingText: string;
+-  meetingPointText: string;
++  teamPointsById: Map<string, {teamName:string;text:string}>;
+   operationDayId: string;
+ }) {
+   const operationDay = await db.operationDay.findUnique({
+@@ -230,6 +235,8 @@
+             revierLabel,
+             fieldLabel,
+             landwirtName,
++            teamName: params.teamPointsById.get(dayTeam.id)?.teamName || "Team",
++            teamPoint: params.teamPointsById.get(dayTeam.id)?.text || "",
+           });
+         }
+       }
+@@ -291,6 +298,10 @@
+       })
+       .join("\n") || "- Keine Landwirte hinterlegt";
+ 
++    const teamPointLines = Array.from(recipient.teamPoints.entries())
++      .sort(([a],[b])=>a.localeCompare(b,"de"))
++      .map(([name,point])=>`${name}:\n${point}`).join("\n\n");
++
+     const templateValues = {
+       paechter: recipient.name,
+       datum: params.displayDate,
+@@ -298,7 +309,7 @@
+         ? params.meetingText.replace(/^Treffzeit:\s*/, "").replace(/\.$/, "").trim()
+         : "noch nicht festgelegt",
+       treffzeit: params.meetingText.trim(),
+-      treffpunkt: params.meetingPointText,
++      treffpunkt: teamPointLines,
+       reviere: revierLines,
+       flaechen: fieldLines,
+       landwirte: landwirtLines,
+@@ -388,26 +399,33 @@
+       );
+     }
+ 
+-    // Server entscheidet ueber den Treffpunkt (nicht der Browser).
+-    const point = await getOperationDayMeetingPoint(operationDay.id);
+-    if (!point.text) {
+-      return NextResponse.json(
+-        { error: "Kein Treffpunkt vorhanden. Bitte in der Tagesplanung einen Treffpunkt festlegen und speichern." },
+-        { status: 400 },
+-      );
+-    }
+-
+-    const plannedUserIds = new Set<string>();
+-
+-    for (const dayTeam of operationDay.teams) {
+-      if (dayTeam.pilotId) {
+-        plannedUserIds.add(dayTeam.pilotId);
++    // Treffpunkte immer teambezogen bestimmen, nie vom ersten Team für alle.
++    const points = await getTeamMeetingPointsByDay(operationDay.id);
++    const teamPointsById = new Map<string, {teamName:string;text:string}>(
++      points.map(p=>[p.operationDayTeamId,{teamName:p.teamName,text:p.text}] as const)
++    );
++    const activeTeams = operationDay.teams.filter(t=>t.orders.length>0);
++    const staffedWithoutOrders = operationDay.teams.filter(t=>t.orders.length===0 && (t.pilotId || t.members.length>0));
++    if (staffedWithoutOrders.length) return NextResponse.json({
++      error:"Mindestens einem besetzten Team sind noch keine Aufträge zugeteilt. Bitte die Tagesplanung vervollständigen."
++    },{status:400});
++    const withoutPoint = activeTeams.filter(t=>!teamPointsById.get(t.id)?.text);
++    if (withoutPoint.length) return NextResponse.json({
++      error:`Treffpunkt fehlt bei: ${withoutPoint.map(t=>teamPointsById.get(t.id)?.teamName || t.id).join(", ")}. Bitte pro Team einen Treffpunkt festlegen.`
++    },{status:400});
++
++    const userTeamMeetings = new Map<string, string[]>();
++    for (const dayTeam of activeTeams) {
++      const meeting = teamPointsById.get(dayTeam.id)!;
++      const teamText = `${meeting.teamName}:\nTreffpunkt:\n${meeting.text}`;
++      const userIds = [dayTeam.pilotId, ...dayTeam.members.map(m=>m.userId)].filter((id):id is string=>Boolean(id));
++      for (const userId of userIds) {
++        const rows=userTeamMeetings.get(userId)||[];
++        if(!rows.includes(teamText)) rows.push(teamText);
++        userTeamMeetings.set(userId,rows);
+       }
+-
+-      for (const member of dayTeam.members) {
+-        plannedUserIds.add(member.userId);
+-      }
+-    }
++    }
++    const plannedUserIds=new Set(userTeamMeetings.keys());
+ 
+     const availableUsers = await db.availability.findMany({
+       where: {
+@@ -432,18 +450,13 @@
+     let plannedPushes = 0;
+     let notPlannedPushes = 0;
+ 
+-    if (plannedUserIds.size > 0) {
+-      const plannedMessage = `Du bist für den Einsatz am ${displayDate} eingeplant.\n${meetingText}\nTreffpunkt:\n${point.text}\nBitte öffne die App, prüfe deine Aufträge und bestätige die Kenntnisnahme.`;
+-
+-      const result = await createNotificationForUsers({
+-        title: "🚨 Einsatz geplant",
+-        body: plannedMessage,
+-        type: "TEAM_ASSIGNMENT",
+-        date,
+-        userIds: plannedUserIds,
++    for (const [userId, meetings] of userTeamMeetings) {
++      const plannedMessage = `Du bist für den Einsatz am ${displayDate} eingeplant.\n${meetingText}\n\n${meetings.join("\n\n")}\n\nBitte öffne die App, prüfe deine Aufträge und bestätige die Kenntnisnahme.`;
++      const result=await createNotificationForUsers({
++        title:"🚨 Einsatz geplant",body:plannedMessage,type:"TEAM_ASSIGNMENT",date,
++        userIds:new Set([userId]),
+       });
+-
+-      plannedPushes = result.sentPushes;
++      plannedPushes+=result.sentPushes;
+     }
+ 
+     if (notPlannedUserIds.size > 0) {
+@@ -465,7 +478,7 @@
+       dateString,
+       displayDate,
+       meetingText,
+-      meetingPointText: point.text,
++      teamPointsById,
+       operationDayId: operationDay.id,
+     });
+ 

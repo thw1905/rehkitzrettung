@@ -16,32 +16,25 @@ function parseDateOnlyToUtc(dateString: string) {
   return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
 }
 
-function getUtcRange(days = 21) {
-  const now = new Date();
+// Ab dem 1. August wird die Saison des Folgejahres geladen.
+function getSeasonYear() {
+  const parts = new Intl.DateTimeFormat("de-DE", {
+    timeZone: "Europe/Berlin",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(new Date());
 
-  const start = new Date(
-    Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate(),
-      0,
-      0,
-      0,
-      0
-    )
-  );
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
 
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + days);
-
-  return { start, end };
+  return month >= 8 ? year + 1 : year;
 }
 
 function toDateKeyUtc(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
     const currentUser = await getCurrentUserWithTeams();
 
@@ -49,10 +42,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
     }
 
-    const year = new Date().getFullYear();
-
-const start = new Date(Date.UTC(year, 4, 1, 0, 0, 0, 0)); // 01.05.
-const end = new Date(Date.UTC(year, 7, 1, 0, 0, 0, 0)); // bis 31.07. inklusive
+    const year = getSeasonYear();
+    const start = new Date(Date.UTC(year, 4, 1, 0, 0, 0, 0)); // 01.05.
+    const end = new Date(Date.UTC(year, 7, 1, 0, 0, 0, 0)); // bis 31.07. inklusive
 
     const rawAvailabilities = await db.availability.findMany({
       where: {
@@ -69,7 +61,7 @@ const end = new Date(Date.UTC(year, 7, 1, 0, 0, 0, 0)); // bis 31.07. inklusive
       ],
     });
 
-    // Pro Kalendertag nur den neuesten Datensatz zurückgeben
+    // Pro Kalendertag nur den neuesten Datensatz zurückgeben.
     const byDate = new Map<string, (typeof rawAvailabilities)[number]>();
 
     for (const item of rawAvailabilities) {
@@ -128,7 +120,7 @@ export async function PUT(req: NextRequest) {
     const endOfDay = new Date(date);
     endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
 
-    // Alt-Dubletten für denselben Kalendertag löschen
+    // Alt-Dubletten für denselben Kalendertag löschen.
     const existingForDay = await db.availability.findMany({
       where: {
         userId: currentUser.id,

@@ -1,0 +1,667 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PILOT
+  SUCHER
+}
+
+enum DrohneLicense {
+  NONE
+  A1_A3
+  A2
+  Special
+}
+
+enum OrderStatus {
+  OFFEN
+  IN_ARBEIT
+  ERLEDIGT
+}
+
+enum PinpointStatus {
+  OFFEN
+  ERREICHT
+  ERLEDIGT
+}
+
+enum AvailabilityStatus {
+  OFFEN
+  ZUGESAGT
+  ABGESAGT
+  VIELLEICHT
+}
+
+enum OperationDayStatus {
+  PLANUNG
+  AKTIV
+  ABGESCHLOSSEN
+}
+
+model Availability {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
+  status    AvailabilityStatus @default(OFFEN)
+  note      String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@unique([userId, date])
+}
+
+model OperationDay {
+  id          String             @id @default(cuid())
+  date        DateTime           @unique
+  status      OperationDayStatus @default(PLANUNG)
+  note        String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  meetingTime String?
+  meetingPointText String?
+  orders      Order[]
+  teams       OperationDayTeam[]
+}
+
+model Owner {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  street    String
+  zip       String
+  city      String
+  phone     String
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fields          Field[]
+  orders          Order[]
+  contactOrders   Order[] @relation("OrderContactOwner")
+  accessTokens    OwnerAccessToken[]
+  mowingRequests  MowingRequest[]
+  flightCertificates FlightCertificateDispatch[]
+}
+
+model User {
+  id                              String                        @id @default(cuid())
+  firstName                       String
+  lastName                        String
+  street                          String
+  zip                             String
+  city                            String
+  phone                           String
+  email                           String                        @unique
+  passwordHash                    String
+  role                            Role                          @default(SUCHER)
+  isAdmin                         Boolean                       @default(false)
+  isApproved                      Boolean                       @default(false)
+  DrohneLicense                   DrohneLicense                 @default(NONE)
+  createdAt                       DateTime                      @default(now())
+  updatedAt                       DateTime                      @updatedAt
+  webPushSubscriptions            WebPushSubscription[]
+  availabilities                  Availability[]
+  operationDayTeamPilots          OperationDayTeam[]            @relation("OperationDayTeamPilot")
+  operationDayTeamMembers         OperationDayTeamMember[]
+  pushDevices                     PushDevice[]
+  homeLatitude                    Float?
+  homeLongitude                   Float?
+  autoAssignPriority              Int                           @default(0)
+  isPrimaryPilot                  Boolean                       @default(false)
+  lastSeenAt                      DateTime?
+  sessionVersion                  Int                           @default(0)
+  notificationAcknowledgements    NotificationAcknowledgement[]
+  notificationRecipients          NotificationRecipient[]
+  dailyTeamLocations              DailyTeamLocation[]
+  pinpointCorrections             PinpointCorrection[]
+  directFindingsCorrections       DirectFindingsCorrection[]
+}
+
+model NotificationMessage {
+  id               String                           @id @default(cuid())
+  title            String
+  body             String
+  url              String?
+  type             String
+  date             DateTime?
+  createdAt        DateTime                         @default(now())
+  recipients       NotificationRecipient[]
+  acknowledgements NotificationAcknowledgement[]
+}
+
+model NotificationRecipient {
+  id             String   @id @default(cuid())
+  notificationId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  notification NotificationMessage @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+}
+
+model NotificationAcknowledgement {
+  id             String   @id @default(cuid())
+  notificationId String
+  userId         String
+  acknowledgedAt DateTime @default(now())
+
+  notification NotificationMessage @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+}
+
+model WebPushSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lastSeenAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PushDevice {
+  id          String   @id @default(cuid())
+  userId      String
+  token       String   @unique
+  platform    String?
+  browser     String?
+  deviceLabel String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastSeenAt  DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Team {
+  id                String             @id @default(cuid())
+  name              String
+  sortOrder         Int                @default(0)
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  operationDayTeams OperationDayTeam[]
+}
+
+model OperationDayTeam {
+  meetingPointText String?
+  id              String                   @id @default(cuid())
+  operationDayId  String
+  teamId          String
+  pilotId         String?
+  note            String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  actualStartTime DateTime?
+  actualEndTime   DateTime?
+
+  operationDay    OperationDay             @relation(fields: [operationDayId], references: [id], onDelete: Cascade)
+  team            Team                     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  pilot           User?                    @relation("OperationDayTeamPilot", fields: [pilotId], references: [id])
+
+  members         OperationDayTeamMember[]
+  orders          Order[]
+
+  @@unique([operationDayId, teamId])
+}
+
+model OperationDayTeamMember {
+  id                 String             @id @default(cuid())
+  operationDayTeamId String
+  userId             String
+  createdAt          DateTime           @default(now())
+
+  operationDayTeam   OperationDayTeam   @relation(fields: [operationDayTeamId], references: [id], onDelete: Cascade)
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([operationDayTeamId, userId])
+}
+
+model Field {
+  id          String   @id @default(cuid())
+  name        String
+  displayName String?
+  ownerId     String?
+  areaGeoJson Json
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner                Owner?                @relation(fields: [ownerId], references: [id])
+  orders               Order[]
+  mowingRequestFields  MowingRequestField[]
+
+  locationLatitude   Float?
+  locationLongitude  Float?
+  locationNote       String?
+}
+
+model RevierPachter {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  phone     String?
+  email     String?
+  street    String?
+  zip       String?
+  city      String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviere   RevierPachterAssignment[]
+}
+
+model Hegering {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviere   Revier[]
+}
+
+model Revier {
+  id          String   @id @default(cuid())
+  externalId  String?  @unique
+  name        String
+  nummer      String?
+  areaGeoJson Json
+
+  hegeringId  String?
+  hegering    Hegering? @relation(fields: [hegeringId], references: [id])
+  isActive    Boolean   @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  paechter    RevierPachterAssignment[]
+
+  orders      OrderRevier[]
+
+  @@index([hegeringId])
+  @@index([isActive])
+}
+
+model RevierPachterAssignment {
+  id        String @id @default(cuid())
+  revierId  String
+  pachterId String
+
+  revier    Revier        @relation(fields: [revierId], references: [id], onDelete: Cascade)
+  pachter   RevierPachter @relation(fields: [pachterId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([revierId, pachterId])
+}
+
+model OrderRevier {
+  id             String @id @default(cuid())
+  orderId        String
+  revierId       String
+  overlapSqm     Float?
+  overlapPercent Float?
+
+  order          Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  revier         Revier @relation(fields: [revierId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, revierId])
+}
+
+model Order {
+  id                        String            @id @default(cuid())
+  title                     String
+  status                    OrderStatus       @default(OFFEN)
+  notes                     String?
+  mowingDate                DateTime?
+  startTime                 DateTime?
+  endTime                   DateTime?
+  orderCode                 String?           @unique
+  orderYear                 Int?
+  orderSequence             Int?
+  executionDate             DateTime?
+  executedTeamName          String?
+  executedPilotName         String?
+  executedCopilotName       String?
+  executedSearchersText     String?
+  executedAreaSqm           Float?
+  operationDayId            String?
+  operationDayTeamId        String?
+  rehkitzeGesichert         Int               @default(0)
+  rehkitzeAbgesprungen      Int               @default(0)
+  sonstigesWildGesichert    Int               @default(0)
+  sonstigesWildAbgesprungen Int               @default(0)
+  maulwurfhuegelFehlstelle  Int               @default(0)
+  ownerId                   String
+  contactOwnerId            String?
+  fieldId                   String
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+  isDemo                    Boolean           @default(false)
+  operationDay              OperationDay?     @relation(fields: [operationDayId], references: [id])
+  operationDayTeam          OperationDayTeam? @relation(fields: [operationDayTeamId], references: [id])
+  owner                     Owner             @relation(fields: [ownerId], references: [id])
+  contactOwner              Owner?            @relation("OrderContactOwner", fields: [contactOwnerId], references: [id])
+  field                     Field             @relation(fields: [fieldId], references: [id])
+  pinpoints                 OrderPinpoint[]
+  isManualTeamAssignment    Boolean           @default(false)
+  reviere                   OrderRevier[]
+  sortOrder                 Int               @default(0)
+  directFindingsCorrections DirectFindingsCorrection[]
+}
+
+// Revisionssichere Korrekturen der Direktfunde, die OHNE Pinpoint
+// am Auftrag gespeichert werden. Die Pinpoint-Funde bleiben unberuehrt.
+model DirectFindingsCorrection {
+  id                String   @id @default(cuid())
+  orderId           String
+  correctedByUserId String
+  correctedAt       DateTime @default(now())
+  reason            String
+  beforeData        Json
+  afterData         Json
+
+  order       Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  correctedBy User  @relation(fields: [correctedByUserId], references: [id])
+
+  @@index([orderId, correctedAt])
+  @@index([correctedByUserId])
+}
+
+model OrderPinpoint {
+  id                        String         @id @default(cuid())
+  orderId                   String
+  rawQrText                 String
+  latitude                  Float
+  longitude                 Float
+  sequenceNumber            Int
+  status                    PinpointStatus @default(OFFEN)
+  scannedAt                 DateTime       @default(now())
+  reachedAt                 DateTime?
+  // Bearbeitungssperre fuer die gemeinsame Wilddatenerfassung
+  claimedByUserId           String?
+  claimExpiresAt            DateTime?
+  finalizedAt               DateTime?
+  finalizedByUserId         String?
+  rehkitzeGesichert         Int            @default(0)
+  rehkitzeAbgesprungen      Int            @default(0)
+  sonstigesWildGesichert    Int            @default(0)
+  sonstigesWildAbgesprungen Int            @default(0)
+  maulwurfhuegelFehlstelle  Int            @default(0)
+  note                      String?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  order                     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  corrections               PinpointCorrection[]
+}
+
+// Unveraenderliches Aenderungsprotokoll fuer korrigierte Wildmeldungen.
+// Einmalige Speicherung und Korrektur veraendern NICHT die Anzahl der Pinpoints.
+model PinpointCorrection {
+  id                String   @id @default(cuid())
+  pinpointId        String
+  correctedByUserId String
+  correctedAt       DateTime @default(now())
+  reason            String
+  beforeData        Json
+  afterData         Json
+
+  pinpoint    OrderPinpoint @relation(fields: [pinpointId], references: [id], onDelete: Cascade)
+  correctedBy User          @relation(fields: [correctedByUserId], references: [id])
+
+  @@index([pinpointId, correctedAt])
+  @@index([correctedByUserId])
+}
+
+model OwnerAccessToken {
+  id        String   @id @default(cuid())
+  ownerId   String
+  token     String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner     Owner    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+model MowingRequest {
+  id          String   @id @default(cuid())
+  ownerId     String
+  mowingDate  DateTime
+  timeText    String?
+  note        String?
+  status      String   @default("OFFEN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       Owner    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  fields      MowingRequestField[]
+
+  @@index([ownerId])
+  @@index([mowingDate])
+}
+
+model MowingRequestField {
+  id              String @id @default(cuid())
+  mowingRequestId String
+  fieldId         String
+
+  mowingRequest   MowingRequest @relation(fields: [mowingRequestId], references: [id], onDelete: Cascade)
+  field           Field         @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([mowingRequestId, fieldId])
+  @@index([fieldId])
+}
+
+model HelpArticle {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  content   String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([isActive])
+}
+// Eine feste Kennung pro Helfer und Einsatztag, unabhängig von Teamwechseln.
+// Der letzte Standort wird nur während einer aktiven, freiwilligen Freigabe gespeichert.
+model DailyTeamLocation {
+  id             String   @id @default(cuid())
+  date           DateTime
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  markerCode     String
+  sharingEnabled Boolean  @default(false)
+  latitude       Float?
+  longitude      Float?
+  accuracy       Float?
+  positionAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([date, userId])
+  @@unique([date, markerCode])
+  @@index([date, sharingEnabled])
+}
+// Bearbeitbare E-Mail-Vorlage fuer die Revierpaechter-Benachrichtigung.
+// Ein Datensatz mit dem festen Schluessel "default" wird genutzt.
+model RevierOwnerEmailTemplate {
+  key       String   @id
+  subject   String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+// Ein Nachweis je Landwirt und Einsatztag. Die PDF-Daten werden beim
+// ersten Versand eingefroren und fuer spaetere Ausdrucke erhalten.
+model FlightCertificateDispatch {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       Owner    @relation(fields: [ownerId], references: [id])
+  date        DateTime
+  status      String   @default("SENDING") // SENDING | SENT | ERROR
+  payload     Json
+  attempts    Int      @default(1)
+  lastError   String?
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([ownerId, date])
+  @@index([date, status])
+}
+
+
+// DJI_STAGE1_BEGIN
+// DJI-Pilot-Sitzungen sind zeitlich begrenzt und an einen ausgewaehlten Auftrag gebunden.
+model DjiPilotSession {
+  id          String   @id @default(cuid())
+  tokenHash   String   @unique
+  pilotUserId String
+  orderId     String
+  workspaceId String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([pilotUserId, expiresAt])
+}
+
+model DjiMapElement {
+  id          String   @id @default(cuid())
+  workspaceId String
+  elementId   String
+  groupId     String
+  pilotUserId String
+  orderId     String
+  name        String
+  latitude    Float
+  longitude   Float
+  resource    Json
+  status      String   @default("PENDING")
+  pinpointId  String?  @unique
+  receivedAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([workspaceId, elementId])
+  @@index([pilotUserId, receivedAt])
+  @@index([orderId])
+}
+
+// DJI_AKKUVERWALTUNG_V1
+// Hegering-Geraetebestand: unabhaengig von Piloten oder wechselnden Tages-Teams.
+model DjiAircraft {
+  id           String    @id @default(cuid())
+  label        String    @unique
+  model        String
+  serialNumber String?   @unique
+  isActive     Boolean   @default(true)
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  batteries    DjiBattery[]
+  usageEntries DjiBatteryUsage[]
+}
+
+// Beschriftete Nummern sind nur INNERHALB einer Drohne eindeutig.
+// Bei Ersatz wird der alte Akku archiviert, seine Seriennummer bleibt erhalten,
+// sein labelNumber wird NULL und lastLabelNumber behaelt die alte Aufklebernummer.
+model DjiBattery {
+  id                String           @id @default(cuid())
+  aircraftId        String
+  labelNumber       Int?
+  lastLabelNumber   Int?
+  serialNumber      String?          @unique
+  status            String           @default("ACTIVE") // ACTIVE, BLOCKED, RETIRED
+  cycles            Int?
+  cycleSource       String?          // DJI or MANUAL
+  capacityPercent   Int?
+  temperatureC      Float?
+  voltageMv         Int?
+  lastSeenAt        DateTime?
+  retiredAt         DateTime?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  aircraft          DjiAircraft      @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  usageEntries      DjiBatteryUsage[]
+
+  @@unique([aircraftId, labelNumber])
+  @@index([aircraftId, status])
+  @@index([lastSeenAt])
+}
+
+// Spaetere Verbrauchsbilanz je Akku / Flug / Auftrag.
+// Pilot-ID und Auftrag-ID sind lediglich historische Kontextangaben,
+// niemals Eigentuemer des Akkus.
+model DjiBatteryUsage {
+  id             String      @id @default(cuid())
+  aircraftId     String
+  batteryId      String
+  operationDayId String?
+  orderId        String?
+  pilotUserId    String?
+  startedAt      DateTime
+  endedAt        DateTime?
+  startPercent   Int?
+  endPercent     Int?
+  usedPercent    Int?
+  flightSeconds  Int?
+  source         String      @default("DJI_MQTT")
+  createdAt      DateTime    @default(now())
+
+  aircraft       DjiAircraft @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  battery        DjiBattery  @relation(fields: [batteryId], references: [id], onDelete: Restrict)
+
+  @@index([batteryId, startedAt])
+  @@index([aircraftId, startedAt])
+  @@index([operationDayId, startedAt])
+  @@index([orderId, startedAt])
+}
+
+// DJI_FLIGHT_AREA_V11: aggregierte Flugzeit; KEINE GPS-Rohpositionen werden gespeichert.
+model DjiFlightAreaTime {
+  id            String   @id @default(cuid())
+  flightUsageId String
+  orderId       String?
+  bucket        String
+  seconds       Int
+  createdAt     DateTime @default(now())
+
+  @@unique([flightUsageId, bucket, orderId])
+  @@index([orderId, createdAt])
+}

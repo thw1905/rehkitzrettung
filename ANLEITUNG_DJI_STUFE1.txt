@@ -1,0 +1,84 @@
+REHKITZRETTUNG - DJI PINPOINT TESTMODUL / STUFE 1
+===============================================
+
+STAND: 23. Oktober 2026
+
+Ziel: DJI-M3T/M4T-Kartenpunktformat sicher in die bestehende PinPoint-Datenbank
+uebernehmen. Bestehender QR-Scanner, Teamplanung und Sucheransicht bleiben unveraendert.
+Die vorhandene SSE-Aktualisierung der Sucher (/api/orders/stream) meldet neue
+PinPoints bereits ohne dass wir die vorhandene UI aendern muessen.
+
+WICHTIG: DIESE STUFE IST NOCH KEINE FUNKTIONSFAEHIGE VERBINDUNG VON DJI PILOT 2.
+DJI Cloud API benoetigt zusaetzlich App-Lizenz, DJI-JSBridge-Anmeldeseite,
+WebSocket-Endpunkt und einen sicher konfigurierten MQTT-Broker.
+Auch die Weitergabe von DIREKT IM WAERMEBILD gesetzten Fundpunkten muss mit
+M3T und M4T nachgewiesen werden. Die DJI-Dokumentation belegt bisher die
+Uebertragung von KARTENelementen, nicht automatisch jedes Kamera-PinPoint-Ereignis.
+
+INSTALLATION AUF WINDOWS - LOKAL ZUERST
+---------------------------------------
+1. Projektordner C:\Projekte\rehkitzrettung und Datenbank separat sichern.
+2. Diese ZIP KOMPLETT in C:\Projekte\rehkitzrettung entpacken.
+   Sie enthaelt install-dji-stufe1.cjs, dji-modelle.txt, dji-install-files/.
+   Entpacken ueberschreibt keine bestehenden Programmdateien.
+3. PowerShell:
+     cd C:\Projekte\rehkitzrettung
+     node .\install-dji-stufe1.cjs
+4. Datenbank-Verbindung (.env/.env.local) korrekt geladen haben, danach:
+     npx prisma migrate deploy
+     npx prisma generate
+     npx tsc --noEmit
+     npm run build
+     npm run dev
+5. Als Administrator http://localhost:3000/admin/dji aufrufen.
+6. Nur falls bereits ein OFFENER DEMO-Auftrag existiert, mit echten
+   Testkoordinaten einen Testpunkt darin anlegen. Keine realen Einsatzauftraege
+   fuer Tests verwenden. PinPoint erscheint im Demo-Auftrag normal in der App.
+7. Erst wenn der komplette Build fehlerfrei ist und die Funktionen lokal
+   getestet sind, fuer die Serveruebernahme gesondert planen.
+
+SICHERHEIT
+----------
+- Keine Zugangsdaten als Chatnachricht senden.
+- DJI_IMPORT_ENABLED ist STANDARDMAESSIG aus. Selbst wenn ein Pilot-Token
+  spaeter verwendet wird, werden Punkte damit zunaechst nur als PENDING
+  zwischengespeichert und NICHT als reale PinPoints angelegt.
+- Der Admin-Test-Endpunkt schreibt NUR in Auftraege mit isDemo=true.
+- Pilot-Sitzungstokens (noch nicht mit der Fernsteuerung verbunden) haben
+  8 Stunden Gueltigkeit und werden in der Datenbank nur gehasht gespeichert.
+- Ein DJI-Punkt wird ueber (workspaceId, elementId) eindeutig erkannt.
+- DJI-Koordinaten sind GeoJSON in der Reihenfolge [Laengengrad, Breitengrad].
+- Nur Point-Elemente des DJI-Typs 0 werden angenommen.
+- Aktueller Auftrag wird NICHT per GPS geraten, sondern muss explizit
+  fuer die jeweilige Pilot-Sitzung ausgewaehlt sein.
+- Ein Import in abgeschlossene Auftraege findet nicht statt.
+
+NEU ANGELEGTE ROUTEN
+--------------------
+GET/POST /api/admin/dji/test-import  (nur Admin, POST nur Demo-Auftrag)
+GET/POST/DELETE /api/dji/pilot-sessions  (mit eingeloggtem Pilot/Admin)
+GET /map/api/v1/workspaces/{workspace_id}/element-groups
+POST /map/api/v1/workspaces/{workspace_id}/element-groups/{group_id}/elements
+
+FUER SPAETERE DJI-PILOT-2-KOPPLUNG (NOCH NICHT SETZEN NOETIG)
+-------------------------------------------------------------
+DJI_WORKSPACE_ID=...        eindeutige Workspace UUID
+DJI_MAP_GROUP_ID=...        eindeutige Gruppe UUID, type=2 (App Shared)
+DJI_IMPORT_ENABLED=false   erst NACH Geraetetest auf true schalten
+
+Ein erfolgreicher Aufruf von /admin/dji zeigt nur, dass unser Import in die
+vorhandene App funktioniert. Er bestaetigt NICHT, dass die M3T/M4T Fundpunkte
+live via DJI Pilot 2 an die Cloud API uebermitteln.
+
+QUELLEN - DJI-HERSTELLERDOKUMENTATION
+-----------------------------------
+https://developer.dji.com/doc/cloud-api-tutorial/en/feature-set/pilot-feature-set/pilot-map-elements.html
+https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/https/map-elements/create.html
+https://developer.dji.com/doc/cloud-api-tutorial/en/feature-set/pilot-feature-set/pilot-access-to-cloud.html
+
+DATENBANK
+---------
+Neue Tabellen: DjiPilotSession und DjiMapElement. Keine Aenderung oder
+Loeschung an bestehenden Tabellen. Prisma-Migration liegt im Paket.
+Datenbank vor prisma migrate deploy sichern. Bei bereits abweichender
+Migration-Historie nicht ungeprueft mit --force oder --accept-data-loss arbeiten.

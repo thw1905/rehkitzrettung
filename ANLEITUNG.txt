@@ -1,0 +1,48 @@
+REHKITZRETTUNG – DJI Einsatz verbinden und Technik-PIN (V2)
+==========================================================
+
+Korrekturen:
+1. DJI-Header auf /pilot-login zentriert (ohne Hauptseite zu ändern).
+2. 'Einsatz verbinden' wartet nach der Lizenzprüfung auf DJI 'verified=true'
+   und verwendet beim API-Modul die Hostadresse mit abschließendem '/'.
+3. /pilot-login/technik ist serverseitig nur für Administratoren mit
+   Demo-/GPS-Test-PIN zugänglich. Die PIN wird NICHT neu gespeichert.
+   Eine bestehende 2-Stunden-GPS-Testfreigabe wird wiederverwendet.
+
+VORHER: Projekt sichern und laufenden Next.js-Entwicklungsserver beenden.
+
+INSTALLATION AUF WINDOWS:
+- ZIP nach C:\Projekte\rehkitzrettung entpacken.
+- In diesem Ordner ausführen:
+    node install-dji-einsatz-pin-v2.cjs
+    npx.cmd tsc --noEmit
+    npm.cmd run build
+- Wenn ein Schritt fehlschlägt, NICHT nach GitHub hochladen.
+
+NACH ERFOLGREICHEM BUILD:
+    git add components/dji/PilotSimpleClient.tsx app/pilot-login/technik/page.tsx app/pilot-login/layout.tsx
+    git --no-pager diff --cached --name-only
+    git --no-pager diff --cached --check
+    git commit -m "DJI Verbindung, Header und Technik PIN korrigieren"
+    git push origin main
+
+AUF UBUNTU:
+    cd /root/rehkitzrettung
+    git pull --ff-only origin main
+    npm run build
+    pm2 restart rehkitzrettung
+
+TEST:
+- In DJI Pilot 2 normale Anmeldeseite öffnen und 'Einsatz verbinden'.
+- Technische Seite lässt nur einen Admin mit Demo-/GPS-Test-PIN hinein.
+- Die Fehlermeldung ist nur ein Hinweis, wenn DJI weiter nicht verbindet:
+  gib die Fehlermeldung durch, aber NIEMALS Schlüssel, Token oder PIN.
+
+SICHERHEIT:
+- Neue Sicherungen werden außerhalb des Projektordners angelegt unter
+  C:\Projekte\rehkitzrettung-dji-backups\...
+- Kein Eingriff in Datenbank, .env-Dateien, MQTT oder Push.
+- Der DJI-Autoimport bleibt in seinem bisherigen Zustand (nicht aktiviert).
+- Die PIN-Sperre schützt die TechnikSEITE, nicht automatisch sämtliche
+  dahinterliegenden DJI-API-Routen. Deren bestehende Authentifizierungs-
+  und Sitzungskontrollen bleiben unverändert.

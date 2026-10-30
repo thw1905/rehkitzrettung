@@ -1,0 +1,61 @@
+REHKITZRETTUNG – DJI Pilot 2 / Stufe 2B: Lizenz + API + Workspace
+===============================================================
+
+UMFANG
+- Zusatzkomponente auf /pilot-login nach erfolgreicher Anmeldung und Testsitzung
+- Neue, serverseitig geschützte API /api/dji/pilot2/bridge-bootstrap
+- Prüft in der DJI-Pilot-2-WebView (nicht Windows-Browser):
+  1. DJI-Lizenz via platformVerifyLicense
+  2. DJI-API-Modul via platformLoadComponent("api", ...)
+  3. Workspace-ID und Plattforminformationen
+- Erstellt KEINE PinPoints und verbindet KEIN MQTT oder WebSocket.
+- QR-Code und bisherige Auftragsverwaltung bleiben unverändert.
+
+VORAUSSETZUNGEN
+- Stufe 1 und 2A inklusive 'Heutige Aufträge'-Update laufen lokal.
+- Die vorhandene .env.local enthält eine DJI_WORKSPACE_ID (UUID).
+- Für den Lizenztest später auf SEPARATER Testumgebung in .env.local eintragen:
+      DJI_LICENSE_TEST_ENABLED="true"
+      DJI_APP_ID="..."
+      DJI_APP_KEY="..."
+      DJI_APP_LICENSE="..."
+  Niemals Werte hier im Chat zeigen, ins ZIP legen oder ins Git-Repository aufnehmen.
+
+INSTALLATION NUR AUF WINDOWS-ENTWICKLUNGS-PC
+  ZIP nach C:\Projekte\rehkitzrettung entpacken.
+  PowerShell im Projektordner öffnen.
+
+  node .\install-dji-stufe2b.cjs --check
+  node .\install-dji-stufe2b.cjs
+  npx.cmd tsc --noEmit
+  npm.cmd run build
+
+NICHT gleichzeitig npm.cmd run dev mehrfach starten. Bereits laufenden Dev-Server nutzen
+oder zuerst sauber beenden und dann npm.cmd run dev.
+
+TEST AUF WINDOWS
+  http://localhost:3000/pilot-login
+  anmelden, heutigen Auftrag wählen, Testsitzung vorbereiten.
+  Abschnitt 'DJI Pilot 2 – Verbindung vorbereiten (Stufe 2B)' ist sichtbar.
+  'DJI-JSBridge: nicht vorhanden' ist im Windows-Browser RICHTIG.
+  Echter Bridge-Test erst auf der DJI-Fernsteuerung mit öffentlich erreichbarem
+  HTTPS-TESTSYSTEM möglich. Es wurde nichts auf Ubuntu installiert.
+
+WICHTIGE SICHERHEIT
+- NICHT die produktive Hegering-Anwendung durch Kopieren dieses ZIP verändern.
+- Noch KEINEN MQTT-Port in IONOS freigeben.
+- Die MQTT-Konfiguration in Ubuntu bleibt lokal beschränkt.
+- Für den echten Live-Betrieb brauchen wir eine getrennte Testinstallation,
+  serverseitige Cloud-API-Endpunkte (MQTT, WebSocket, Map), sichere kurzlebige
+  gerätegebundene Authentisierung und einen Gerätetest von DJI Pilot 2.
+- Ob der klassische DJI-Pilot-2-'thing'-Bridgeaufruf TLS auf tcp://:8883 mit
+  deinem Let's-Encrypt-Zertifikat akzeptiert, ist ausdrücklich noch ungetestet.
+
+UPDATE / WIEDERHOLUNG
+Der Installer sichert vorhandene Programmdateien unter dji-backups/stufe2b-*.
+Er prüft vorhandene Dateien auf Gleichheit und installiert bei Wiederholung nicht neu.
+Keine Prisma-/SQL-Änderung erforderlich.
+
+Offizielle DJI-Dokumentation:
+https://developer.dji.com/doc/cloud-api-tutorial/en/feature-set/pilot-feature-set/pilot-access-to-cloud.html
+https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/jsbridge.html

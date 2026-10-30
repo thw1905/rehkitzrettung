@@ -21,7 +21,7 @@ export default function DjiGlobalBatteryRecommendation() {
   const pathname = usePathname();
   const [choice, setChoice] = useState("");
   const [data, setData] = useState<Recommendation | null>(null);
-  const [minimized, setMinimized] = useState(false);
+  const [minimized, setMinimized] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const prevRecommendation = useRef("");
 

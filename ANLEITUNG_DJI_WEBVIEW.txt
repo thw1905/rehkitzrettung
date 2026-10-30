@@ -1,0 +1,29 @@
+DJI Pilot 2 – WebView Layout-Fix (Stufe 2, Darstellung)
+
+Ziel: Eine isolierte, gut bedienbare DJI-Anmeldeseite, wenn der integrierte WebView Tailwind CSS 4 nicht korrekt darstellt. Keine Aenderung an Auth, API, Lizenz, Datenbank, MQTT.
+
+Windows (Projekt C:\Projekte\rehkitzrettung):
+1. ZIP in Projektordner entpacken. Dabei landen install-dji-webview-layout.cjs und dji-webview-paket\pilot-return.txt im Projekt.
+2. node install-dji-webview-layout.cjs --check
+3. node install-dji-webview-layout.cjs
+4. npx.cmd tsc --noEmit
+5. npm.cmd run build (laufenden dev-Server vorher beenden)
+6. git add app/pilot-login/page.tsx
+7. git --no-pager diff --cached --check
+8. git --no-pager diff --cached --name-only (nur app/pilot-login/page.tsx)
+9. git commit -m "Improve DJI Pilot 2 WebView layout"
+10. git push origin main
+
+Ubuntu (vorheriges DB-/Codebackup liegt bereits vor):
+1. cd /root/rehkitzrettung
+2. git pull --ff-only origin main
+3. npm run build
+4. pm2 restart rehkitzrettung
+
+Dann Drittanbieter-Cloud-Dienst in DJI Pilot 2 komplett schliessen, erneut oeffnen und /pilot-login kontrollieren.
+Wenn die Fernsteuerung weiterhin keine Gestaltung anzeigt, naechster Diagnoseschritt: abrufbare CSS-/JS-Dateien und WebView-Version pruefen.
+
+Hinweise:
+- Die normale PC-/Handy-Oberflaeche bleibt unveraendert. Nur /pilot-login bekommt eine eigene Vollbildansicht.
+- Die DJI-Verifizierung (verified=false, Code 615031) wird durch dieses optische Update NICHT geloest.
+- Sicherung der geaenderten Datei liegt ausserhalb von C:\Projekte\rehkitzrettung, damit TypeScript keine Backup-TSX-Dateien einsammelt.

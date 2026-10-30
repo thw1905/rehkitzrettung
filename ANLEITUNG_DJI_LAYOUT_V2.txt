@@ -1,0 +1,45 @@
+DJI Pilot 2 – WebView Layout V2
+===============================
+Dieser Installer ist fuer die neue /pilot-login-Variante mit PilotSimpleClient
+(unterstuetzt aber auch die vorherige Version mit PilotLoginClient).
+
+Warum V2?
+Der erste Installer erwartete genau `return <PilotLoginClient />;`.
+Das aktuelle Projekt nutzt inzwischen `PilotSimpleClient`, weshalb die
+Sicherheitspruefung abbrach.
+
+Aenderung
+--------
+Neu: app/pilot-login/layout.tsx
+Keine vorhandene Datei wird ersetzt. Die Route erhaelt eine eigenstaendige,
+kompatible CSS-Gestaltung und verdeckt die normale Navigation auf genau
+dieser einen Seite. APIs, Anmeldung, DJI-Verbindung, Datenbank und andere
+Seiten werden nicht veraendert.
+
+Installation unter Windows (im Projektordner):
+1. ZIP direkt nach C:\Projekte\rehkitzrettung entpacken.
+2. node install-dji-layout-v2.cjs --check
+3. node install-dji-layout-v2.cjs
+4. Entwicklungsserver stoppen; anschliessend:
+   npx.cmd tsc --noEmit
+   npm.cmd run build
+5. Git:
+   git add app/pilot-login/layout.tsx
+   git --no-pager diff --cached --name-only
+   git commit -m "DJI Pilot 2 kompatibles Layout"
+   git push origin main
+
+Ubuntu:
+   cd /root/rehkitzrettung
+   git pull --ff-only origin main
+   npm run build
+   pm2 restart rehkitzrettung
+
+DJI Pilot 2 Cloud-Dienst vollstaendig schliessen, erneut oeffnen,
+Einsatzseite testen. Falls weiterhin ungstaltet: Browser-WebView/CSS
+weiter diagnostizieren. Der separate Verifizierungsfehler wird durch
+dieses Layout nicht behoben.
+
+Deinstallation (falls gewuenscht):
+   Nur die NEUE app/pilot-login/layout.tsx aus diesem Paket wieder entfernen;
+   keine anderen Dateien anfassen.

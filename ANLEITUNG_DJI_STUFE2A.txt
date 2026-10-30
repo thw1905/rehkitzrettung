@@ -1,0 +1,83 @@
+REHKITZRETTUNG – DJI PILOT 2, STUFE 2A
+======================================
+Stand: 23.10.2026
+
+Dieses Paket ist ein SICHERES Zwischenupdate – noch keine Live-DJI-Anbindung.
+Nur auf dem LOKALEN Windows-Projekt installieren. Ubuntu bleibt unveraendert.
+
+ENTHALTEN
+---------
+- /pilot-login – separate Anmeldeseite mit den bestehenden Rehkitzrettung-Zugangsdaten
+- Abfrage der zugeteilten offenen Auftraege je Pilot (vorhandene Stage-1-API)
+- Auswaehlen eines Auftrags und Vorbereiten/Widerrufen einer achtstuendigen Pilot-Sitzung
+- Anzeige, ob DJI Pilot 2 seine native JSBridge im WebView zur Verfuegung stellt
+- Optionaler, explizit aktivierbarer DJI-JSBridge-Lizenztest
+- Keine Aenderung an bestehender PinPoint-Speicherung, QR-Scanner, Teamplanung oder Datenbank
+
+DIESES PAKET TUT NOCH NICHT
+--------------------------
+- Keine Kopplung zu einer echten DJI-Fernsteuerung
+- Kein MQTT- oder WebSocket-Verbindungsaufbau
+- Keine Freigabe von MQTT-Port 8883
+- Keine Uebertragung direkt im Waermebild gesetzter Punkte (muss erst getestet werden)
+- Keine automatische Auftrags- oder PinPoint-Erzeugung
+
+INSTALLATION (LOKAL)
+--------------------
+1. Das bestehende DJI-Stufe-1-Paket muss installiert sein und /admin/dji funktionieren.
+2. Quellcode und Datenbank vorsorglich sichern.
+3. ZIP komplett in C:\Projekte\rehkitzrettung entpacken (nur neue Dateinamen).
+4. Im Projektordner in PowerShell:
+     node .\install-dji-stufe2a.cjs
+     npx tsc --noEmit
+     npm run build
+     npm run dev
+5. Seite im Browser: http://localhost:3000/pilot-login
+6. Mit einem freigeschalteten Pilot-/Admin-Konto anmelden; Auftrag pruefen.
+   Normale Browser zeigen erwartungsgemaess KEINE DJI-JSBridge an.
+
+OPTIONAL: TEST-SITZUNG ERZEUGEN (LOKAL)
+--------------------------------------
+Damit die Schaltflaeche "Test-Sitzung vorbereiten" verfuegbar wird,
+DJI_WORKSPACE_ID in .env.local setzen. UUID auf dem eigenen PC erstellen:
+     node -e "console.log(require('crypto').randomUUID())"
+
+Beispiel ohne echte ID (NICHT wortgetreu uebernehmen):
+     DJI_WORKSPACE_ID=<generierte UUID>
+
+Node/Next.js nach .env-Aenderung neu starten. Die Sitzung wird nur lokal
+in der Datenbank gespeichert und verbindet noch keine Fernsteuerung.
+
+OPTIONAL: LIZENZTEST IN DJI PILOT 2 (erst nach gesicherter Serververoeffentlichung)
+------------------------------------------------------------------------------
+     DJI_LICENSE_TEST_ENABLED=true
+     DJI_APP_ID=...
+     DJI_APP_KEY=...
+     DJI_APP_LICENSE=...
+
+Diese Werte NUR in die nicht veroeffentlichte Server-/lokale .env.local eintragen.
+NICHT in Git, in Chatnachrichten, in Screenshots oder NEXT_PUBLIC_ Variablen!
+Die API liefert Werte zur Hersteller-JSBridge-Pruefung ausschliesslich fuer
+authentifizierte, freigeschaltete Piloten aus. Dieser Test aktiviert KEIN MQTT.
+In normalen PC-Browsern gibt es window.djiBridge nicht; das ist kein Fehler.
+
+WICHTIGE SICHERHEITSHINWEISE
+----------------------------
+- Die bestehenden NextAuth-Cookie-Einstellungen des Projekts sind nicht
+  Gegenstand dieses Updates. Vor dem Live-Einsatz separat auf sicheren
+  HTTPS-Only-Betrieb pruefen (bestehendes useSecureCookies:false).
+- Achtstuendige Sitzung wird nur im Arbeitsspeicher dieser Seite gehalten;
+  beim Neuladen geht der Widerrufsknopf fuer diese Sitzung verloren. Sie
+  laeuft spaetestens nach acht Stunden ab. Noch keine Verbindung zu DJI.
+- Pilot muss seinen Auftrag selbst waehlen. Niemals aus Luftlinie erraten.
+- Vor Freigabe der Cloud-API: HTTPS, Nginx-WebSocket-Proxy, MQTT-Zugriff,
+  Berechtigungen, Duplikatschutz, Auftragszuordnung und Firewalleinstellungen
+  unter realen Bedingungen gesondert testen.
+- Keine Serverdatenbank migrieren – Paket fuegt KEINE Modelle hinzu.
+- ZIP enthaelt weder Passwoerter noch App-ID/Key/License.
+
+HERSTELLER-DOKUMENTATION
+-----------------------
+https://developer.dji.com/doc/cloud-api-tutorial/en/feature-set/pilot-feature-set/pilot-access-to-cloud.html
+https://developer.dji.com/doc/cloud-api-tutorial/en/feature-set/pilot-feature-set/pilot-map-elements.html
+https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/jsbridge.html
