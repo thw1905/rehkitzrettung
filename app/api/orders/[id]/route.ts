@@ -1,4 +1,5 @@
 import { maybeSendFlightAfterOrderCompleted } from "@/lib/flight-certificates";
+import { maybeSendRevierReportAfterOrderCompleted } from "@/lib/revier-search-report-auto";
 import { NextRequest, NextResponse } from "next/server";
 import area from "@turf/area";
 import { OrderStatus, PinpointStatus } from "@prisma/client";
@@ -564,6 +565,15 @@ export async function PATCH(
         }
       }
 
+      // REHKITZ_REV_REPORT_AUTO_V1: Nur nach tatsaechlichem Abschluss
+      if (nextStatus === OrderStatus.ERLEDIGT) {
+        try {
+          await maybeSendRevierReportAfterOrderCompleted(order.id);
+        } catch (error) {
+          // Ein Mailfehler darf den abgeschlossenen Auftrag nie rueckgaengig machen.
+          console.error("Suchbericht beim Auftragsabschluss:", error);
+        }
+      }
       if (order.status === "ERLEDIGT") {
         try {
           await maybeSendFlightAfterOrderCompleted(order.id);
@@ -671,6 +681,15 @@ export async function PATCH(
       });
     }
 
+    // REHKITZ_REV_REPORT_AUTO_V1: Nur nach tatsaechlichem Abschluss
+    if (nextStatus === OrderStatus.ERLEDIGT) {
+      try {
+        await maybeSendRevierReportAfterOrderCompleted(order.id);
+      } catch (error) {
+        // Ein Mailfehler darf den abgeschlossenen Auftrag nie rueckgaengig machen.
+        console.error("Suchbericht beim Auftragsabschluss:", error);
+      }
+    }
     if (order.status === "ERLEDIGT") {
       try {
         await maybeSendFlightAfterOrderCompleted(order.id);

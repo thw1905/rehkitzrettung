@@ -684,3 +684,25 @@ model SecuredWildLocation {
   @@index([expiresAt])
   @@index([orderId])
 }
+
+// Suchbericht je Revier, Einsatzdatum und Revierpaechter: genau ein
+// automatischer Versandversuch. Bei ERROR/SENDING erfolgt KEIN unbemerkter
+// zweiter Versand (SMTP kann bereits angenommen haben).
+model RevierSearchReportDispatch {
+  id         String   @id @default(cuid())
+  revierId   String
+  pachterId  String
+  date       DateTime
+  email      String
+  subject    String
+  body       String
+  status     String   @default("SENDING") // SENDING | SENT | ERROR
+  attempts   Int      @default(1)
+  lastError  String?
+  sentAt     DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([revierId, pachterId, date])
+  @@index([date, status])
+}
