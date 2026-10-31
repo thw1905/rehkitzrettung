@@ -60,6 +60,7 @@ const managementSections: NavSection[] = [
     { href: "/admin/dji-akkus", label: "Drohnen und Akkus" },
     { href: "/admin/dji-akku-historie", label: "Akkuhistorie" },
     { href: "/admin/dji-flugzeiten", label: "GPS-Flugzeiten je Fläche" },
+    { href: "/admin/flugmissionen", label: "Flugmissionen planen" },
   ] },
   { title: "System / Werkzeuge", color: SLATE, items: [
     { href: "/admin/help", label: "Anleitung bearbeiten" },
