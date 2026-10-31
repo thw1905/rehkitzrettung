@@ -141,6 +141,7 @@ export default function PilotSimpleClient() {
   const [phase, setPhase] = useState("Noch nicht verbunden");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [missionStatus, setMissionStatus] = useState("");
   const [thingStatus, setThingStatus] = useState("Akku-Verbindung wird vorbereitet ...");
   const [aircraftChoices, setAircraftChoices] = useState<AircraftChoice[]>([]);
   const [selectedAircraft, setSelectedAircraft] = useState("");
@@ -380,6 +381,22 @@ export default function PilotSimpleClient() {
     return () => { cancelled = true; };
   }, [selectedAircraft, auth, allowed]);
 
+  // REHKITZ_M4T_MISSION_BUTTON_V1: Missionsmodul in derselben verbundenen Pilot-2-WebView laden.
+  function loadCloudMissions() {
+    if (busy || !isConnected) return;
+    setMissionStatus("");
+    setError("");
+    try {
+      const b = bridge();
+      if (!b?.platformLoadComponent) throw new Error("DJI Bridge nicht verfügbar. Bitte die Seite in Pilot 2 unter Cloud-Dienst öffnen.");
+      assertDji(b.platformLoadComponent("mission", "{}"), "DJI-Missionsmodul");
+      const loaded = b.platformIsComponentLoaded ? truthy(b.platformIsComponentLoaded("mission")) : null;
+      if (loaded === false) throw new Error("DJI meldet das Missionsmodul noch nicht als geladen.");
+      setMissionStatus("Missionsmodul geladen. Jetzt in DJI Pilot 2 die Flugroutenbibliothek und dort die Cloud-Routen öffnen bzw. aktualisieren.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "DJI-Missionsmodul konnte nicht geladen werden.");
+    }
+  }
   async function checkPoints() {
     if (busy || !token) return;
     setBusy(true); setError("");
@@ -527,6 +544,19 @@ export default function PilotSimpleClient() {
                 : phase}
             </p>
 
+            {/* REHKITZ_M4T_MISSION_BUTTON_V1: Cloud-Missionen nur nach erfolgreicher DJI-Verbindung laden. */}
+            <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
+              <button
+                type="button"
+                disabled={busy || !isConnected}
+                onClick={loadCloudMissions}
+                className="w-full rounded-xl bg-blue-800 px-4 py-4 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cloud-Flugmissionen laden
+              </button>
+              <p className="text-center text-xs text-slate-700">Nach „Einsatz verbinden“ aktivieren; anschließend in DJI Pilot 2 die Flugroutenbibliothek öffnen.</p>
+              {missionStatus && <p className="rounded-lg bg-white p-3 text-sm text-slate-900" role="status">{missionStatus}</p>}
+            </div>
             {!isConnected && (
               <p className="text-center text-xs text-slate-600">
                 Nach dem Verbinden in DJI Pilot 2 wechseln und PinPoints setzen.
