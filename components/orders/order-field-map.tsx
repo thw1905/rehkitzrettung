@@ -11,7 +11,7 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
-import HistoricalMarkers from "@/components/historical-pinpoints/historical-markers";
+import HistoricalMarkers, { HistoricalPinpointLegend } from "@/components/historical-pinpoints/historical-markers";
 import { useHistoricalPinpoints } from "@/components/historical-pinpoints/use-historical-pinpoints"; // REHKITZ_HISTORICAL_PINS_V1
 import "leaflet/dist/leaflet.css";
 
@@ -544,9 +544,10 @@ export default function OrderFieldMap({
           </div>
           {historyVisible && (
             <div className="mt-2 text-xs">
-              🟣 {history.loading ? "Lade …" : `${history.items.length} alte PinPoints`} · nur Information, keine Bearbeitung.
+              {history.loading ? "Lade …" : `${history.items.length} alte PinPoints`} · nur Information, keine Bearbeitung.
               {history.error && <p role="alert" className="mt-1 font-semibold text-red-700">{history.error}</p>}
               {history.truncated && <p className="mt-1 font-semibold text-amber-800">Zu viele Punkte: maximal 5.000 pro Auswahl. Bitte eine Saison auswählen.</p>}
+              <HistoricalPinpointLegend />
             </div>
           )}
         </section>

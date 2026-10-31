@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { useHistoricalPinpoints } from "./use-historical-pinpoints";
+import { HistoricalPinpointLegend } from "./historical-markers";
 
 const OverviewMap = dynamic(() => import("./overview-map"), { ssr: false });
 
@@ -28,13 +29,14 @@ export default function HistoricalPinpointsPageClient() {
                 {seasons.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </label>
-            <span className="text-sm font-semibold text-violet-800">🟣 {visible ? `${items.length} historische Punkte` : "Ausgeblendet"}</span>
+            <span className="text-sm font-semibold text-gray-800">{visible ? `${items.length} historische Punkte` : "Ausgeblendet"}</span>
           </div>
           {loading && <p className="mt-2 text-sm text-gray-600">Lade historische PinPoints …</p>}
           {error && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{error}</p>}
           {truncated && <p className="mt-2 text-sm font-semibold text-amber-800">Sehr viele Daten: Es werden höchstens 5.000 PinPoints angezeigt. Wähle eine einzelne Saison, um mehr Punkte dieser Saison zu sehen.</p>}
           {!loading && !error && visible && items.length === 0 && <p className="mt-2 text-sm text-gray-700">Für diese Auswahl sind keine historischen PinPoints gespeichert.</p>}
-          <p className="mt-2 text-xs text-gray-600">🟣 Violett = historischer PinPoint. Durch Antippen werden Datum, Fläche und Wildzahlen angezeigt.</p>
+          {visible && <HistoricalPinpointLegend />}
+          <p className="mt-2 text-xs text-gray-600">Tippe auf einen Punkt, um Datum, Fläche und Wildzahlen zu sehen.</p>
         </section>
         <OverviewMap points={visible ? items : []} />
       </div>
