@@ -1,3 +1,4 @@
+// REHKITZ_MOBILE_NAV_V3_KONTRAST - bessere Sichtbarkeit und aktive Auswahl.
 // REHKITZ_MOBILE_NAV_V2 - einfaches Handymenue, PC unveraendert.
 // REHKITZ_MOBILE_NAV_V1 - gemeinsame Menueeintraege mit dem Desktop; rollengerecht.
 "use client";
@@ -18,7 +19,7 @@ type MobileBottomNavProps = {
 type MenuKey = "personal" | "management" | "operations";
 
 const buttonClass = (active: boolean) =>
-  `flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[11px] font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 ${active ? "bg-slate-900 text-white shadow-sm" : "text-gray-800 hover:bg-gray-100"}`;
+  `flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2.5 text-[11px] font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 ${active ? "border-slate-950 bg-slate-900 text-white shadow-md" : "border-slate-300 bg-white text-slate-950 shadow-sm hover:border-blue-600 hover:bg-blue-50"}`;
 
 export default function MobileBottomNav({ user }: MobileBottomNavProps) {
   const pathname = usePathname();
@@ -81,7 +82,11 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
   const activeSections = openMenu ? menuSections[openMenu] : [];
 
   const isPath = (href: string) => pathname === href || pathname.startsWith(href + "/");
-  const personalActive = ["/personal", "/my-orders", "/my-notifications", "/team-members", "/availability", "/personal-statistics", "/profile", "/historical-pinpoints", "/sicherungsorte"].some(isPath) && !isPath("/availability/admin");
+  // Fuer Helfer ist "Auftraege" ein eigener Hauptbutton. Die beiden Hauptbuttons
+  // duerfen bei /my-orders nicht gleichzeitig aktiv erscheinen.
+  const personalActive = ["/personal", "/my-orders", "/my-notifications", "/team-members", "/availability", "/personal-statistics", "/profile", "/historical-pinpoints", "/sicherungsorte"].some(isPath)
+    && !isPath("/availability/admin")
+    && (isAdmin || !isPath("/my-orders"));
   const managementActive = sections.management.some(section => section.items.some(item => isPath(item.href))) || isPath("/management");
   const operationsActive = sections.operations.some(section => section.items.some(item => isPath(item.href))) || isPath("/operations");
 
@@ -131,7 +136,8 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     <button
       key={key} type="button" onClick={() => toggle(key)}
       aria-expanded={openMenu === key} aria-controls="mobile-navigation-panel"
-      className={buttonClass(active || openMenu === key)}
+      // Sobald ein Bereich geoeffnet ist, hat nur dieser Bereich die aktive Optik.
+      className={buttonClass(openMenu ? openMenu === key : active)}
     >
       <span aria-hidden="true" className="text-lg leading-none">{emoji}</span>
       <span className="truncate max-w-full">{shortLabel} {openMenu === key ? "▾" : ""}</span>
@@ -154,7 +160,7 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
             role="dialog"
             aria-modal="true"
             aria-label={menuTitle}
-            className="absolute bottom-full left-2 right-2 z-[95] mx-auto mb-2 max-h-[min(76dvh,660px)] max-w-[480px] overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl"
+            className="absolute bottom-full left-2 right-2 z-[95] mx-auto mb-2 max-h-[min(76dvh,660px)] max-w-[480px] overflow-y-auto overscroll-contain rounded-2xl border-2 border-slate-300 bg-white p-3 shadow-2xl"
           >
             <div className="mb-3 flex items-center justify-between gap-2 border-b border-gray-200 pb-3">
               <h2 className="text-base font-bold text-gray-900">{menuTitle}</h2>
@@ -169,21 +175,22 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
                 {activeSections.map((section) => {
                   const expanded = managementGroupOpen === section.title;
                   return (
-                    <section key={section.title} className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                    <section key={section.title} className="overflow-hidden rounded-xl border-2 border-slate-300 bg-white shadow-sm">
                       <button
                         type="button"
                         aria-expanded={expanded}
                         onClick={() => setManagementGroupOpen(current => current === section.title ? null : section.title)}
-                        className={`flex w-full items-center justify-between gap-2 px-3 py-3.5 text-left text-sm font-bold ${expanded ? "bg-slate-100 text-slate-950" : "bg-white text-gray-900"}`}
+                        className={`flex w-full items-center justify-between gap-2 px-3 py-4 text-left text-sm font-extrabold ${expanded ? "bg-blue-900 text-white" : "bg-slate-100 text-slate-950 hover:bg-slate-200"}`}
                       >
                         <span>{section.title}</span>
                         <span aria-hidden="true" className="text-lg leading-none">{expanded ? "−" : "+"}</span>
                       </button>
                       {expanded && (
-                        <div className="space-y-1 border-t border-gray-200 bg-slate-50 p-2">
+                        <div className="space-y-2 border-t-2 border-slate-300 bg-slate-100 p-2">
                           {section.items.map(item => (
-                            <Link key={item.href} href={item.href} onClick={() => setOpenMenu(null)} aria-current={isPath(item.href) ? "page" : undefined} className={`block rounded-lg px-3 py-3 text-sm font-medium ${isPath(item.href) ? "bg-slate-900 text-white" : "bg-white text-gray-900 hover:bg-blue-50"}`}>
-                              {item.label}
+                            <Link key={item.href} href={item.href} onClick={() => setOpenMenu(null)} aria-current={isPath(item.href) ? "page" : undefined} className={`flex min-h-11 items-center justify-between gap-3 rounded-lg border-2 px-3 py-3 text-sm font-semibold shadow-sm ${isPath(item.href) ? "border-blue-900 bg-blue-900 text-white" : "border-slate-300 bg-white text-slate-950 hover:border-blue-600 hover:bg-blue-50"}`}>
+                              <span>{item.label}</span>
+                              <span aria-hidden="true" className="text-lg leading-none">›</span>
                             </Link>
                           ))}
                           {isAdmin && section.title === "System / Werkzeuge" && (
@@ -207,11 +214,12 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
               <div className="space-y-4">
                 {activeSections.map(section => (
                   <section key={section.title}>
-                    <h3 className="mb-2 px-1 text-xs font-bold uppercase tracking-wide text-slate-600">{section.title}</h3>
-                    <div className="space-y-1.5">
+                    <h3 className="mb-2 rounded-md border-l-4 border-blue-700 bg-slate-100 px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-slate-900">{section.title}</h3>
+                    <div className="space-y-2">
                       {section.items.map(item => (
-                        <Link key={item.href} href={item.href} onClick={() => setOpenMenu(null)} aria-current={isPath(item.href) ? "page" : undefined} className={`block rounded-xl border px-3 py-3 text-sm font-medium ${isPath(item.href) ? "border-slate-900 bg-slate-900 text-white" : "border-gray-200 bg-slate-50 text-gray-900 hover:bg-gray-100"}`}>
-                          {item.label}
+                        <Link key={item.href} href={item.href} onClick={() => setOpenMenu(null)} aria-current={isPath(item.href) ? "page" : undefined} className={`flex min-h-11 items-center justify-between gap-3 rounded-xl border-2 px-3 py-3 text-sm font-semibold shadow-sm ${isPath(item.href) ? "border-blue-900 bg-blue-900 text-white" : "border-slate-300 bg-white text-slate-950 hover:border-blue-600 hover:bg-blue-50"}`}>
+                          <span>{item.label}</span>
+                          <span aria-hidden="true" className="text-lg leading-none">›</span>
                         </Link>
                       ))}
                     </div>
@@ -235,7 +243,8 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
             {menuButton("personal", "👤", personalActive, "Persönlich")}
           </>
         )}
-        <Link href="/hilfe" onClick={() => setOpenMenu(null)} className={buttonClass(isPath("/hilfe"))}><span aria-hidden="true" className="text-lg leading-none">❓</span><span>Hilfe</span></Link>
+        {/* Hilfe ist nur aktiv, solange ihre Seite sichtbar und kein anderes Menue offen ist. */}
+        <Link href="/hilfe" onClick={() => setOpenMenu(null)} className={buttonClass(!openMenu && isPath("/hilfe"))}><span aria-hidden="true" className="text-lg leading-none">❓</span><span>Hilfe</span></Link>
       </div>
     </nav>
   );
