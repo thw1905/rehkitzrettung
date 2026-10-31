@@ -11,6 +11,8 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
+import HistoricalMarkers from "@/components/historical-pinpoints/historical-markers";
+import { useHistoricalPinpoints } from "@/components/historical-pinpoints/use-historical-pinpoints"; // REHKITZ_HISTORICAL_PINS_V1
 import "leaflet/dist/leaflet.css";
 
 export type Pinpoint = {
@@ -31,6 +33,7 @@ export type Pinpoint = {
 };
 
 type Props = {
+  fieldId?: string;
   areaGeoJson: GeoJSON.Feature<GeoJSON.Polygon>;
   pinpoints?: Pinpoint[];
   locationLatitude?: number | null;
@@ -363,6 +366,7 @@ function OpenInfraMapPowerVectorLayer({ visible }: { visible: boolean }) {
 }
 
 export default function OrderFieldMap({
+  fieldId,
   areaGeoJson,
   pinpoints = [],
   locationLatitude,
@@ -371,6 +375,9 @@ export default function OrderFieldMap({
   heightClassName = "h-[420px] sm:h-[520px] md:h-[650px]",
   onPinpointClick,
 }: Props) {
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [historySeason, setHistorySeason] = useState("all");
+  const history = useHistoricalPinpoints({ enabled: historyVisible && Boolean(fieldId), fieldId: fieldId ?? "", season: historySeason });
   const [showPowerLayer, setShowPowerLayer] = useState(true);
   const [showPowerLegend, setShowPowerLegend] = useState(false);
 
@@ -519,6 +526,32 @@ export default function OrderFieldMap({
         )}
       </div>
 
+      {fieldId && (
+        <section className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-3 text-sm text-violet-950">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 font-semibold">
+              <input type="checkbox" checked={historyVisible} onChange={(event) => setHistoryVisible(event.target.checked)} />
+              Vergangene PinPoints anzeigen
+            </label>
+            {historyVisible && (
+              <label className="inline-flex items-center gap-2">Saison:
+                <select value={historySeason} onChange={(event) => setHistorySeason(event.target.value)} className="rounded-lg border border-violet-300 bg-white px-2 py-1">
+                  <option value="all">Alle Saisons</option>
+                  {history.seasons.map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+          {historyVisible && (
+            <div className="mt-2 text-xs">
+              🟣 {history.loading ? "Lade …" : `${history.items.length} alte PinPoints`} · nur Information, keine Bearbeitung.
+              {history.error && <p role="alert" className="mt-1 font-semibold text-red-700">{history.error}</p>}
+              {history.truncated && <p className="mt-1 font-semibold text-amber-800">Zu viele Punkte: maximal 5.000 pro Auswahl. Bitte eine Saison auswählen.</p>}
+            </div>
+          )}
+        </section>
+      )}
+
       <div className={`w-full overflow-hidden rounded-2xl border ${heightClassName}`}>
       <MapContainer
         key={mapKey}
@@ -556,6 +589,7 @@ export default function OrderFieldMap({
         />
 
         <CurrentLocationMarker />
+        <HistoricalMarkers points={historyVisible ? history.items : []} />
         <LocateMeControl />
 
         {polygon && (

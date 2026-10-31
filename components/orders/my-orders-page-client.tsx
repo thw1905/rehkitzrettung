@@ -1577,6 +1577,7 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                             {order.field?.areaGeoJson ? (
                               <div className="map-wrapper">
                                 <OrderFieldMap
+  fieldId={order.field.id}
   areaGeoJson={order.field.areaGeoJson}
   pinpoints={order.pinpoints || []}
   locationLatitude={order.field.locationLatitude}

@@ -228,6 +228,7 @@ export default function AppHeader({ user }: AppHeaderProps) {
       color: "border-blue-200 bg-blue-50 text-blue-950",
       items: [
         { href: "/my-orders", label: "Meine Aufträge" },
+        { href: "/historical-pinpoints", label: "Historische PinPoints" }, // REHKITZ_HISTORICAL_PINS_V1
         { href: "/sicherungsorte", label: "Wild-Sicherungsorte" },
         { href: "/my-notifications", label: "Meine Benachrichtigungen" },
         { href: "/team-members", label: "Mein Team" },

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { title } from "process";
 
 const items = [
+  { href: "/historical-pinpoints", title: "Historische PinPoints", icon: "📍", description: "Vergangene Funde auf der Karte nach Saison filtern" }, // REHKITZ_HISTORICAL_PINS_V1
   {
     href: "/my-orders",
     title: "Meine Aufträge",
