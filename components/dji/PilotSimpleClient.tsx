@@ -382,7 +382,7 @@ export default function PilotSimpleClient() {
   }, [selectedAircraft, auth, allowed]);
 
   // REHKITZ_M4T_MISSION_BUTTON_V1: Missionsmodul in derselben verbundenen Pilot-2-WebView laden.
-  function loadCloudMissions() {
+  async function loadCloudMissions() {
     if (busy || !isConnected) return;
     setMissionStatus("");
     setError("");
@@ -392,7 +392,23 @@ export default function PilotSimpleClient() {
       assertDji(b.platformLoadComponent("mission", "{}"), "DJI-Missionsmodul");
       const loaded = b.platformIsComponentLoaded ? truthy(b.platformIsComponentLoaded("mission")) : null;
       if (loaded === false) throw new Error("DJI meldet das Missionsmodul noch nicht als geladen.");
-      setMissionStatus("Missionsmodul geladen. Jetzt in DJI Pilot 2 die Flugroutenbibliothek und dort die Cloud-Routen öffnen bzw. aktualisieren.");
+      // REHKITZ_WAYLINE_CLOUD_DIAG_V1_2: pruefe die exakt gleiche Cloud-API wie Pilot 2.
+      // Token bleibt im Browser; weder Token noch Workspace werden geloggt.
+      if (!token) throw new Error("Keine aktive DJI-Pilotensitzung. Bitte Einsatz erneut verbinden.");
+      const workspace = await api<{ workspaceId:string }>("/api/dji/pilot2/bridge-bootstrap", post(token));
+      const endpoint = `/wayline/api/v1/workspaces/${encodeURIComponent(workspace.workspaceId)}/waylines?page=1&page_size=10`;
+      let http: Response;
+      try {
+        http = await fetch(endpoint, {cache:"no-store",headers:{"x-auth-token":token}});
+      } catch {throw new Error("Mission geladen, aber Cloud-API im Browser nicht erreichbar (Netzwerk/HTTPS). Bitte Server-Protokoll pruefen.");}
+      let answer: {code?:number;message?:string;data?:{list?:unknown[];pagination?:{total?:number}}}|null = null;
+      try {answer = await http.json();} catch {throw new Error(`Cloud-API HTTP ${http.status}: Keine gueltige JSON-Antwort. Route oder Proxy pruefen.`);}
+      const data=answer?.data;
+      if (!http.ok || answer?.code !== 0 || !Array.isArray(data?.list)) {
+        throw new Error(`Missionsmodul geladen, Cloud-API HTTP ${http.status}, DJI-Code ${answer?.code ?? "?"}. Route/Token pruefen.`);
+      }
+      const count=data?.pagination?.total ?? data?.list?.length ?? 0;
+      setMissionStatus(`Missionsmodul geladen. Cloud-API erreichbar: HTTP ${http.status}, ${count} Mission(en) im Workspace. Jetzt in Pilot 2 Cloud-Routen erneut öffnen.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "DJI-Missionsmodul konnte nicht geladen werden.");
     }
