@@ -110,6 +110,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       owners,
+      canSend: Boolean(currentUser.isAdmin),
       selectedOwner: selectedOwner
         ? {
             id: selectedOwner.id,

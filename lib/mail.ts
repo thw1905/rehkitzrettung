@@ -4,6 +4,7 @@ type SendMailParams = {
   to: string;
   subject: string;
   text: string;
+  attachments?: { filename: string; content: Buffer; contentType?: string }[];
 };
 
 function getRequiredEnv(name: string) {
@@ -16,7 +17,7 @@ function getRequiredEnv(name: string) {
   return value;
 }
 
-export async function sendMail({ to, subject, text }: SendMailParams) {
+export async function sendMail({ to, subject, text, attachments }: SendMailParams) {
   const host = getRequiredEnv("SMTP_HOST");
   const port = Number(process.env.SMTP_PORT || "587");
   const user = getRequiredEnv("SMTP_USER");
@@ -38,5 +39,6 @@ export async function sendMail({ to, subject, text }: SendMailParams) {
     to,
     subject,
     text,
+    ...(attachments ? { attachments } : {}),
   });
 }

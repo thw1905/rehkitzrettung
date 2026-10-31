@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import {
   CircleMarker,
+  Marker,
   MapContainer,
   Polygon,
   Popup,
@@ -11,6 +12,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { ownerFieldLabelPosition } from "@/lib/owner-field-map-geometry";
 
 type AreaFeature =
   | GeoJSON.Feature<GeoJSON.Polygon>
@@ -33,6 +35,7 @@ type PreparedField = {
   code: string;
   label: string;
   rings: [number, number][][];
+  labelPosition: [number, number] | null;
 };
 
 type Props = {
@@ -190,6 +193,10 @@ export default function OwnerFieldMapLeaflet({ fields }: Props) {
           code: getFieldCode(field),
           label: getFieldLabel(field),
           rings: areaFeatureToRings(field.areaGeoJson),
+          labelPosition: (() => {
+            const pos = ownerFieldLabelPosition(field.areaGeoJson);
+            return pos ? [pos[1], pos[0]] as [number, number] : null;
+          })(),
         }))
         .filter((field) => field.rings.length > 0),
     [fields]
@@ -270,6 +277,20 @@ export default function OwnerFieldMapLeaflet({ fields }: Props) {
                   </Popup>
                 </Polygon>
               ))}
+              {preparedField.labelPosition && preparedField.code !== "ohne Nr." ? (
+                <Marker
+                  key={`${preparedField.id}-fl-label`}
+                  position={preparedField.labelPosition}
+                  interactive={false}
+                  zIndexOffset={1000}
+                  icon={L.divIcon({
+                    className: "owner-fl-label-icon",
+                    html: `<span class="owner-fl-label-text">${preparedField.code.replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c] || c))}</span>`,
+                    iconSize: [68, 22],
+                    iconAnchor: [34, 11],
+                  })}
+                />
+              ) : null}
             </div>
           );
         })}
