@@ -1,3 +1,4 @@
+// REHKITZ_MOBILE_NAV_V2 - einfaches Handymenue, PC unveraendert.
 // REHKITZ_MOBILE_NAV_V1 - gemeinsame Menueeintraege mit dem Desktop; rollengerecht.
 "use client";
 
@@ -23,6 +24,7 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
   const pathname = usePathname();
   const isAdmin = Boolean(user?.isAdmin);
   const [openMenu, setOpenMenu] = useState<MenuKey | null>(null);
+  const [managementGroupOpen, setManagementGroupOpen] = useState<string | null>(null);
   const [canOpenGpsTest, setCanOpenGpsTest] = useState(false);
   const [creatingDemoOrder, setCreatingDemoOrder] = useState(false);
   const [deletingDemoOrders, setDeletingDemoOrders] = useState(false);
@@ -37,7 +39,15 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     return () => { cancelled = true; };
   }, [isAdmin]);
 
-  useEffect(() => { setOpenMenu(null); }, [pathname]);
+  useEffect(() => { setOpenMenu(null); setManagementGroupOpen(null); }, [pathname]);
+
+  // Solange ein Menue offen ist, soll die Seite darunter nicht mitscrollen.
+  useEffect(() => {
+    if (!openMenu) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [openMenu]);
   useEffect(() => {
     if (!openMenu) return;
     const onPointerDown = (event: PointerEvent) => {
@@ -113,7 +123,10 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     } finally { setDeletingDemoOrders(false); }
   }
 
-  const toggle = (key: MenuKey) => setOpenMenu(current => current === key ? null : key);
+  const toggle = (key: MenuKey) => {
+    setManagementGroupOpen(null);
+    setOpenMenu(current => current === key ? null : key);
+  };
   const menuButton = (key: MenuKey, emoji: string, active: boolean, shortLabel: string) => (
     <button
       key={key} type="button" onClick={() => toggle(key)}
@@ -128,43 +141,88 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
   return (
     <nav data-mobile-nav-root aria-label="Handy-Navigation" className="mobile-bottom-nav no-print fixed inset-x-0 bottom-0 z-[85] border-t border-gray-200 bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur md:hidden print:hidden">
       {openMenu && (
-        <div id="mobile-navigation-panel" className="absolute bottom-full left-2 right-2 z-[95] mx-auto mb-2 max-h-[min(76dvh,680px)] max-w-[480px] overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl">
-          <div className="mb-3 flex items-center justify-between gap-2 border-b pb-2">
-            <h2 className="text-base font-extrabold text-gray-900">{menuTitle}</h2>
-            <button type="button" aria-label="Menü schließen" onClick={() => setOpenMenu(null)} className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800">Schließen ×</button>
-          </div>
-          <div className="mb-3">
-            <Link href={openMenu === "personal" ? "/personal" : openMenu === "management" ? "/management" : "/operations"} onClick={() => setOpenMenu(null)} className="block rounded-xl border border-gray-300 bg-gray-50 px-3 py-3 text-sm font-bold text-gray-900">
-              {menuTitle} – Übersicht öffnen
-            </Link>
-          </div>
-          <div className="space-y-2">
-            {activeSections.map((section, index) => (
-              <details key={section.title} className="group rounded-xl border border-gray-200 bg-gray-50" open={index === 0 ? true : undefined}>
-                <summary className="cursor-pointer select-none px-3 py-3 text-sm font-extrabold text-gray-900">{section.title}</summary>
-                <div className="space-y-1 px-2 pb-2">
-                  {section.items.map(item => (
-                    <Link key={item.href} href={item.href} onClick={() => setOpenMenu(null)} aria-current={isPath(item.href) ? "page" : undefined} className={`block rounded-lg px-3 py-3 text-sm font-medium ${isPath(item.href) ? "bg-slate-900 text-white" : "bg-white text-gray-900 hover:bg-blue-50"}`}>
-                      {item.label}
-                    </Link>
-                  ))}
-                  {isAdmin && openMenu === "management" && section.title === "System / Werkzeuge" && (
-                    <div className="mt-2 space-y-2 border-t pt-2">
-                      <button type="button" onClick={() => void handleCreateDemoOrder()} disabled={creatingDemoOrder || deletingDemoOrders} className="block w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-left text-sm font-semibold text-amber-950 disabled:opacity-50">
-                        {creatingDemoOrder ? "Erstelle Demo-Auftrag ..." : "Demo-Auftrag erstellen (PIN)"}
+        <>
+          {/* Eine einzige, klar abgegrenzte Menueebene statt mehrerer Popups. */}
+          <button
+            type="button"
+            aria-label="Menü schließen"
+            onClick={() => setOpenMenu(null)}
+            className="fixed inset-0 z-[0] cursor-default bg-slate-900/40"
+          />
+          <div
+            id="mobile-navigation-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={menuTitle}
+            className="absolute bottom-full left-2 right-2 z-[95] mx-auto mb-2 max-h-[min(76dvh,660px)] max-w-[480px] overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-gray-200 pb-3">
+              <h2 className="text-base font-bold text-gray-900">{menuTitle}</h2>
+              <button type="button" aria-label="Menü schließen" onClick={() => setOpenMenu(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800">
+                Schließen ×
+              </button>
+            </div>
+
+            {openMenu === "management" ? (
+              /* Verwaltung: nur Kategorien anzeigen; hoechstens eine davon ist offen. */
+              <div className="space-y-2">
+                {activeSections.map((section) => {
+                  const expanded = managementGroupOpen === section.title;
+                  return (
+                    <section key={section.title} className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        onClick={() => setManagementGroupOpen(current => current === section.title ? null : section.title)}
+                        className={`flex w-full items-center justify-between gap-2 px-3 py-3.5 text-left text-sm font-bold ${expanded ? "bg-slate-100 text-slate-950" : "bg-white text-gray-900"}`}
+                      >
+                        <span>{section.title}</span>
+                        <span aria-hidden="true" className="text-lg leading-none">{expanded ? "−" : "+"}</span>
                       </button>
-                      <button type="button" onClick={() => void handleDeleteDemoOrders()} disabled={deletingDemoOrders || creatingDemoOrder} className="block w-full rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-left text-sm font-semibold text-red-900 disabled:opacity-50">
-                        {deletingDemoOrders ? "Lösche Demo-Aufträge ..." : "Demo-Aufträge löschen"}
-                      </button>
+                      {expanded && (
+                        <div className="space-y-1 border-t border-gray-200 bg-slate-50 p-2">
+                          {section.items.map(item => (
+                            <Link key={item.href} href={item.href} onClick={() => setOpenMenu(null)} aria-current={isPath(item.href) ? "page" : undefined} className={`block rounded-lg px-3 py-3 text-sm font-medium ${isPath(item.href) ? "bg-slate-900 text-white" : "bg-white text-gray-900 hover:bg-blue-50"}`}>
+                              {item.label}
+                            </Link>
+                          ))}
+                          {isAdmin && section.title === "System / Werkzeuge" && (
+                            <div className="space-y-2 border-t border-gray-200 pt-2">
+                              <button type="button" onClick={() => void handleCreateDemoOrder()} disabled={creatingDemoOrder || deletingDemoOrders} className="block w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-left text-sm font-semibold text-amber-950 disabled:opacity-50">
+                                {creatingDemoOrder ? "Erstelle Demo-Auftrag ..." : "Demo-Auftrag erstellen (PIN)"}
+                              </button>
+                              <button type="button" onClick={() => void handleDeleteDemoOrders()} disabled={deletingDemoOrders || creatingDemoOrder} className="block w-full rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-left text-sm font-semibold text-red-900 disabled:opacity-50">
+                                {deletingDemoOrders ? "Lösche Demo-Aufträge ..." : "Demo-Aufträge löschen"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Persoenlich und Einsatz: kein zweites Aufklappmenue, direkte Links. */
+              <div className="space-y-4">
+                {activeSections.map(section => (
+                  <section key={section.title}>
+                    <h3 className="mb-2 px-1 text-xs font-bold uppercase tracking-wide text-slate-600">{section.title}</h3>
+                    <div className="space-y-1.5">
+                      {section.items.map(item => (
+                        <Link key={item.href} href={item.href} onClick={() => setOpenMenu(null)} aria-current={isPath(item.href) ? "page" : undefined} className={`block rounded-xl border px-3 py-3 text-sm font-medium ${isPath(item.href) ? "border-slate-900 bg-slate-900 text-white" : "border-gray-200 bg-slate-50 text-gray-900 hover:bg-gray-100"}`}>
+                          {item.label}
+                        </Link>
+                      ))}
                     </div>
-                  )}
-                </div>
-              </details>
-            ))}
+                  </section>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
-      <div className="mx-auto flex max-w-3xl items-center gap-1.5">
+      <div className="relative z-[96] mx-auto flex max-w-3xl items-center gap-1.5">
         {isAdmin ? (
           <>
             {menuButton("personal", "👤", personalActive, "Persönlich")}
