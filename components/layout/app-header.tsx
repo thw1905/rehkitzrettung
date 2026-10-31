@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import { getNavSections } from "@/components/layout/nav-config"; // REHKITZ_MOBILE_NAV_V1
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
@@ -222,138 +223,21 @@ export default function AppHeader({ user }: AppHeaderProps) {
     `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Unbekannt";
 
   // REHKITZ_WILD_DIALOG_MENUE_V2 – Sicherungsorte fuer alle Rollen im persoenlichen Menue.
-  const personalNavSections = [
-    {
-      title: "Meine Einsätze",
-      color: "border-blue-200 bg-blue-50 text-blue-950",
-      items: [
-        { href: "/my-orders", label: "Meine Aufträge" },
-        { href: "/historical-pinpoints", label: "Historische PinPoints" }, // REHKITZ_HISTORICAL_PINS_V1
-        { href: "/sicherungsorte", label: "Wild-Sicherungsorte" },
-        { href: "/my-notifications", label: "Meine Benachrichtigungen" },
-        { href: "/team-members", label: "Mein Team" },
-      ],
-    },
-    {
-      title: "Meine Daten",
-      color: "border-green-200 bg-green-50 text-green-950",
-      items: [
-        { href: "/availability", label: "Meine Verfügbarkeit" },
-        { href: "/personal-statistics", label: "Meine Statistik" },
-        { href: "/profile", label: "Mein Profil" },
-      ],
-    },
-    {
-      title: "Hilfe",
-      color: "border-purple-200 bg-purple-50 text-purple-950",
-      items: [{ href: "/hilfe", label: "Hilfe / Bedienungsanleitung" }],
-    },
-  ];
+  const sharedNavigation = getNavSections({ canOpenGpsTest });
+
+  const personalNavSections = sharedNavigation.personal;
 
   const personalNavItems = personalNavSections.flatMap(
     (section) => section.items
   );
 
-  const managementNavSections = [
-    {
-      title: "Einsatz / Aufträge",
-      color: "border-blue-200 bg-blue-50 text-blue-950",
-      items: [
-        { href: "/orders", label: "Aufträge" },
-        { href: "/field-order-map", label: "Aufträge per Karte" },
-        { href: "/admin/mowing-requests", label: "Mähanfragen" },
-      ],
-    },
-    {
-      title: "Stammdaten",
-      color: "border-green-200 bg-green-50 text-green-950",
-      items: [
-        { href: "/helpers", label: "Helfer" },
-        { href: "/owners", label: "Landwirte" },
-        { href: "/fields", label: "Flächen" },
-      ],
-    },
-    {
-      title: "Reviere / Hegeringe",
-      color: "border-amber-200 bg-amber-50 text-amber-950",
-      items: [
-        { href: "/reviere", label: "Reviere" },
-        { href: "/hegeringe", label: "Hegeringe" },
-        { href: "/revier-paechter", label: "Revierpächter" },
-        { href: "/revier-map", label: "Revier/Flächenübersicht" },
-        { href: "/owner-field-map", label: "Landwirt-Flächenkarte" },
-        { href: "/admin/reviere-tools", label: "Revier-Werkzeuge" },
-      ],
-    },
-    {
-      title: "Hilfe",
-      color: "border-purple-200 bg-purple-50 text-purple-950",
-      items: [
-        { href: "/hilfe", label: "Bedienungsanleitung" },
-        { href: "/admin/help", label: "Anleitung bearbeiten" },
-      ],
-    },
-    // DJI_MENU_V11_4: geschuetzte DJI-Verwaltung (GPS-Test weiterhin freigabeabhaengig).
-    {
-      title: "DJI / Drohnen",
-      color: "border-sky-200 bg-sky-50 text-sky-950",
-      items: [
-        { href: "/admin/dji-akkus", label: "Drohnen und Akkus" },
-        { href: "/admin/dji-akku-historie", label: "Akkuhistorie" },
-        { href: "/admin/dji-flugzeiten", label: "GPS-Flugzeiten je Fläche" },
-        ...(canOpenGpsTest ? [{ href: "/admin/gps-test", label: "🔒 GPS-Testmodus" }] : []),
-      ],
-    },
-    {
-      title: "System / Werkzeuge",
-      color: "border-slate-200 bg-slate-50 text-slate-950",
-      items: [
-        { href: "/admin/db-check", label: "DB-Check" },
-        { href: "/admin/email-test", label: "✉️ E-Mail-Test" },
-        { href: "/admin/revier-email-template", label: "✉️ E-Mail-Vorlage Revierpächter" },
-        { href: "/admin/flight-certificates", label: "📄 Befliegungsnachweise" },
-      ],
-    },
-  ];
+  const managementNavSections = sharedNavigation.management;
 
   const managementNavItems = managementNavSections.flatMap(
     (section) => section.items
   );
 
-  const operationsNavSections = [
-    {
-      title: "Übersicht",
-      color: "border-blue-200 bg-blue-50 text-blue-950",
-      items: [
-        { href: "/dashboard", label: "Dashboard" },
-        { href: "/notifications", label: "Benachrichtigungen" },
-      ],
-    },
-    {
-      title: "Einsatz",
-      color: "border-green-200 bg-green-50 text-green-950",
-      items: [
-        { href: "/team-planning", label: "Teamplanung" },
-        { href: "/day-assignments", label: "Auftragszuordnung" },
-      ],
-    },
-    {
-      title: "Verfügbarkeit / Teams",
-      color: "border-amber-200 bg-amber-50 text-amber-950",
-      items: [
-        { href: "/availability/admin", label: "Verfügbarkeit Admin" },
-        { href: "/team-slots", label: "Team-Slots" },
-      ],
-    },
-    {
-      title: "Auswertung / Import",
-      color: "border-purple-200 bg-purple-50 text-purple-950",
-      items: [
-        { href: "/statistics", label: "Statistik" },
-        { href: "/admin/field-import", label: "KML-Import" },
-      ],
-    },
-  ];
+  const operationsNavSections = sharedNavigation.operations;
 
   const operationsNavItems = operationsNavSections.flatMap(
     (section) => section.items
