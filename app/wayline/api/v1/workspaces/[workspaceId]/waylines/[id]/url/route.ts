@@ -1,3 +1,4 @@
+// REHKITZ_DJI_CLOUD_DOWNLOAD_REDIRECT_V1_5
 // REHKITZ_DJI_WAYLINE_DOWNLOAD_URL_V1_4
 // REHKITZ_DJI_DOWNLOAD_DIAG_V1_3
 import { NextRequest,NextResponse } from "next/server";
@@ -12,6 +13,6 @@ export async function GET(req:NextRequest,{params}:Ctx){
  if(!session){console.warn("[DJI-WAYLINE-URL] HTTP 401",id);return NextResponse.json({code:401,message:"Unauthorized",data:{}},{status:401});}
  const mission=await findWayline(id,workspaceId);
  if(!mission){console.warn("[DJI-WAYLINE-URL] HTTP 404",id);return NextResponse.json({code:404,message:"Mission not found",data:{}},{status:404});}
- try{const origin=publicOrigin(req.url);const download=signedUrl(mission.id,origin);console.info("[DJI-WAYLINE-URL] HTTP 200",id,"Download-Host",new URL(download).host);return NextResponse.json({code:0,message:"success",data:download},{headers:{"Cache-Control":"no-store"}});}
+ try{const origin=publicOrigin(req.url);const download=signedUrl(mission.id,origin);console.info("[DJI-WAYLINE-URL] HTTP 302",id,"Download-Host",new URL(download).host);const response=NextResponse.redirect(download,302);response.headers.set("Cache-Control","private, no-store");return response;}
  catch(e){console.error("[DJI-WAYLINE-URL] HTTP 500",id,e instanceof Error?e.message:"unbekannt");return NextResponse.json({code:500,message:e instanceof Error?e.message:"Download error",data:{}},{status:500});}
 }
