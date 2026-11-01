@@ -1,3 +1,4 @@
+// REHKITZ_DJI_M4T_PAYLOAD_FIX_V1_6
 // REHKITZ_WAYLINE_CLOUD_V1 - M4T und Pilot2-Cloud-Routenbibliothek.
 // REHKITZ_FLUGMISSION_V1 – DJI-Flugplanung; keine Aenderung bestehender DJI-Bindings.
 import JSZip from "jszip";
@@ -19,7 +20,7 @@ const common=(o:MissionOptions,aircraft:"M3T"|"M4T")=>`<wpml:missionConfig>
   <wpml:globalTransitionalSpeed>${num(o.speed)}</wpml:globalTransitionalSpeed>
   <wpml:globalRTHHeight>${num(Math.min(120,Math.max(o.altitude+20,50)))}</wpml:globalRTHHeight>
   <wpml:droneInfo><wpml:droneEnumValue>${aircraft==="M4T"?99:77}</wpml:droneEnumValue><wpml:droneSubEnumValue>1</wpml:droneSubEnumValue></wpml:droneInfo>
-  <wpml:payloadInfo><wpml:payloadEnumValue>${aircraft==="M4T"?89:67}</wpml:payloadEnumValue>${aircraft==="M4T"?"<wpml:payloadSubEnumValue>2</wpml:payloadSubEnumValue>":""}<wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo>
+  <wpml:payloadInfo><wpml:payloadEnumValue>${aircraft==="M4T"?89:67}</wpml:payloadEnumValue>${aircraft==="M4T"?"<wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue>":""}<wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo>
 </wpml:missionConfig>`;
 const coords=(p:[number,number])=>`${num(p[0])},${num(p[1])}`;
 const templatePoint=(p:[number,number],i:number,o:MissionOptions)=>`<Placemark>
