@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import PilotLoginClient from "@/components/dji/PilotLoginClient";
+import DjiPilotLogDiagnose from "@/components/dji/DjiPilotLogDiagnose"; // DJI_PILOT_LOG_DIAG_V1
 import GpsTestPinGate from "@/components/admin/gps-test-pin-gate";
 import { gpsTestPrincipal, GPS_TEST_COOKIE_NAME, isValidGpsTestToken } from "@/lib/gps-test-access";
 
@@ -19,5 +20,10 @@ export default async function PilotTechnicalPage() {
   if (!isValidGpsTestToken(jar.get(GPS_TEST_COOKIE_NAME)?.value, admin.id)) {
     return <GpsTestPinGate />;
   }
-  return <PilotLoginClient />;
+  return (
+    <>
+      <DjiPilotLogDiagnose />
+      <PilotLoginClient />
+    </>
+  );
 }
