@@ -1,4 +1,3 @@
-// REHKITZ_DJI_WAYLINE_ACTION_TYPE_V1_8
 // DJI Cloud API: Pilot2 abonniert die Cloud-Routenbibliothek.
 import { NextRequest,NextResponse } from "next/server";
 import { checkDjiSession } from "@/lib/dji/token";
@@ -20,7 +19,7 @@ export async function GET(req:NextRequest,{params}:Ctx){
   payload_model_keys:[m.aircraft==="M4T"?"1-89-0":"1-67-0"],
   template_types:[0],user_name:"Rehkitzrettung Hegering Hittfeld",
   update_time:m.createdAt,create_time:m.createdAt,
-  action_type:"",favorited:false,
+  action_type:0,favorited:false,
  }));
  return NextResponse.json({code:0,message:"success",data:{list,pagination:{page,page_size,total:missions.length}}},{headers:{"Cache-Control":"no-store"}});
 }
