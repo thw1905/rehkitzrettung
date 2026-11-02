@@ -1,3 +1,4 @@
+// REHKITZ_DJI_M4T_GLOBAL_HEIGHT_FIX_V1_7
 // REHKITZ_DJI_M4T_PAYLOAD_FIX_V1_6
 // REHKITZ_WAYLINE_CLOUD_V1 - M4T und Pilot2-Cloud-Routenbibliothek.
 // REHKITZ_FLUGMISSION_V1 – DJI-Flugplanung; keine Aenderung bestehender DJI-Bindings.
@@ -23,9 +24,9 @@ const common=(o:MissionOptions,aircraft:"M3T"|"M4T")=>`<wpml:missionConfig>
   <wpml:payloadInfo><wpml:payloadEnumValue>${aircraft==="M4T"?89:67}</wpml:payloadEnumValue>${aircraft==="M4T"?"<wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue>":""}<wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo>
 </wpml:missionConfig>`;
 const coords=(p:[number,number])=>`${num(p[0])},${num(p[1])}`;
-const templatePoint=(p:[number,number],i:number,o:MissionOptions)=>`<Placemark>
+const templatePoint=(p:[number,number],i:number,o:MissionOptions,aircraft:"M3T"|"M4T")=>`<Placemark>
  <Point><coordinates>${coords(p)}</coordinates></Point>
- <wpml:index>${i}</wpml:index><wpml:useGlobalHeight>0</wpml:useGlobalHeight><wpml:height>${num(o.altitude)}</wpml:height>
+ <wpml:index>${i}</wpml:index><wpml:useGlobalHeight>${aircraft==="M4T"?1:0}</wpml:useGlobalHeight><wpml:height>${num(o.altitude)}</wpml:height>
  <wpml:useGlobalSpeed>1</wpml:useGlobalSpeed><wpml:useGlobalHeadingParam>1</wpml:useGlobalHeadingParam><wpml:useGlobalTurnParam>1</wpml:useGlobalTurnParam>
 </Placemark>`;
 const gimbalNadirAction=`<wpml:actionGroup><wpml:actionGroupId>900</wpml:actionGroupId><wpml:actionGroupStartIndex>0</wpml:actionGroupStartIndex><wpml:actionGroupEndIndex>0</wpml:actionGroupEndIndex><wpml:actionGroupMode>sequence</wpml:actionGroupMode><wpml:actionTrigger><wpml:actionTriggerType>reachPoint</wpml:actionTriggerType></wpml:actionTrigger><wpml:action><wpml:actionId>0</wpml:actionId><wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:gimbalHeadingYawBase>aircraft</wpml:gimbalHeadingYawBase><wpml:gimbalRotateMode>absoluteAngle</wpml:gimbalRotateMode><wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable><wpml:gimbalPitchRotateAngle>-90</wpml:gimbalPitchRotateAngle><wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable><wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable><wpml:gimbalRotateTimeEnable>0</wpml:gimbalRotateTimeEnable><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:actionActuatorFuncParam></wpml:action></wpml:actionGroup>`;
@@ -44,7 +45,7 @@ export async function makeMissionKmz(plan:FlightPlan,o:MissionOptions,label:stri
  <wpml:autoFlightSpeed>${num(o.speed)}</wpml:autoFlightSpeed>${aircraft==="M4T"?`<wpml:globalHeight>${num(o.altitude)}</wpml:globalHeight><wpml:gimbalPitchMode>manual</wpml:gimbalPitchMode>`:""}
  <wpml:globalWaypointHeadingParam><wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode></wpml:globalWaypointHeadingParam>
  <wpml:globalWaypointTurnMode>toPointAndStopWithDiscontinuityCurvature</wpml:globalWaypointTurnMode><wpml:globalUseStraightLine>1</wpml:globalUseStraightLine>
- ${plan.waypoints.map((p,i)=>templatePoint(p,i,o)).join('\n')}</Folder>`+closing;
+ ${plan.waypoints.map((p,i)=>templatePoint(p,i,o,aircraft)).join('\n')}</Folder>`+closing;
  const waylines=headerFor(aircraft)+common(o,aircraft)+`<Folder><wpml:templateId>0</wpml:templateId><wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode><wpml:waylineId>0</wpml:waylineId><wpml:autoFlightSpeed>${num(o.speed)}</wpml:autoFlightSpeed>
  ${plan.waypoints.map((p,i)=>executablePoint(p,i,o,aircraft)).join('\n')}</Folder>`+closing;
  const zip=new JSZip();zip.file('wpmz/template.kml',template);zip.file('wpmz/waylines.wpml',waylines);
