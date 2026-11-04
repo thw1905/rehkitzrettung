@@ -25,8 +25,13 @@ export async function POST(req:NextRequest){
   const plan=createFlightPlan(field.areaGeoJson,options);
   // Nicht uebertragen, wenn die angelegte Mission extrem komplex oder lange waere.
   if(plan.waypoints.length>500||plan.estimatedMinutes>80)throw new Error("Testlimit: hoechstens 500 Wegpunkte und 80 Minuten. Flaeche aufteilen.");
-  const shortName=String(field.displayName||field.name).replace(/[<>"']/g,"").slice(0,55);
-  const name=`FL ${shortName} ${aircraft} ${camera==="THERMAL"?"IR":"RGB"} ${new Date().toISOString().slice(0,16).replace("T"," ").replace(/:/g,"-")}`.slice(0,95);
+  // REHKITZ_DJI_MISSIONSNAME_FROM_FIELD_V2_2 - Nummer aus gewaehlter Field.name/displayName, NICHT aus Auftragszaehler.
+  const flNumber = [field.displayName, field.name]
+    .filter((v): v is string => typeof v === "string")
+    .map(v => v.match(/(?:^|[^a-zA-Z0-9])FL[\s_-]*([0-9]{1,8})(?![0-9])/i))
+    .find((match) => match !== null)?.[1];
+  if (!flNumber) return NextResponse.json({error:"Flaechennummer (z.B. FL-0034) in name/displayName nicht gefunden."},{status:400});
+  const name = `FL${flNumber.padStart(4, "0")}`;
   const kmz=await makeMissionKmz(plan,options,name,aircraft);
   const entry=await storeWayline({name,fieldId:field.id,aircraft,camera,workspaceId:configuredWorkspace()},kmz);
   return NextResponse.json({success:true,mission:{id:entry.id,name:entry.name,waypoints:plan.waypoints.length,estimatedMinutes:plan.estimatedMinutes},message:"Mission in DJI-Cloud-Bibliothek bereitgestellt. Noch kein Pilot2-Import bestaetigt."},{headers:{"Cache-Control":"no-store"}});
