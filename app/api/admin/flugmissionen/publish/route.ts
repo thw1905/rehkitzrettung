@@ -26,7 +26,7 @@ export async function POST(req:NextRequest){
   // Nicht uebertragen, wenn die angelegte Mission extrem komplex oder lange waere.
   if(plan.waypoints.length>500||plan.estimatedMinutes>80)throw new Error("Testlimit: hoechstens 500 Wegpunkte und 80 Minuten. Flaeche aufteilen.");
   const shortName=String(field.displayName||field.name).replace(/[<>"']/g,"").slice(0,55);
-  const name=`FL ${shortName} ${aircraft} ${camera==="THERMAL"?"IR":"RGB"} ${new Date().toISOString().slice(0,16).replace("T"," ")}`.slice(0,95);
+  const name=`FL ${shortName} ${aircraft} ${camera==="THERMAL"?"IR":"RGB"} ${new Date().toISOString().slice(0,16).replace("T"," ").replace(/:/g,"-")}`.slice(0,95);
   const kmz=await makeMissionKmz(plan,options,name,aircraft);
   const entry=await storeWayline({name,fieldId:field.id,aircraft,camera,workspaceId:configuredWorkspace()},kmz);
   return NextResponse.json({success:true,mission:{id:entry.id,name:entry.name,waypoints:plan.waypoints.length,estimatedMinutes:plan.estimatedMinutes},message:"Mission in DJI-Cloud-Bibliothek bereitgestellt. Noch kein Pilot2-Import bestaetigt."},{headers:{"Cache-Control":"no-store"}});
