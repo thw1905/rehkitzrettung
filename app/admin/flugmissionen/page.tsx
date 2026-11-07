@@ -14,6 +14,7 @@ export default async function FlugmissionenPage() {
   <div><Link href="/fields" className="text-sm text-blue-700 underline">← Flächenverwaltung</Link>
   <h1 className="mt-2 text-2xl font-bold text-gray-950">DJI Flugmissionen planen</h1>
   <p className="mt-2 text-sm text-gray-700">Testversion: vorhandene FL-Flächen als Suchbahnen planen, auf der Karte kontrollieren und für M3T oder M4T als KMZ exportieren bzw. in Pilot 2 bereitstellen.</p></div>
-  <FlightMissionPlanner />
+  <div className="mb-4 flex justify-end"><a href="/admin/flugmissionen/cloud-verwalten" className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-gray-100 dark:hover:bg-gray-800">DJI-Cloud-Missionen verwalten</a></div>
+<FlightMissionPlanner />
  </main>;
 }

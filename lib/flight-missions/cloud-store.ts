@@ -22,7 +22,29 @@ async function listRaw():Promise<StoredMission[]>{
  try{const json=JSON.parse(await fs.readFile(indexPath(),"utf8"));return Array.isArray(json)?json.filter(x=>validId(x?.id)):[];}
  catch(e){if((e as NodeJS.ErrnoException).code==="ENOENT")return [];throw e;}
 }
-export async function listWaylines(workspaceId?:string){return (await listRaw()).filter(x=>!workspaceId||!x.workspaceId||x.workspaceId===workspaceId).sort((a,b)=>b.createdAt-a.createdAt);}
+// REHKITZ_DJI_CLOUD_ARCHIVE_V2_5
+// Cloud-Missionen werden per separater Archiv-Markierung ausgeblendet.
+// index.json und die KMZ-Dateien bleiben erhalten (kein Datenverlust).
+function archiveDir(){return path.join(baseDir(),".archivierte-cloud-missionen");}
+async function archivedWaylineIds():Promise<Set<string>>{
+ try{
+  const entries=await fs.readdir(archiveDir());
+  return new Set(entries.filter(name=>name.endsWith(".json")).map(name=>name.slice(0,-5)).filter(validId));
+ }catch(e){if((e as NodeJS.ErrnoException).code==="ENOENT")return new Set<string>();throw e;}
+}
+export async function archiveCloudWayline(id:string,workspaceId?:string):Promise<boolean>{
+ if(!validId(id))return false;
+ const mission=(await listRaw()).find(m=>m.id===id&&(!workspaceId||!m.workspaceId||m.workspaceId===workspaceId));
+ if(!mission)return false;
+ await fs.mkdir(archiveDir(),{recursive:true,mode:0o700});
+ const marker=path.join(archiveDir(),id+".json");
+ try{
+  await fs.writeFile(marker,JSON.stringify({id:mission.id,name:mission.name,workspaceId:mission.workspaceId,archivedAt:Date.now()},null,2),{flag:"wx",mode:0o600});
+  return true;
+ }catch(e){if((e as NodeJS.ErrnoException).code==="EEXIST")return false;throw e;}
+}
+
+export async function listWaylines(workspaceId?:string){const [all,hidden]=await Promise.all([listRaw(),archivedWaylineIds()]);return all.filter(x=>!hidden.has(x.id)&&(!workspaceId||!x.workspaceId||x.workspaceId===workspaceId)).sort((a,b)=>b.createdAt-a.createdAt);}
 export async function findWayline(id:string,workspaceId?:string){if(!validId(id))return null;return (await listWaylines(workspaceId)).find(x=>x.id===id)||null;}
 export async function storeWayline(meta:Omit<StoredMission,"id"|"size"|"sign"|"createdAt">,file:Uint8Array){
  if(file.byteLength<500||file.byteLength>6_000_000)throw new Error("KMZ-Groesse ausserhalb des Testlimits.");
