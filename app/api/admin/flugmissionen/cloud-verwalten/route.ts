@@ -1,7 +1,7 @@
-// REHKITZ_DJI_CLOUD_ARCHIVE_V2_5: Adminliste und Archivierung.
+// REHKITZ_DJI_V3_ONE_PER_FIELD: Adminliste mit dauerhaftem Loeschen ohne Archivierung.
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
-import { archiveCloudWayline, configuredWorkspace, listWaylines, publicOrigin } from "@/lib/flight-missions/cloud-store";
+import { deleteWaylinePermanently, configuredWorkspace, listWaylines, publicOrigin } from "@/lib/flight-missions/cloud-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,9 +32,9 @@ export async function DELETE(req:NextRequest){
   if(typeof id!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)){
    return NextResponse.json({error:"Ungueltige Mission-ID."},{status:400,headers:noStore});
   }
-  const ok=await archiveCloudWayline(id,configuredWorkspace());
+  const ok=await deleteWaylinePermanently(id,configuredWorkspace());
   if(!ok)return NextResponse.json({error:"Mission nicht gefunden oder bereits entfernt."},{status:404,headers:noStore});
-  console.info("[DJI-CLOUD-ARCHIV] Mission aus Cloud-Bibliothek ausgeblendet:",id);
+  console.info("[DJI-CLOUD-DELETE] Mission dauerhaft entfernt:",id);
   return NextResponse.json({success:true},{headers:noStore});
  }catch(e){
   console.error("DJI-Cloud-Missionen DELETE:",e);

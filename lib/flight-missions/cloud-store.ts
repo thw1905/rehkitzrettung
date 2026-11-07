@@ -77,3 +77,82 @@ export function validSignature(id:string,expValue:string|null,sig:string|null){
  const expected=Buffer.from(signature(id,exp),"hex"),actual=Buffer.from(sig,"hex");
  return expected.length===actual.length&&timingSafeEqual(expected,actual);
 }
+
+
+// REHKITZ_DJI_V3_ONE_PER_FIELD: keine dauerhafte Versionshistorie.
+// Neue KMZ und Planungsdaten zuerst schreiben, Index atomar umstellen,
+// erst danach vorherige Dateien endgueltig entfernen.
+export class WaylineConflictError extends Error {
+ constructor(){super("Die Flugmission wurde inzwischen geaendert. Bitte Seite neu laden.");}
+}
+async function withWaylineWriteLock<T>(fn:()=>Promise<T>):Promise<T>{
+ await fs.mkdir(baseDir(),{recursive:true,mode:0o700});
+ const lock=path.join(baseDir(),".cloud-write-v3-lock");
+ try{await fs.mkdir(lock,{mode:0o700});}
+ catch(e){if((e as NodeJS.ErrnoException).code==="EEXIST")throw new WaylineConflictError();throw e;}
+ try{return await fn();}finally{await fs.rmdir(lock).catch(()=>{});}
+}
+function sameWorkspace(m:StoredMission,ws:string){return !ws||!m.workspaceId||m.workspaceId===ws;}
+async function cleanupWayline(id:string){
+ if(!validId(id))return;
+ for(const file of [path.join(baseDir(),id+".kmz"),path.join(baseDir(),".planung",id+".json"),path.join(archiveDir(),id+".json")]){
+  try{await fs.rm(file,{force:true});}catch(e){console.error("[DJI-V3] Veraltete Datei konnte nicht geloescht werden",id,path.basename(file),e);}
+ }
+}
+export async function replaceWaylineForField(
+ meta:Omit<StoredMission,"id"|"size"|"sign"|"createdAt">,
+ file:Uint8Array,expectedMissionId:string|null,planningJson:string|null
+):Promise<StoredMission>{
+ if(!meta.fieldId||!meta.workspaceId||!meta.name||file.byteLength<500||file.byteLength>6_000_000)
+  throw new Error("Ungueltige Flugmission oder Cloud-Workspace nicht konfiguriert.");
+ return withWaylineWriteLock(async()=>{
+  const all=await listRaw();
+  const hidden=await archivedWaylineIds();
+  const old=all.filter(m=>m.fieldId===meta.fieldId&&sameWorkspace(m,meta.workspaceId));
+  const active=old.filter(m=>!hidden.has(m.id)).sort((a,b)=>b.createdAt-a.createdAt);
+  if((active[0]?.id||null)!==expectedMissionId)throw new WaylineConflictError();
+  if(all.some(m=>m.fieldId!==meta.fieldId&&sameWorkspace(m,meta.workspaceId)&&!hidden.has(m.id)&&m.name===meta.name))
+   throw new Error("Dieser Missionsname ist bereits einer anderen Flaeche zugeordnet.");
+  const kept=all.filter(m=>!old.some(x=>x.id===m.id));
+  if(kept.length>=150)throw new Error("Das Cloud-Limit von 150 Missionen ist erreicht.");
+  const id=randomUUID();
+  const entry:StoredMission={...meta,id,size:file.byteLength,sign:createHash("md5").update(file).digest("hex"),createdAt:Date.now()};
+  const kmz=path.join(baseDir(),id+".kmz");
+  const plan=path.join(baseDir(),".planung",id+".json");
+  const tmp=indexPath()+"."+id+".tmp";
+  let switched=false;
+  try{
+   await fs.writeFile(kmz,file,{flag:"wx",mode:0o600});
+   if(planningJson!==null){
+    await fs.mkdir(path.dirname(plan),{recursive:true,mode:0o700});
+    await fs.writeFile(plan,planningJson,{flag:"wx",mode:0o600});
+   }
+   await fs.writeFile(tmp,JSON.stringify([entry,...kept],null,2),{flag:"wx",mode:0o600});
+   await fs.rename(tmp,indexPath());
+   switched=true;
+  }finally{
+   if(!switched){
+    await Promise.all([fs.rm(kmz,{force:true}),fs.rm(plan,{force:true}),fs.rm(tmp,{force:true})]);
+   }
+  }
+  // Erst nach erfolgreichem Indexwechsel: alte Dateien samt etwaigen V2.5-Archivmarkern loeschen.
+  for(const m of old)await cleanupWayline(m.id);
+  return entry;
+ });
+}
+// Admin-Verwaltung: bewusst endgueltiges Loeschen, keine Archivmarker erzeugen.
+export async function deleteWaylinePermanently(id:string,workspaceId:string):Promise<boolean>{
+ if(!validId(id)||!workspaceId)return false;
+ return withWaylineWriteLock(async()=>{
+  const all=await listRaw();
+  const m=all.find(x=>x.id===id&&sameWorkspace(x,workspaceId));
+  if(!m)return false;
+  const tmp=indexPath()+"."+randomUUID()+".tmp";
+  try{
+   await fs.writeFile(tmp,JSON.stringify(all.filter(x=>x.id!==id),null,2),{flag:"wx",mode:0o600});
+   await fs.rename(tmp,indexPath());
+  }catch(e){await fs.rm(tmp,{force:true});throw e;}
+  await cleanupWayline(id);
+  return true;
+ });
+}

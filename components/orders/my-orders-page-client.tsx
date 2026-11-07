@@ -78,6 +78,7 @@ type OperationDayTeam = {
   actualStartTime?: string | null;
   actualEndTime?: string | null;
   team?: Team | null;
+  pilot?: {id:string}|null;
 };
 
 type Order = {
@@ -503,9 +504,11 @@ function WildCounterButton({
 export default function MyOrdersPageClient({
   isAdmin,
   role,
+  userId,
 }: {
   isAdmin: boolean;
   role: string;
+  userId: string;
 }) {
   const [selectedDate, setSelectedDate] = useState(getTodayDateInputValue());
   const [nowMs, setNowMs] = useState(Date.now());
@@ -1594,6 +1597,12 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
                               </div>
                             )}
 
+                            {order.field?.id && (isAdmin || (role === "PILOT" && order.operationDayTeam?.pilot?.id === userId)) && (
+                              <a href={`/flugmissionen/auftrag/${encodeURIComponent(order.id)}`}
+                                className="mt-3 block w-full rounded-xl bg-blue-800 py-3 text-center text-base font-bold text-white hover:bg-blue-900">
+                                DJI-Flugmission planen / pruefen
+                              </a>
+                            )}
                             {order.status !== "IN_ARBEIT" ? (
                               <button
                                 type="button"

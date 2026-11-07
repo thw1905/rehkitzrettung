@@ -11,7 +11,7 @@ export default async function MyOrdersPage() {
   }
 
   return (
-    <MyOrdersPageClient
+    <MyOrdersPageClient userId={String((session.user as any).id || "")}
       isAdmin={!!(session.user as any).isAdmin}
       role={(session.user as any).role}
     />
