@@ -28,12 +28,31 @@ function metadataPath(id: string) {
   if (!idRe.test(id)) throw new Error("Ungueltige Mission-ID.");
   return path.join(storageDir(), ".planung", id + ".json");
 }
+// REHKITZ_DJI_MISSIONNAME_OHNE_FL_V3_0_3
+// Keine FL-Nummer erfinden; sichere, stabile Bezeichnung aus dem Feldnamen.
+// Die eindeutige Zuordnung zur Mission erfolgt weiterhin ueber field.id.
+function flightFallbackName(field: { name: string; displayName: string | null }) {
+  const raw = [field.displayName, field.name]
+    .find(v => typeof v === "string" && v.trim().length > 0)?.trim() || "";
+  if (!raw) throw new Error("Die Flaeche hat weder Nummer noch Namen.");
+  let label = raw.normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .toUpperCase();
+  // TEST / UEBUNG - Demo-Wiese -> TEST-DEMO-WIESE
+  label = label.replace(/^TEST[\s/_-]*U(?:E)?BUNG(?:[\s/_\u2013\u2014-]+|$)/, "TEST-");
+  label = label.replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+    .slice(0, 60).replace(/-+$/g, "");
+  if (!label) throw new Error("Aus der Flaechenbezeichnung laesst sich kein Missionsname erzeugen.");
+  return label;
+}
+
 export function flightNameFromField(field: {name: string;displayName: string|null}) {
   const digits = [field.displayName, field.name]
     .filter((x): x is string => typeof x === "string")
     .map(x=>x.match(/(?:^|[^a-zA-Z0-9])FL[\s_-]*([0-9]{1,8})(?![0-9])/i))
     .find(Boolean)?.[1];
-  if (!digits) throw new Error("Flaechennummer (z.B. FL-0034) nicht gefunden.");
+  if (!digits) return flightFallbackName(field);
   return "FL" + digits.padStart(4,"0");
 }
 export async function orderFlightField(user: AuthorizedUser|null, orderId: string) {
