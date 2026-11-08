@@ -1,3 +1,4 @@
+// REHKITZ_DJI_FLUGPLANUNG_V3_4
 // REHKITZ_FLUGMISSION_V1 – DJI-Flugplanung; keine Aenderung bestehender DJI-Bindings.
 // FLUGMISSION_PLAN_V1 – rein geometrische Vorplanung. Keine Freigabe fuer autonomen Flug.
 export type LonLat = [number, number];
@@ -45,7 +46,7 @@ function parsePolygons(input: unknown): LonLat[][][] {
   });
 }
 const distance = (a: XY,b:XY) => Math.hypot(a.x-b.x,a.y-b.y);
-export function createFlightPlan(input: unknown, rawOptions: MissionOptions): FlightPlan {
+export function createFlightPlan(input: unknown, rawOptions: MissionOptions, startPoint?: LonLat | null): FlightPlan {
   const opts = validateOptions(rawOptions);
   const polygons = parsePolygons(input);
   const all = polygons.flat(2);
@@ -72,8 +73,10 @@ export function createFlightPlan(input: unknown, rawOptions: MissionOptions): Fl
     }
     return xs;
   }
-  const lines:FlightLine[]=[];const ordered:XY[]=[];
-  let reverse=false;
+  // V3.4: dieselben Suchstreifen, aber bis zu vier Zickzack-Reihenfolgen vergleichen.
+  // Start und Ziel bleiben am gewaehlten Startplatz. Ohne Startpunkt bleibt der
+  // alte Wegpunktverlauf unveraendert (Abwaertskompatibilitaet).
+  const rows: Array<Array<{a:XY;b:XY}>> = [];
   for(let y=minY+Math.min(opts.spacing/2,(maxY-minY)/2),n=0;y<maxY-1e-7;y+=opts.spacing,n++){
     if(n>1000) throw new Error("Zu viele Flugbahnen.");
     const parts:{a:XY;b:XY}[]=[];
@@ -86,28 +89,51 @@ export function createFlightPlan(input: unknown, rawOptions: MissionOptions): Fl
       }
     }
     parts.sort((a,b)=>a.a.x-b.a.x);
-    if(reverse) parts.reverse();
-    for(const part of parts){
-      const a=reverse?part.b:part.a,b=reverse?part.a:part.b;
-      ordered.push(a,b);lines.push({start:back(a),end:back(b)});
+    if(parts.length) rows.push(parts);
+  }
+  if(rows.length===0)throw new Error("Flaeche zu schmal fuer diese Bahnabstaende/Randabstaende.");
+  function candidate(rowsReversed:boolean,firstReverse:boolean){
+    const sequence=rowsReversed?[...rows].reverse():rows;
+    const ordered:XY[]=[];
+    const lines:FlightLine[]=[];
+    let reverse=firstReverse;
+    for(const originalParts of sequence){
+      const parts=reverse?[...originalParts].reverse():originalParts;
+      for(const part of parts){
+        const a=reverse?part.b:part.a,b=reverse?part.a:part.b;
+        ordered.push(a,b);lines.push({start:back(a),end:back(b)});
+      }
+      reverse=!reverse;
+      if(ordered.length>900)throw new Error("Mehr als 900 Wegpunkte; Bahnabstand vergroessern oder Flaeche aufteilen.");
     }
-    if(parts.length) reverse=!reverse;
-    if(ordered.length>900) throw new Error("Mehr als 900 Wegpunkte; Bahnabstand vergrößern oder Fläche aufteilen.");
+    const transfers:FlightLine[]=[];
+    let searchMeters=0,totalMeters=0;
+    for(let i=0;i<ordered.length-1;i++){
+      const len=distance(ordered[i],ordered[i+1]);totalMeters+=len;
+      if(i%2===0)searchMeters+=len;
+      else transfers.push({start:back(ordered[i]),end:back(ordered[i+1])});
+    }
+    const waypointCoords=ordered.map(back);
+    const startOk=startPoint && Array.isArray(startPoint) && startPoint.length===2 &&
+      startPoint.every(v=>finite(v)) && Math.abs(startPoint[0])<=180 && Math.abs(startPoint[1])<=85;
+    const startXY=startOk?rotate(startPoint):null;
+    const approachMeters=startXY?distance(startXY,ordered[0]):0;
+    const returnMeters=startXY?distance(ordered[ordered.length-1],startXY):0;
+    return {waypoints:waypointCoords,lines,transfers,totalMeters,searchMeters,
+      estimatedMinutes:totalMeters/opts.speed/60,
+      costMeters:totalMeters+approachMeters+returnMeters};
   }
-  if(!lines.length || ordered.length<2) throw new Error("Flaeche zu schmal fuer diese Bahnabstaende/Randabstaende.");
-  const transfers:FlightLine[]=[];
-  let searchMeters=0,totalMeters=0;
-  for(let i=0;i<ordered.length-1;i++){
-    const len=distance(ordered[i],ordered[i+1]);totalMeters+=len;
-    if(i%2===0) searchMeters+=len;
-    else transfers.push({start:back(ordered[i]),end:back(ordered[i+1])});
-  }
+  const hasStart=startPoint && Array.isArray(startPoint) && startPoint.length===2 &&
+    startPoint.every(v=>finite(v)) && Math.abs(startPoint[0])<=180 && Math.abs(startPoint[1])<=85;
+  const candidates=hasStart?[candidate(false,false),candidate(false,true),candidate(true,false),candidate(true,true)]:[candidate(false,false)];
+  // Gleichstand: stabile erste Variante. Dadurch bleiben Ergebnisse reproduzierbar.
+  const best=candidates.reduce((a,b)=>b.costMeters<a.costMeters-0.01?b:a);
   const warnings = [
-    "Nur Vorplanung: Hindernisse, Leitungen, Hoehenprofil, Flugverbotszonen und tatsaechliche Waermebildabdeckung sind nicht automatisch geprueft.",
-    "Die Flughöhe ist relativ zum Startpunkt, nicht automatisch relativ zum Gelände. Pilot muss Mission in Pilot 2 pruefen.",
-    "Verbindungsetappen zwischen Suchbahnen koennen ausserhalb der Flaeche liegen (rot gestrichelt dargestellt).",
-    "Bildwinkelberechnung setzt Kamera senkrecht nach unten, unbeschnittenen Bildausschnitt und konstante Hoehe ueber Grund voraus. Diese Bedingungen sind NICHT durch den Export sichergestellt.",
+    "Geodaten sind kein Hindernis- oder Flugfreigabenachweis.",
+    "Hoehenreferenz und Flugroute vor Flug in Pilot 2 pruefen.",
+    "Verbindungsetappen koennen ausserhalb der Flaeche liegen.",
+    "Kameraabdeckung ist ein geometrisches Modell.",
   ];
   if(polygons.length>1 || polygons.some(p=>p.length>1)) warnings.push("Die Fläche hat mehrere Teile oder Innenringe. Ueberflugstrecken unbedingt kontrollieren.");
-  return {waypoints:ordered.map(back),lines,transfers,totalMeters,searchMeters,estimatedMinutes:totalMeters/opts.speed/60,warnings};
+  return {waypoints:best.waypoints,lines:best.lines,transfers:best.transfers,totalMeters:best.totalMeters,searchMeters:best.searchMeters,estimatedMinutes:best.estimatedMinutes,warnings};
 }

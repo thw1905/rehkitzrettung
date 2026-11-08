@@ -1,3 +1,4 @@
+// REHKITZ_DJI_FLUGPLANUNG_V3_4
 // REHKITZ_DJI_TERRAIN_V3_1 – authorized, server-calculated elevation profile.
 import {NextRequest,NextResponse} from "next/server";
 import {getCurrentUserWithTeams} from "@/lib/current-user";
@@ -27,7 +28,7 @@ export async function POST(req:NextRequest){
    user.isAdmin?await db.field.findUnique({where:{id:body.fieldId},select:{id:true,name:true,displayName:true,areaGeoJson:true}}):null;
   if(!field||field.id!==body.fieldId)return NextResponse.json({error:"Keine Berechtigung fuer diese Flaeche."},{status:403,headers:NO_STORE});
   const o=validateOptions(optionsForCamera(body.options,body.aircraft,body.camera as MissionCamera,body.overlapPercent,body.manualSpacing));
-  const plan=createFlightPlan(field.areaGeoJson,o);
+  const plan=createFlightPlan(field.areaGeoJson,o,body.startPoint);
   if(plan.waypoints.length>500||plan.estimatedMinutes>80)throw new Error("Testlimit: maximal 500 Wegpunkte und 80 Minuten.");
   const report=await analyzeTerrainForPlan(plan,body.startPoint,o.altitude);
   const hazards=await inspectHazards(plan,body.startPoint);

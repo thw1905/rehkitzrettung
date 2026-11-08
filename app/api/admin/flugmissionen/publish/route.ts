@@ -1,3 +1,4 @@
+// REHKITZ_DJI_FLUGPLANUNG_V3_4
 // REHKITZ_DJI_AUFTRAGSFLUGPLANUNG_V3: admin-frei oder Pilot nach Auftragszuweisung.
 import { NextRequest,NextResponse } from "next/server";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
@@ -52,11 +53,11 @@ export async function POST(req:NextRequest){
    aircraft=body.aircraft;camera=body.camera;
    const overlap=body.overlapPercent;
    const options=validateOptions(optionsForCamera(body.options,aircraft,camera,overlap,body.manualSpacing));
-   plan=createFlightPlan(field.areaGeoJson,options);
-   if(plan.waypoints.length>500||plan.estimatedMinutes>80)throw new Error("Testlimit: hoechstens 500 Wegpunkte und 80 Minuten.");
    const terrain=validateTerrainSettings(body.terrain??{
      startPoint:null,altitudeMode:"constant",rthHeight:Math.min(150,Math.max(options.altitude+20,50))
    });
+   plan=createFlightPlan(field.areaGeoJson,options,terrain.startPoint);
+   if(plan.waypoints.length>500||plan.estimatedMinutes>80)throw new Error("Testlimit: hoechstens 500 Wegpunkte und 80 Minuten.");
    const report=terrain.altitudeMode==="terrain"?await analyzeTerrainForPlan(plan,terrain.startPoint!,options.altitude):null;
    const waypointHeights=checkExportHeights(plan,terrain.altitudeMode,report,terrain.rthHeight,options.altitude);
    const rawOptions=body.options as MissionOptions;

@@ -1,3 +1,4 @@
+// REHKITZ_DJI_FLUGPLANUNG_V3_4
 // REHKITZ_DJI_TERRAIN_V3_1 – graphical model preview, NOT terrain clearance.
 "use client";
 import {useMemo} from "react";
@@ -30,6 +31,5 @@ export default function FlightTerrainProfile({report}:{report:TerrainReportV31})
    <text x="590" y="180" fontSize="11" fill="#334155">{lines.km} km Strecke</text>
   </svg>
   <div className="mt-1 flex flex-wrap gap-3"><span>🟢 Gelände</span><span>🔵 Konstant</span><span>🟠 Angepasst</span></div>
-  <p className="mt-1 text-red-900">Ohne Hindernisprofil. Keine Freigabe für reale Flüge.</p>
  </div>;
 }

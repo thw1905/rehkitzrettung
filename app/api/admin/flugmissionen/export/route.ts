@@ -1,3 +1,4 @@
+// REHKITZ_DJI_FLUGPLANUNG_V3_4
 // REHKITZ_WAYLINE_CLOUD_V1 - M4T und Pilot2-Cloud-Routenbibliothek.
 // REHKITZ_FLUGMISSION_V1 – DJI-Flugplanung; keine Aenderung bestehender DJI-Bindings.
 import { NextRequest,NextResponse } from "next/server";
@@ -26,8 +27,8 @@ export async function POST(req:NextRequest){
   const manualSpacing=body.manualSpacing===true;
   if(body.manualSpacing!==true && body.manualSpacing!==false)return NextResponse.json({error:"Modus fuer Bahnabstand fehlt."},{status:400});
   const options=validateOptions(optionsForCamera(body.options,body.aircraft,camera,body.overlapPercent,manualSpacing));
-  const plan=createFlightPlan(field.areaGeoJson,options);
   const terrain=validateTerrainSettings(body.terrain??{startPoint:null,altitudeMode:"constant",rthHeight:Math.min(150,Math.max(options.altitude+20,50))});
+  const plan=createFlightPlan(field.areaGeoJson,options,terrain.startPoint);
   const report=terrain.altitudeMode==="terrain"?await analyzeTerrainForPlan(plan,terrain.startPoint!,options.altitude):null;
   const heights=checkExportHeights(plan,terrain.altitudeMode,report,terrain.rthHeight,options.altitude);
   const blob=await makeMissionKmz(plan,options,field.displayName||field.name,body.aircraft,{waypointHeights:heights,rthHeight:terrain.rthHeight});
