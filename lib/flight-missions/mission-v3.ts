@@ -5,6 +5,7 @@ import path from "node:path";
 import JSZip from "jszip";
 import type { MissionOptions, FlightPlan, LonLat, FlightLine } from "./planner";
 import type { MissionCamera } from "./coverage";
+import type {TerrainSettingsV31} from "./terrain-v31";
 import {
   configuredWorkspace, listWaylines, readWaylineKmz, replaceWaylineForField,
   WaylineConflictError,
@@ -19,6 +20,7 @@ export type SavedSettings = {
   options: MissionOptions;
   overlapPercent: number;
   manualSpacing: boolean;
+  terrain?: TerrainSettingsV31;
 };
 type SavedPlan = SavedSettings & { plan: FlightPlan; editorId: string; savedAt: number };
 
@@ -121,7 +123,7 @@ export async function readCurrentPlanning(fieldId: string){
  return {
   id:mission.id,name:mission.name,aircraft:mission.aircraft,camera:mission.camera,
   createdAt:mission.createdAt,hasExactSettings:Boolean(saved),
-  settings:saved?{aircraft:saved.aircraft,camera:saved.camera,options:saved.options,overlapPercent:saved.overlapPercent,manualSpacing:saved.manualSpacing}:legacy?.settings||null,
+  settings:saved?{aircraft:saved.aircraft,camera:saved.camera,options:saved.options,overlapPercent:saved.overlapPercent,manualSpacing:saved.manualSpacing,terrain:saved.terrain}:legacy?.settings||null,
   plan:saved?.plan || legacy?.plan || null,
  };
 }

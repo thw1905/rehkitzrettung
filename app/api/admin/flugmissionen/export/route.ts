@@ -6,12 +6,16 @@ import { db } from "@/lib/db";
 import { createFlightPlan,validateOptions } from "@/lib/flight-missions/planner";
 import { makeMissionKmz } from "@/lib/flight-missions/wpml";
 import { optionsForCamera, type MissionCamera } from "@/lib/flight-missions/coverage";
+import {validateTerrainSettings,checkExportHeights} from "@/lib/flight-missions/terrain-v31";
+import {analyzeTerrainForPlan} from "@/lib/flight-missions/terrain-service-v31";
+import {publicOrigin} from "@/lib/flight-missions/cloud-store";
 export const runtime="nodejs";
 export async function POST(req:NextRequest){
  try{
   const user=await getCurrentUserWithTeams();
   if(!user) return NextResponse.json({error:"Nicht angemeldet."},{status:401});
   if(!user.isApproved||!user.isAdmin) return NextResponse.json({error:"Nur Admins duerfen Flugmissionen exportieren."},{status:403});
+  if(req.headers.get("origin")!==publicOrigin(req.url))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403});
   const body=await req.json();
   if(typeof body?.fieldId!=="string" || body.fieldId.length>100) return NextResponse.json({error:"Flaeche fehlt."},{status:400});
   // M4T noch nicht freigeschaltet: DJI-spezifische Geraetekennungen muessen mit Pilot2-Export verifiziert werden.
@@ -23,7 +27,10 @@ export async function POST(req:NextRequest){
   if(body.manualSpacing!==true && body.manualSpacing!==false)return NextResponse.json({error:"Modus fuer Bahnabstand fehlt."},{status:400});
   const options=validateOptions(optionsForCamera(body.options,body.aircraft,camera,body.overlapPercent,manualSpacing));
   const plan=createFlightPlan(field.areaGeoJson,options);
-  const blob=await makeMissionKmz(plan,options,field.displayName||field.name,body.aircraft);
+  const terrain=validateTerrainSettings(body.terrain??{startPoint:null,altitudeMode:"constant",rthHeight:Math.min(150,Math.max(options.altitude+20,50))});
+  const report=terrain.altitudeMode==="terrain"?await analyzeTerrainForPlan(plan,terrain.startPoint!,options.altitude):null;
+  const heights=checkExportHeights(plan,terrain.altitudeMode,report,terrain.rthHeight,options.altitude);
+  const blob=await makeMissionKmz(plan,options,field.displayName||field.name,body.aircraft,{waypointHeights:heights,rthHeight:terrain.rthHeight});
   const filename=`FL-${String(field.displayName||field.name).replace(/[^A-Za-z0-9_-]/g,'_').slice(0,36)}-${body.aircraft}-${camera}.kmz`;
   return new NextResponse(blob as unknown as BodyInit,{status:200,headers:{'Content-Type':'application/vnd.google-earth.kmz','Content-Disposition':`attachment; filename="${filename}"`,'Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff'}});
  }catch(error){

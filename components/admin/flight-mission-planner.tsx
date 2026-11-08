@@ -5,13 +5,16 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { createFlightPlan, type MissionOptions, type FlightPlan } from "@/lib/flight-missions/planner";
 import { cameraCoverage, optionsForCamera, type MissionCamera, type Coverage } from "@/lib/flight-missions/coverage";
+import {type TerrainSettingsV31,type TerrainReportV31} from "@/lib/flight-missions/terrain-v31";
+import FlightTerrainProfile from "@/components/admin/flight-terrain-profile-v31";
 const FlightMissionMap=dynamic(()=>import("@/components/admin/flight-mission-map"),{ssr:false,loading:()=> <div className="flex h-[420px] items-center justify-center rounded-xl bg-gray-100 text-gray-700">Satellitenkarte wird geladen ...</div>});
 type Field={id:string;name:string;displayName:string|null;areaGeoJson:unknown};
 const initial:MissionOptions={altitude:50,speed:5,spacing:25,direction:0,margin:5};
+const defaultTerrain:TerrainSettingsV31={startPoint:null,altitudeMode:"constant",rthHeight:70};
 type ExistingMission={
  id:string;name:string;aircraft:"M3T"|"M4T";camera:MissionCamera;createdAt:number;
  hasExactSettings:boolean;
- settings:{aircraft:"M3T"|"M4T";camera:MissionCamera;options:MissionOptions;overlapPercent:number;manualSpacing:boolean}|null;
+ settings:{aircraft:"M3T"|"M4T";camera:MissionCamera;options:MissionOptions;overlapPercent:number;manualSpacing:boolean;terrain?:TerrainSettingsV31}|null;
  plan:FlightPlan|null;
 };
 export default function FlightMissionPlanner({orderId}:{orderId?:string}){
@@ -23,6 +26,9 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
  const [overlapPercent,setOverlapPercent]=useState(40);
  const [manualSpacing,setManualSpacing]=useState(false);
  const [options,setOptions]=useState<MissionOptions>(initial);
+ const [terrain,setTerrain]=useState<TerrainSettingsV31>(defaultTerrain);
+ const [terrainResult,setTerrainResult]=useState<{key:string;report:TerrainReportV31}|null>(null);
+ const [analysing,setAnalysing]=useState(false);
  const [search,setSearch]=useState("");
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
@@ -51,8 +57,8 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
      setMission(current);
      if(current){setAircraft(current.aircraft);setCamera(current.camera);}
      else{setAircraft("M4T");setCamera("THERMAL");}
-     if(current?.settings){setOptions({...current.settings.options});setOverlapPercent(current.settings.overlapPercent);setManualSpacing(current.settings.manualSpacing);}
-     else{setOptions(initial);setOverlapPercent(40);setManualSpacing(false);}
+     if(current?.settings){setOptions({...current.settings.options});setOverlapPercent(current.settings.overlapPercent);setManualSpacing(current.settings.manualSpacing);setTerrain(current.settings.terrain??defaultTerrain);}
+     else{setOptions(initial);setOverlapPercent(40);setManualSpacing(false);setTerrain(defaultTerrain);}
      setDirty(false);
    }})
    .catch(e=>{if(!controller.signal.aborted){setLoadedError(true);setError(e instanceof Error?e.message:"Laden fehlgeschlagen.");}})
@@ -75,6 +81,19 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
   try{return {plan:createFlightPlan(field.areaGeoJson,effectiveOptions),reason:''};}
   catch(e){return {plan:null,reason:e instanceof Error?e.message:'Flugroute konnte nicht berechnet werden.'};}
  },[field,effectiveOptions,coverage.error,mission,dirty]);
+ const terrainKey=useMemo(()=>JSON.stringify({fieldId,options:effectiveOptions,start:terrain.startPoint,aircraft,camera,overlapPercent,manualSpacing,orderId}),
+  [fieldId,effectiveOptions,terrain.startPoint,aircraft,camera,overlapPercent,manualSpacing,orderId]);
+ const terrainReport=terrainResult?.key===terrainKey?terrainResult.report:null;
+ async function analyzeTerrain(){
+  if(!field||!result.plan||!terrain.startPoint||analysing)return;
+  setError("");setAnalysing(true);
+  try {
+   const res=await fetch("/api/flugmissionen/gelaende",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fieldId,orderId,options,aircraft,camera,overlapPercent,manualSpacing,startPoint:terrain.startPoint})});
+   const json=await res.json();if(!res.ok)throw new Error(json?.error||"Geländedaten nicht verfuegbar.");
+   setTerrainResult({key:terrainKey,report:json.report});
+  }catch(e){setError(e instanceof Error?e.message:"Geländeprüfung fehlgeschlagen.");}
+  finally{setAnalysing(false);}
+ }
  const visible=useMemo(()=>fields.filter(f=>`${f.displayName||''} ${f.name}`.toLowerCase().includes(search.toLowerCase())).slice(0,400),[fields,search]);
  const setNumber=(key:keyof MissionOptions,value:string)=>{setDirty(true);setOptions(o=>({...o,[key]:Number(value)}));};
  async function publishToPilot2(){
@@ -82,7 +101,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
   if(!window.confirm(`${mission?"Vorhandene Cloud-Mission ersetzen":"Neue Cloud-Mission anlegen"} für ${field.displayName||field.name} (${aircraft})? Die vorherige Cloud-Mission wird dauerhaft ersetzt. Keine Flugfreigabe.`))return;
   setError("");setPublishMessage("");setPublishing(true);
   try{
-   const res=await fetch("/api/flugmissionen/publish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fieldId,orderId,options,aircraft,camera,overlapPercent,manualSpacing,expectedMissionId:mission?.id||null,reuseExisting:Boolean(mission&&!dirty)})});
+   const res=await fetch("/api/flugmissionen/publish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fieldId,orderId,options,aircraft,camera,overlapPercent,manualSpacing,terrain,expectedMissionId:mission?.id||null,reuseExisting:Boolean(mission&&!dirty)})});
    const json=await res.json();if(!res.ok)throw new Error(json?.error||"Veröffentlichung fehlgeschlagen.");
    setPublishMessage(`Aktuelle Cloud-Version gespeichert: ${json.mission?.name}. In DJI Pilot 2 die Mission erneut herunterladen.`);setRefreshMission(v=>v+1);
   }catch(e){setError(e instanceof Error?e.message:"Fehler beim Veröffentlichen.");}
@@ -92,7 +111,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
   if(!field||!result.plan||busy)return;
   setError('');setBusy(true);
   try{
-   const res=await fetch('/api/admin/flugmissionen/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fieldId,options,aircraft,camera,overlapPercent,manualSpacing})});
+   const res=await fetch('/api/admin/flugmissionen/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fieldId,options,aircraft,camera,overlapPercent,manualSpacing,terrain})});
    if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.error||'KMZ-Export fehlgeschlagen.');}
    const blob=await res.blob();const url=URL.createObjectURL(blob);
    const a=document.createElement('a');a.href=url;a.download=`${(field.displayName||field.name).replace(/[^A-Za-z0-9_-]/g,'_')}-${aircraft}.kmz`;document.body.appendChild(a);a.click();a.remove();
@@ -138,21 +157,39 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
      ] as const).map(([key,label,min,max,step])=><label key={key} className="text-xs font-semibold text-gray-900">{label}<input type="number" min={min} max={max} step={step} value={options[key]} onChange={e=>setNumber(key,e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-400 p-2.5 text-base text-gray-950"/></label>)}
     </div>
     {manualSpacing && <label className="block text-xs font-semibold text-gray-900">Manueller Bahnabstand (m)<input type="number" min="1.5" max="220" step="0.5" value={options.spacing} onChange={e=>setNumber('spacing',e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-400 bg-white p-3 text-gray-950"/></label>}
+    <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-gray-950">
+      <div className="font-bold">Startplatz, Geländehöhe und Rückkehr (V3.1 Test)</div>
+      <p>Startplatz auf Satellitenkarte anklicken (blau). Der Teamtreffpunkt ist nicht zwingend der Startplatz.</p>
+      <div className="text-xs">Startpunkt: {terrain.startPoint?`${terrain.startPoint[1].toFixed(6)}, ${terrain.startPoint[0].toFixed(6)}`:"Noch nicht markiert"}</div>
+      <label className="block text-xs font-semibold">Höhenmodus<select value={terrain.altitudeMode} onChange={e=>{setDirty(true);setTerrain(v=>({...v,altitudeMode:e.target.value as TerrainSettingsV31["altitudeMode"]}));}} className="mt-1 block w-full rounded-lg border border-gray-400 bg-white p-2.5 text-gray-950"><option value="constant">Konstant relativ zum Startpunkt</option><option value="terrain">Geländeangepasste Wegpunkthöhen (EU-DEM Test)</option></select></label>
+      <label className="block text-xs font-semibold">Rückkehrhöhe RTH (m über Startpunkt)<input type="number" min="20" max="150" step="1" value={terrain.rthHeight} onChange={e=>{setDirty(true);setTerrain(v=>({...v,rthHeight:Number(e.target.value)}));}} className="mt-1 block w-full rounded-lg border border-gray-400 bg-white p-2.5 text-gray-950"/></label>
+      <button type="button" disabled={!terrain.startPoint||!result.plan||analysing||checking} onClick={()=>void analyzeTerrain()} className="w-full rounded-lg border border-indigo-600 bg-indigo-700 px-3 py-2 font-semibold text-white disabled:bg-gray-400">{analysing?"Gelände wird abgefragt ...":"Geländehöhen prüfen und RTH berechnen"}</button>
+      {terrainReport&&<div className="space-y-1 rounded bg-white p-3 text-xs text-gray-900">
+       <div><strong>EU-DEM 25m:</strong> {terrainReport.sampledPoints} Messpunkte, Startgelände {terrainReport.startElevationM.toFixed(1)} m</div>
+       <div>Min. Abstand konstant (Modell): <strong>{terrainReport.constantMinGroundClearanceM.toFixed(1)} m</strong></div>
+       <div>Min. Abstand angepasst (Modell): <strong>{terrainReport.adjustedMinGroundClearanceM.toFixed(1)} m</strong></div>
+       <div>Höchste geplante Wegpunkthöhe: <strong>{terrainReport.maxRelativeHeightM.toFixed(1)} m</strong></div>
+       <div>RTH-Richtwert aus vermessenem Gelände: <strong>{terrainReport.recommendedRthM.toFixed(0)} m</strong></div>
+       <FlightTerrainProfile report={terrainReport}/>
+       {terrainReport.warnings.map((w,i)=><div key={i} className="text-amber-950">⚠ {w}</div>)}
+      </div>}
+      <p className="text-xs font-semibold text-red-900">Nicht flugfreigegeben: EU-DEM (25 m) enthält keine Hindernisse. Beim Prüfen werden ausschließlich GPS-Koordinaten an api.opentopodata.org übertragen; keine Namen oder Auftragsdaten.</p>
+    </div>
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-gray-900">
      <strong>Flugplan:</strong> {result.plan?`${result.plan.lines.length} Suchbahnen · ${result.plan.waypoints.length} Wegpunkte`:"Keine Route"}
      {result.plan && <div className="mt-1">Bahnabstand: {effectiveOptions?.spacing.toFixed(1)} m {manualSpacing?"(manuell)":"(automatisch)"}</div>}
      {result.plan && <div className="mt-1">Suchstrecke: {(result.plan.searchMeters/1000).toFixed(2)} km · Gesamtroute: {(result.plan.totalMeters/1000).toFixed(2)} km · rechnerische reine Flugzeit: {result.plan.estimatedMinutes.toFixed(1)} Min. (ohne Start, Landung und Pausen)</div>}
      {result.reason && <p className="mt-2 font-semibold text-red-800">{result.reason}</p>}
     </div>
-    {!locked&&<button type="button" onClick={()=>void download()} disabled={!result.plan||busy||publishing||checking} className="w-full rounded-xl bg-gray-950 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-400">{busy?'Export läuft ...':`${aircraft}-Mission als KMZ herunterladen`}</button>}
-    <button type="button" onClick={()=>void publishToPilot2()} disabled={!result.plan||publishing||busy||checking||loading||loadedError} className="w-full rounded-xl border border-blue-700 bg-blue-800 px-4 py-3 font-bold text-white disabled:bg-gray-400">{publishing?"Speichere ...":mission?"Aktuelle Mission in Cloud ersetzen":"Neue Mission in DJI-Cloud speichern"}</button>
+    {!locked&&<button type="button" onClick={()=>void download()} disabled={!result.plan||busy||publishing||checking||(terrain.altitudeMode==="terrain"&&!terrainReport)} className="w-full rounded-xl bg-gray-950 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-400">{busy?'Export läuft ...':`${aircraft}-Mission als KMZ herunterladen`}</button>}
+    <button type="button" onClick={()=>void publishToPilot2()} disabled={!result.plan||publishing||busy||checking||loading||loadedError||analysing||(terrain.altitudeMode==="terrain"&&!terrainReport)||(terrainReport!==null && terrain.altitudeMode==="terrain" && terrain.rthHeight<terrainReport.recommendedRthM)} className="w-full rounded-xl border border-blue-700 bg-blue-800 px-4 py-3 font-bold text-white disabled:bg-gray-400">{publishing?"Speichere ...":mission?"Aktuelle Mission in Cloud ersetzen":"Neue Mission in DJI-Cloud speichern"}</button>
     {publishMessage&&<p role="status" className="rounded-lg border border-green-500 bg-green-50 p-3 text-sm font-semibold text-green-900">{publishMessage}</p>}
     {error && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-900">{error}</p>}
     <p className="text-xs text-gray-700">Cloud-Übertragung über den bestehenden DJI-Workspace: Die Mission wird in Pilot 2 als Cloud-Datei angeboten; Download, Import und Flugeinstellungen müssen am Controller geprüft werden. Es gibt keinen automatischen Start.</p>
    </section>
    <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
     <h2 className="text-lg font-bold text-gray-950">Satellitenkarte und geplante Suchbahnen</h2>
-    {field?<FlightMissionMap key={field.id} area={field.areaGeoJson} plan={result.plan}/>:<p className="text-sm text-gray-700">{loading?'Flächen werden geladen ...':'Bitte Fläche auswählen.'}</p>}
+    {field?<FlightMissionMap key={field.id} area={field.areaGeoJson} plan={result.plan} startPoint={terrain.startPoint} onStartPointChange={p=>{setDirty(true);setTerrain(v=>({...v,startPoint:p}));}}/>:<p className="text-sm text-gray-700">{loading?'Flächen werden geladen ...':'Bitte Fläche auswählen.'}</p>}
     {result.plan&&<div className="space-y-1 text-xs text-amber-950">{result.plan.warnings.map((w,i)=><p key={i} className="rounded-lg bg-amber-50 px-3 py-2">⚠ {w}</p>)}</div>}
    </section>
   </div>

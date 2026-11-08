@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import { createFlightPlan,validateOptions,type MissionOptions } from "@/lib/flight-missions/planner";
 import { optionsForCamera,type MissionCamera } from "@/lib/flight-missions/coverage";
 import { makeMissionKmz } from "@/lib/flight-missions/wpml";
+import {validateTerrainSettings,checkExportHeights} from "@/lib/flight-missions/terrain-v31";
+import {analyzeTerrainForPlan} from "@/lib/flight-missions/terrain-service-v31";
 import { readWaylineKmz,publicOrigin,findWayline,configuredWorkspace } from "@/lib/flight-missions/cloud-store";
 import { flightNameFromField,orderFlightField,publishOrReplaceMission,readCurrentPlanning,StaleMissionError } from "@/lib/flight-missions/mission-v3";
 export const runtime="nodejs";
@@ -31,7 +33,7 @@ export async function POST(req:NextRequest){
   if((current?.id||null)!==expectedMissionId)throw new StaleMissionError();
   const reuse=body?.reuseExisting===true;
   let aircraft:"M3T"|"M4T";let camera:MissionCamera;
-  let settings: {aircraft:"M3T"|"M4T";camera:MissionCamera;options:MissionOptions;overlapPercent:number;manualSpacing:boolean}|null=null;
+  let settings: {aircraft:"M3T"|"M4T";camera:MissionCamera;options:MissionOptions;overlapPercent:number;manualSpacing:boolean;terrain?:import("@/lib/flight-missions/terrain-v31").TerrainSettingsV31}|null=null;
   let plan: ReturnType<typeof createFlightPlan>|null=null;
   let fileFactory:()=>Promise<Uint8Array>;
   const name=flightNameFromField(field);
@@ -52,10 +54,15 @@ export async function POST(req:NextRequest){
    const options=validateOptions(optionsForCamera(body.options,aircraft,camera,overlap,body.manualSpacing));
    plan=createFlightPlan(field.areaGeoJson,options);
    if(plan.waypoints.length>500||plan.estimatedMinutes>80)throw new Error("Testlimit: hoechstens 500 Wegpunkte und 80 Minuten.");
+   const terrain=validateTerrainSettings(body.terrain??{
+     startPoint:null,altitudeMode:"constant",rthHeight:Math.min(150,Math.max(options.altitude+20,50))
+   });
+   const report=terrain.altitudeMode==="terrain"?await analyzeTerrainForPlan(plan,terrain.startPoint!,options.altitude):null;
+   const waypointHeights=checkExportHeights(plan,terrain.altitudeMode,report,terrain.rthHeight,options.altitude);
    const rawOptions=body.options as MissionOptions;
-   settings={aircraft,camera,options:rawOptions,overlapPercent:overlap,manualSpacing:body.manualSpacing};
+   settings={aircraft,camera,options:rawOptions,overlapPercent:overlap,manualSpacing:body.manualSpacing,terrain};
    // Persistente Planungsparameter; keine Versionshistorie und keine Archivkopie.
-   fileFactory=()=>makeMissionKmz(plan!,options,name,aircraft);
+   fileFactory=()=>makeMissionKmz(plan!,options,name,aircraft,{waypointHeights,rthHeight:terrain.rthHeight});
   }
   const entry=await publishOrReplaceMission({fieldId:field.id,name,aircraft,camera,fileFactory,expectedMissionId,editorId:user.id,settings,plan});
   console.info("[DJI-V3] Cloud-Mission aktualisiert",field.id,"Mission",entry.id,"Vorgaenger",expectedMissionId||"keiner");
