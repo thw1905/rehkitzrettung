@@ -9,7 +9,8 @@ export type TerrainSettingsV31 = {
   rthHeight: number;
 };
 export type TerrainReportV31 = {
-  dataset: "eudem25m";
+  dataset: "eudem25m" | "dgm1";
+  sampleSpacingM: number;
   sampledPoints: number;
   startElevationM: number;
   highestTerrainM: number;
@@ -49,16 +50,16 @@ export function routeSamples(plan:FlightPlan,start:LonLat): Omit<SampleV31,"elev
   const path=[start,...plan.waypoints,start];
   const samples:Omit<SampleV31,"elevation">[]=[];
   for(let i=0;i<path.length-1;i++){
-    const steps=Math.max(1,Math.ceil(distance(path[i],path[i+1])/50));
+    const steps=Math.max(1,Math.ceil(distance(path[i],path[i+1])/25));
     for(let j=0;j<steps;j++) samples.push({coord:interpolate(path[i],path[i+1],j/steps),segment:i,t:j/steps});
-    if(samples.length>400) throw new Error("Route fuer DEM-Testdienst zu lang (>400 Messpunkte). Bitte Flaeche aufteilen oder spaeter DGM1 verwenden.");
+    if(samples.length>800) throw new Error("Route fuer Geländedienst zu lang (>800 Messpunkte). Bitte Flaeche aufteilen.");
   }
   samples.push({coord:start,segment:path.length-2,t:1});
-  if(samples.length>400) throw new Error("Route fuer DEM-Testdienst zu lang (>400 Messpunkte).");
+  if(samples.length>800) throw new Error("Route fuer Geländedienst zu lang (>800 Messpunkte).");
   return samples;
 }
 // Accepts data already queried from the provider. No remote data is trusted for flight approval.
-export function terrainReport(plan:FlightPlan,start:LonLat,requestedAgl:number,elevations:number[]):TerrainReportV31 {
+export function terrainReport(plan:FlightPlan,start:LonLat,requestedAgl:number,elevations:number[],dataset:TerrainReportV31["dataset"]="eudem25m"):TerrainReportV31 {
   if(!Number.isFinite(requestedAgl)||requestedAgl<10||requestedAgl>120) throw new Error("Flughoehe ungueltig.");
   const samples=routeSamples(plan,start);
   if(samples.length!==elevations.length||elevations.some(v=>typeof v!=="number"||!Number.isFinite(v)||v< -500||v>9000))throw new Error("Hoehendaten fehlen oder sind ungueltig.");
@@ -93,14 +94,14 @@ export function terrainReport(plan:FlightPlan,start:LonLat,requestedAgl:number,e
   const highest=Math.max(...elevations);
   const rth=Math.ceil(Math.max(50,highest-startElevation+30,...relative.map(z=>z+10)));
   const warnings=[
-    "Nur DEM-Testberechnung: EU-DEM 25m ist fuer Hindernisfreiheit und sichere Mindestabstaende NICHT ausreichend.",
+    dataset==="dgm1"?"DGM1 beschreibt nur die Geländeoberfläche. Keine Hindernis- oder Flugfreigabe.":"EU-DEM 25m ist fuer Hindernisfreiheit und sichere Mindestabstaende NICHT ausreichend.",
     "Baeume, Stromleitungen, Gebaeude, Geländestufen, Flugbeschraenkungen und Wind fehlen in den Hoehendaten.",
     "RTH ist nur ein Gelände-Richtwert aus den untersuchten Punkten; Rueckflug aus jedem Punkt und Hindernisse sind nicht vollstaendig untersucht.",
     "Gelaendeanpassung verwendet relative DJI-Wegpunkthoehen; tatsaechliche Hoehen muss der Pilot in Pilot 2 kontrollieren.",
   ];
   if(relative.some(z=>z<10||z>120))warnings.push("Einzelne relative Wegpunkthoehen liegen ausserhalb 10–120 m. Automatische Ausgabe wird gesperrt.");
   if(maxAdjusted>120)warnings.push("Bodenabstand kann 120 m ueberschreiten; Rechtslage und Hoehenbegrenzung pruefen.");
-  return {dataset:"eudem25m",sampledPoints:full.length,startElevationM:startElevation,highestTerrainM:highest,
+  return {dataset,sampleSpacingM:25,sampledPoints:full.length,startElevationM:startElevation,highestTerrainM:highest,
     constantMinGroundClearanceM:constantMin,adjustedMinGroundClearanceM:minAdjusted,maxRelativeHeightM:Math.max(...relative),minRelativeHeightM:Math.min(...relative),maxAdjustedGroundClearanceM:maxAdjusted,
     recommendedRthM:rth,waypointHeightsM:relative,profile,warnings};
 }

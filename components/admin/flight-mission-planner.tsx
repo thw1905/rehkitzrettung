@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createFlightPlan, type MissionOptions, type FlightPlan } from "@/lib/flight-missions/planner";
 import { cameraCoverage, optionsForCamera, type MissionCamera, type Coverage } from "@/lib/flight-missions/coverage";
 import {type TerrainSettingsV31,type TerrainReportV31} from "@/lib/flight-missions/terrain-v31";
+import type {HazardReportV32} from "@/lib/flight-missions/hazards-v32";
 import FlightTerrainProfile from "@/components/admin/flight-terrain-profile-v31";
 const FlightMissionMap=dynamic(()=>import("@/components/admin/flight-mission-map"),{ssr:false,loading:()=> <div className="flex h-[420px] items-center justify-center rounded-xl bg-gray-100 text-gray-700">Satellitenkarte wird geladen ...</div>});
 type Field={id:string;name:string;displayName:string|null;areaGeoJson:unknown};
@@ -27,7 +28,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
  const [manualSpacing,setManualSpacing]=useState(false);
  const [options,setOptions]=useState<MissionOptions>(initial);
  const [terrain,setTerrain]=useState<TerrainSettingsV31>(defaultTerrain);
- const [terrainResult,setTerrainResult]=useState<{key:string;report:TerrainReportV31}|null>(null);
+ const [terrainResult,setTerrainResult]=useState<{key:string;report:TerrainReportV31;hazards:HazardReportV32|null}|null>(null);
  const [analysing,setAnalysing]=useState(false);
  const [search,setSearch]=useState("");
  const [error,setError]=useState("");
@@ -84,13 +85,20 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
  const terrainKey=useMemo(()=>JSON.stringify({fieldId,options:effectiveOptions,start:terrain.startPoint,aircraft,camera,overlapPercent,manualSpacing,orderId}),
   [fieldId,effectiveOptions,terrain.startPoint,aircraft,camera,overlapPercent,manualSpacing,orderId]);
  const terrainReport=terrainResult?.key===terrainKey?terrainResult.report:null;
+ const hazards=terrainResult?.key===terrainKey?terrainResult.hazards:null;
+ const minAgl=terrainReport?(terrain.altitudeMode==='terrain'?terrainReport.adjustedMinGroundClearanceM:terrainReport.constantMinGroundClearanceM):null;
+ const minCoverage=useMemo(()=>{
+  if(minAgl===null||minAgl<10||minAgl>120)return null;
+  try{return cameraCoverage(aircraft,camera,minAgl,overlapPercent);}catch{return null;}
+ },[minAgl,aircraft,camera,overlapPercent]);
+ const suggestedSpacing=minCoverage?.suggestedSpacingM??null;
  async function analyzeTerrain(){
   if(!field||!result.plan||!terrain.startPoint||analysing)return;
   setError("");setAnalysing(true);
   try {
    const res=await fetch("/api/flugmissionen/gelaende",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fieldId,orderId,options,aircraft,camera,overlapPercent,manualSpacing,startPoint:terrain.startPoint})});
    const json=await res.json();if(!res.ok)throw new Error(json?.error||"Geländedaten nicht verfuegbar.");
-   setTerrainResult({key:terrainKey,report:json.report});
+   setTerrainResult({key:terrainKey,report:json.report,hazards:json.hazards??null});
   }catch(e){setError(e instanceof Error?e.message:"Geländeprüfung fehlgeschlagen.");}
   finally{setAnalysing(false);}
  }
@@ -158,22 +166,38 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
     </div>
     {manualSpacing && <label className="block text-xs font-semibold text-gray-900">Manueller Bahnabstand (m)<input type="number" min="1.5" max="220" step="0.5" value={options.spacing} onChange={e=>setNumber('spacing',e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-400 bg-white p-3 text-gray-950"/></label>}
     <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-gray-950">
-      <div className="font-bold">Startplatz, Geländehöhe und Rückkehr (V3.1 Test)</div>
+      <div className="font-bold">Startplatz, Geländehöhe, RTH und Gefahren (V3.2 Test)</div>
       <p>Startplatz auf Satellitenkarte anklicken (blau). Der Teamtreffpunkt ist nicht zwingend der Startplatz.</p>
       <div className="text-xs">Startpunkt: {terrain.startPoint?`${terrain.startPoint[1].toFixed(6)}, ${terrain.startPoint[0].toFixed(6)}`:"Noch nicht markiert"}</div>
-      <label className="block text-xs font-semibold">Höhenmodus<select value={terrain.altitudeMode} onChange={e=>{setDirty(true);setTerrain(v=>({...v,altitudeMode:e.target.value as TerrainSettingsV31["altitudeMode"]}));}} className="mt-1 block w-full rounded-lg border border-gray-400 bg-white p-2.5 text-gray-950"><option value="constant">Konstant relativ zum Startpunkt</option><option value="terrain">Geländeangepasste Wegpunkthöhen (EU-DEM Test)</option></select></label>
+      <label className="block text-xs font-semibold">Höhenmodus<select value={terrain.altitudeMode} onChange={e=>{setDirty(true);setTerrain(v=>({...v,altitudeMode:e.target.value as TerrainSettingsV31["altitudeMode"]}));}} className="mt-1 block w-full rounded-lg border border-gray-400 bg-white p-2.5 text-gray-950"><option value="constant">Konstant relativ zum Startpunkt</option><option value="terrain">Geländeangepasste Wegpunkthöhen (Geländemodell-Test)</option></select></label>
       <label className="block text-xs font-semibold">Rückkehrhöhe RTH (m über Startpunkt)<input type="number" min="20" max="150" step="1" value={terrain.rthHeight} onChange={e=>{setDirty(true);setTerrain(v=>({...v,rthHeight:Number(e.target.value)}));}} className="mt-1 block w-full rounded-lg border border-gray-400 bg-white p-2.5 text-gray-950"/></label>
-      <button type="button" disabled={!terrain.startPoint||!result.plan||analysing||checking} onClick={()=>void analyzeTerrain()} className="w-full rounded-lg border border-indigo-600 bg-indigo-700 px-3 py-2 font-semibold text-white disabled:bg-gray-400">{analysing?"Gelände wird abgefragt ...":"Geländehöhen prüfen und RTH berechnen"}</button>
+      <button type="button" disabled={!terrain.startPoint||!result.plan||analysing||checking} onClick={()=>void analyzeTerrain()} className="w-full rounded-lg border border-indigo-600 bg-indigo-700 px-3 py-2 font-semibold text-white disabled:bg-gray-400">{analysing?"Gelände wird abgefragt ...":"Gelände, Rückkehr und Gefahren prüfen"}</button>
       {terrainReport&&<div className="space-y-1 rounded bg-white p-3 text-xs text-gray-900">
-       <div><strong>EU-DEM 25m:</strong> {terrainReport.sampledPoints} Messpunkte, Startgelände {terrainReport.startElevationM.toFixed(1)} m</div>
+       <div><strong>{terrainReport.dataset==='dgm1'?'DGM1 über eigenen Höhendienst':'EU-DEM 25 m'}:</strong> {terrainReport.sampledPoints} Messpunkte mit max. {terrainReport.sampleSpacingM} m Abstand, Startgelände {terrainReport.startElevationM.toFixed(1)} m</div>
        <div>Min. Abstand konstant (Modell): <strong>{terrainReport.constantMinGroundClearanceM.toFixed(1)} m</strong></div>
        <div>Min. Abstand angepasst (Modell): <strong>{terrainReport.adjustedMinGroundClearanceM.toFixed(1)} m</strong></div>
        <div>Höchste geplante Wegpunkthöhe: <strong>{terrainReport.maxRelativeHeightM.toFixed(1)} m</strong></div>
-       <div>RTH-Richtwert aus vermessenem Gelände: <strong>{terrainReport.recommendedRthM.toFixed(0)} m</strong></div>
+       <div>RTH-Geländerichtwert (kein Hindernisnachweis): <strong>{terrainReport.recommendedRthM.toFixed(0)} m</strong></div>
+       {terrain.rthHeight<terrainReport.recommendedRthM&&<div className="rounded border border-orange-300 bg-orange-50 p-2"><strong>Hinweis:</strong> Eingestellte RTH-Höhe {terrain.rthHeight} m unterschreitet den Geländerichtwert.
+        <button type="button" className="mt-1 block rounded bg-orange-800 px-3 py-2 font-semibold text-white" onClick={()=>{setDirty(true);setTerrain(v=>({...v,rthHeight:Math.min(150,Math.ceil(terrainReport.recommendedRthM))}));}}>RTH-Richtwert übernehmen (max. 150 m)</button>
+       </div>}
+       {terrainReport.recommendedRthM>150&&<div className="font-bold text-red-900">RTH-Geländerichtwert über 150 m. Fläche oder Startplatz neu beurteilen.</div>}
+       {minCoverage&&suggestedSpacing!==null&&<div className="rounded border border-indigo-200 bg-indigo-50 p-2 text-indigo-950">
+        <strong>Kameraberechnung am kleinsten modellierten Bodenabstand:</strong> {minAgl?.toFixed(1)} m über Grund, Bildbreite {minCoverage.theoreticalWidthM.toFixed(1)} m; Bahnabstand für {overlapPercent}% Überlappung höchstens {suggestedSpacing.toFixed(1)} m.
+        {effectiveOptions&&effectiveOptions.spacing>suggestedSpacing&&<div className="mt-2"><button type="button" onClick={()=>{setDirty(true);setManualSpacing(true);setOptions(v=>({...v,spacing:suggestedSpacing}));}} className="rounded bg-indigo-700 px-3 py-2 font-semibold text-white">Kleineren Bahnabstand übernehmen – danach neu prüfen</button></div>}
+        <p className="mt-1">Nur geometrische Abschätzung; Vegetation und Rehkitz-Erkennbarkeit sind nicht berücksichtigt.</p>
+       </div>}
        <FlightTerrainProfile report={terrainReport}/>
        {terrainReport.warnings.map((w,i)=><div key={i} className="text-amber-950">⚠ {w}</div>)}
       </div>}
-      <p className="text-xs font-semibold text-red-900">Nicht flugfreigegeben: EU-DEM (25 m) enthält keine Hindernisse. Beim Prüfen werden ausschließlich GPS-Koordinaten an api.opentopodata.org übertragen; keine Namen oder Auftragsdaten.</p>
+      {hazards&&<div className="rounded-lg border border-orange-300 bg-white p-3 text-xs text-gray-950">
+       <strong>OSM-Gefahrenhinweise – 300 m um Suchroute, Anflug und Rückflug</strong>
+       <p>{hazards.checked?`${hazards.found.length} Hinweise im erfassten OSM-Datensatz.`:'Gefahrenabfrage nicht abgeschlossen.'}</p>
+       {hazards.found.slice(0,12).map(h=><div key={h.key} className="mt-1 flex flex-wrap justify-between gap-2 border-t border-gray-200 py-1"><span>{h.kind==='wind'?'Windenergieanlage':'Stromleitung / Mast'} – ca. {h.distanceM} m zur Route</span><a href={h.osmUrl} target="_blank" rel="noopener noreferrer" className="text-blue-800 underline">OSM</a></div>)}
+       {hazards.found.length>12&&<p>Weitere {hazards.found.length-12} Hinweise auf der Karte.</p>}
+       {hazards.warnings.map((w,i)=><p key={i} className="mt-1 text-amber-900">⚠ {w}</p>)}
+      </div>}
+      <p className="text-xs font-semibold text-red-900">Keine Flugfreigabe: DGM/EU-DEM zeigen keine Baumkronen oder sicheren Hindernisabstände. Bei EU-DEM werden GPS-Koordinaten an OpenTopoData gesendet; bei der Gefahrenprüfung an Overpass. Nur ein ausdrücklich konfigurierter eigener Höhendienst verwendet DGM1.</p>
     </div>
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-gray-900">
      <strong>Flugplan:</strong> {result.plan?`${result.plan.lines.length} Suchbahnen · ${result.plan.waypoints.length} Wegpunkte`:"Keine Route"}
@@ -189,7 +213,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
    </section>
    <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
     <h2 className="text-lg font-bold text-gray-950">Satellitenkarte und geplante Suchbahnen</h2>
-    {field?<FlightMissionMap key={field.id} area={field.areaGeoJson} plan={result.plan} startPoint={terrain.startPoint} onStartPointChange={p=>{setDirty(true);setTerrain(v=>({...v,startPoint:p}));}}/>:<p className="text-sm text-gray-700">{loading?'Flächen werden geladen ...':'Bitte Fläche auswählen.'}</p>}
+    {field?<FlightMissionMap key={field.id} area={field.areaGeoJson} plan={result.plan} startPoint={terrain.startPoint} hazards={hazards?.found||[]} onStartPointChange={p=>{setDirty(true);setTerrain(v=>({...v,startPoint:p}));}}/>:<p className="text-sm text-gray-700">{loading?'Flächen werden geladen ...':'Bitte Fläche auswählen.'}</p>}
     {result.plan&&<div className="space-y-1 text-xs text-amber-950">{result.plan.warnings.map((w,i)=><p key={i} className="rounded-lg bg-amber-50 px-3 py-2">⚠ {w}</p>)}</div>}
    </section>
   </div>

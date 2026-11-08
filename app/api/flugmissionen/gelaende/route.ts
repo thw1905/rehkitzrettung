@@ -6,6 +6,7 @@ import {orderFlightField} from "@/lib/flight-missions/mission-v3";
 import {createFlightPlan,validateOptions} from "@/lib/flight-missions/planner";
 import {optionsForCamera,type MissionCamera} from "@/lib/flight-missions/coverage";
 import {analyzeTerrainForPlan} from "@/lib/flight-missions/terrain-service-v31";
+import {inspectHazards} from "@/lib/flight-missions/hazards-v32";
 import {validLonLat} from "@/lib/flight-missions/terrain-v31";
 import {publicOrigin} from "@/lib/flight-missions/cloud-store";
 export const runtime="nodejs";
@@ -29,6 +30,7 @@ export async function POST(req:NextRequest){
   const plan=createFlightPlan(field.areaGeoJson,o);
   if(plan.waypoints.length>500||plan.estimatedMinutes>80)throw new Error("Testlimit: maximal 500 Wegpunkte und 80 Minuten.");
   const report=await analyzeTerrainForPlan(plan,body.startPoint,o.altitude);
-  return NextResponse.json({report},{headers:NO_STORE});
+  const hazards=await inspectHazards(plan,body.startPoint);
+  return NextResponse.json({report,hazards},{headers:NO_STORE});
  }catch(e){console.error("DJI Terrainanalyse:",e);return NextResponse.json({error:e instanceof Error?e.message:"Geländeprüfung fehlgeschlagen."},{status:400,headers:NO_STORE});}
 }
