@@ -12,8 +12,8 @@ import FlightTerrainProfile from "@/components/admin/flight-terrain-profile-v31"
 import {routeMetrics} from "@/lib/flight-missions/route-metrics-v34";
 const FlightMissionMap=dynamic(()=>import("@/components/admin/flight-mission-map"),{ssr:false,loading:()=> <div className="flex h-[330px] items-center justify-center rounded-xl bg-gray-100 text-gray-700">Satellitenkarte wird geladen ...</div>});
 type Field={id:string;name:string;displayName:string|null;areaGeoJson:unknown};
-const initial:MissionOptions={altitude:50,speed:5,spacing:25,direction:0,margin:5};
-const defaultTerrain:TerrainSettingsV31={startPoint:null,altitudeMode:"constant",rthHeight:70};
+const initial:MissionOptions={altitude:70,speed:6,spacing:25,direction:0,margin:0,autoDirection:true,autoStartAtFirst:true,smoothTurns:true};
+const defaultTerrain:TerrainSettingsV31={startPoint:null,altitudeMode:"terrain",rthHeight:100};
 type ExistingMission={
  id:string;name:string;aircraft:"M3T"|"M4T";camera:MissionCamera;createdAt:number;
  hasExactSettings:boolean;
@@ -26,7 +26,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
  const [fieldId,setFieldId]=useState("");
  const [aircraft,setAircraft]=useState<"M3T"|"M4T">("M4T");
  const [camera,setCamera]=useState<MissionCamera>("THERMAL");
- const [overlapPercent,setOverlapPercent]=useState(40);
+ const [overlapPercent,setOverlapPercent]=useState(20);
  const [manualSpacing,setManualSpacing]=useState(false);
  const [options,setOptions]=useState<MissionOptions>(initial);
  const [terrain,setTerrain]=useState<TerrainSettingsV31>(defaultTerrain);
@@ -61,7 +61,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
      if(current){setAircraft(current.aircraft);setCamera(current.camera);}
      else{setAircraft("M4T");setCamera("THERMAL");}
      if(current?.settings){setOptions({...current.settings.options});setOverlapPercent(current.settings.overlapPercent);setManualSpacing(current.settings.manualSpacing);setTerrain(current.settings.terrain??defaultTerrain);}
-     else{setOptions(initial);setOverlapPercent(40);setManualSpacing(false);setTerrain(defaultTerrain);}
+     else{setOptions(initial);setOverlapPercent(20);setManualSpacing(false);setTerrain(defaultTerrain);}
      setDirty(false);
    }})
    .catch(e=>{if(!controller.signal.aborted){setLoadedError(true);setError(e instanceof Error?e.message:"Laden fehlgeschlagen.");}})
@@ -84,8 +84,12 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
   try{return {plan:createFlightPlan(field.areaGeoJson,effectiveOptions,terrain.startPoint),reason:''};}
   catch(e){return {plan:null,reason:e instanceof Error?e.message:'Flugroute konnte nicht berechnet werden.'};}
  },[field,effectiveOptions,coverage.error,mission,dirty,terrain.startPoint]);
- const terrainKey=useMemo(()=>JSON.stringify({fieldId,options:effectiveOptions,start:terrain.startPoint,aircraft,camera,overlapPercent,manualSpacing,orderId}),
-  [fieldId,effectiveOptions,terrain.startPoint,aircraft,camera,overlapPercent,manualSpacing,orderId]);
+ // Der erste Suchwegpunkt ist nur ein Vorschlag für die Startposition. Pilot kann umsetzen.
+ const effectiveStart=options.autoStartAtFirst===true && result.plan?.waypoints.length?
+  result.plan.waypoints[0]:(terrain.startPoint??null);
+ const effectiveTerrain=useMemo<TerrainSettingsV31>(()=>({...terrain,startPoint:effectiveStart}),[terrain,effectiveStart]);
+ const terrainKey=useMemo(()=>JSON.stringify({fieldId,options:effectiveOptions,start:effectiveStart,aircraft,camera,overlapPercent,manualSpacing,orderId}),
+  [fieldId,effectiveOptions,effectiveStart,aircraft,camera,overlapPercent,manualSpacing,orderId]);
  const terrainReport=terrainResult?.key===terrainKey?terrainResult.report:null;
  const hazards=terrainResult?.key===terrainKey?terrainResult.hazards:null;
  const minAgl=terrainReport?(terrain.altitudeMode==='terrain'?terrainReport.adjustedMinGroundClearanceM:terrainReport.constantMinGroundClearanceM):null;
@@ -95,23 +99,23 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
  },[minAgl,aircraft,camera,overlapPercent]);
  const suggestedSpacing=minCoverage?.suggestedSpacingM??null;
  async function analyzeTerrain(){
-  if(!field||!result.plan||!terrain.startPoint||analysing)return;
+  if(!field||!result.plan||!effectiveStart||analysing)return;
   setError("");setAnalysing(true);
   try {
-   const res=await fetch("/api/flugmissionen/gelaende",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fieldId,orderId,options,aircraft,camera,overlapPercent,manualSpacing,startPoint:terrain.startPoint})});
+   const res=await fetch("/api/flugmissionen/gelaende",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fieldId,orderId,options,aircraft,camera,overlapPercent,manualSpacing,startPoint:effectiveStart})});
    const json=await res.json();if(!res.ok)throw new Error(json?.error||"Geländedaten nicht verfuegbar.");
    setTerrainResult({key:terrainKey,report:json.report,hazards:json.hazards??null});
   }catch(e){setError(e instanceof Error?e.message:"Geländeprüfung fehlgeschlagen.");}
   finally{setAnalysing(false);}
  }
  const visible=useMemo(()=>fields.filter(f=>`${f.displayName||''} ${f.name}`.toLowerCase().includes(search.toLowerCase())).slice(0,400),[fields,search]);
- const setNumber=(key:keyof MissionOptions,value:string)=>{setDirty(true);setOptions(o=>({...o,[key]:Number(value)}));};
+ const setNumber=(key:'altitude'|'speed'|'spacing'|'direction'|'margin',value:string)=>{setDirty(true);setOptions(o=>({...o,[key]:Number(value),...(key==='direction'?{autoDirection:false}:{})}));};
  async function publishToPilot2(){
   if(!field||!result.plan||publishing||checking||loadedError||loading)return;
   if(!window.confirm(`${mission?"Vorhandene Cloud-Mission ersetzen":"Neue Cloud-Mission anlegen"} für ${field.displayName||field.name} (${aircraft})? Die vorherige Cloud-Mission wird dauerhaft ersetzt.`))return;
   setError("");setPublishMessage("");setPublishing(true);
   try{
-   const res=await fetch("/api/flugmissionen/publish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fieldId,orderId,options,aircraft,camera,overlapPercent,manualSpacing,terrain,expectedMissionId:mission?.id||null,reuseExisting:Boolean(mission&&!dirty)})});
+   const res=await fetch("/api/flugmissionen/publish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fieldId,orderId,options,aircraft,camera,overlapPercent,manualSpacing,terrain:effectiveTerrain,expectedMissionId:mission?.id||null,reuseExisting:Boolean(mission&&!dirty)})});
    const json=await res.json();if(!res.ok)throw new Error(json?.error||"Veröffentlichung fehlgeschlagen.");
    setPublishMessage(`Aktuelle Cloud-Version gespeichert: ${json.mission?.name}. In DJI Pilot 2 die Mission erneut herunterladen.`);setRefreshMission(v=>v+1);
   }catch(e){setError(e instanceof Error?e.message:"Fehler beim Veröffentlichen.");}
@@ -121,7 +125,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
   if(!field||!result.plan||busy)return;
   setError('');setBusy(true);
   try{
-   const res=await fetch('/api/admin/flugmissionen/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fieldId,options,aircraft,camera,overlapPercent,manualSpacing,terrain})});
+   const res=await fetch('/api/admin/flugmissionen/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fieldId,options,aircraft,camera,overlapPercent,manualSpacing,terrain:effectiveTerrain})});
    if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.error||'KMZ-Export fehlgeschlagen.');}
    const blob=await res.blob();const url=URL.createObjectURL(blob);
    const a=document.createElement('a');a.href=url;a.download=`${(field.displayName||field.name).replace(/[^A-Za-z0-9_-]/g,'_')}-${aircraft}.kmz`;document.body.appendChild(a);a.click();a.remove();
@@ -129,8 +133,8 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
   }catch(e){setError(e instanceof Error?e.message:'Unbekannter Fehler');}
   finally{setBusy(false);}
  }
- const metrics=useMemo(()=>result.plan?routeMetrics(result.plan,terrain.startPoint,effectiveOptions?.speed??options.speed):null,
-  [result.plan,terrain.startPoint,effectiveOptions?.speed,options.speed]);
+ const metrics=useMemo(()=>result.plan?routeMetrics(result.plan,effectiveStart,effectiveOptions?.speed??options.speed):null,
+  [result.plan,effectiveStart,effectiveOptions?.speed,options.speed]);
  const canPublish=Boolean(result.plan&&!publishing&&!busy&&!checking&&!loading&&!loadedError&&!analysing&&
   !(terrain.altitudeMode==="terrain"&&!terrainReport)&&
   !(terrainReport&&terrain.altitudeMode==="terrain"&&terrain.rthHeight<terrainReport.recommendedRthM));
@@ -153,15 +157,15 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
     <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Suchbahnen</div><div className="font-bold">{result.plan.lines.length}</div></div>
     <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Bahnabstand</div><div className="font-bold">{effectiveOptions?.spacing.toFixed(1)} m</div></div>
     <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Gesamtstrecke*</div><div className="font-bold">{(metrics.totalM/1000).toFixed(2)} km</div></div>
-    <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Flugzeit ca.*</div><div className="font-bold">{metrics.flightMinutes.toFixed(1)} min</div></div>
+    <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Flugzeit ca.*</div><div className="font-bold">{metrics.flightMinutes.toFixed(1)} min</div>{options.autoDirection===true&&<div className="text-[11px] text-indigo-700">Winkel {result.plan.direction}° optimiert</div>}</div>
    </div>}
   <div className="grid min-w-0 gap-3 xl:grid-cols-[370px_minmax(0,1fr)] xl:items-start">
    <section className="order-first min-w-0 space-y-2 rounded-xl border border-gray-200 bg-white p-2.5 shadow-sm sm:p-3 xl:order-last xl:sticky xl:top-3">
     <div className="flex flex-wrap items-center justify-between gap-2 px-1">
      <h2 className="font-bold">Karte und Suchroute</h2>
-     <span className="text-xs text-gray-500">Startplatz auf Karte antippen</span>
+     <span className="text-xs text-gray-500">Startpunkt auf Karte anpassbar</span>
     </div>
-    {field?<FlightMissionMap key={field.id} area={field.areaGeoJson} plan={result.plan} startPoint={terrain.startPoint} hazards={hazards?.found||[]} onStartPointChange={p=>{setDirty(true);setTerrain(v=>({...v,startPoint:p}));}}/>:
+    {field?<FlightMissionMap key={field.id} area={field.areaGeoJson} plan={result.plan} startPoint={effectiveStart} coverageWidthM={minCoverage?.theoreticalWidthM??coverage.info?.theoreticalWidthM} hazards={hazards?.found||[]} onStartPointChange={p=>{setDirty(true);setOptions(v=>({...v,autoStartAtFirst:false}));setTerrain(v=>({...v,startPoint:p}));}}/>:
      <p className="p-4 text-sm text-gray-700">{loading?'Flaechen werden geladen ...':'Bitte Fläche auswählen.'}</p>}
     {result.reason&&<p role="alert" className="rounded-lg bg-rose-50 p-2 text-sm font-medium text-rose-900">{result.reason}</p>}
    </section>
@@ -185,8 +189,11 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
      <summary className="cursor-pointer text-sm font-semibold">Weitere Flugbahn-Einstellungen</summary>
      <div className="mt-3 grid grid-cols-2 gap-3">
       <label className="block text-sm">Überlappung (%)<input type="number" min="10" max="70" step="5" value={overlapPercent} onChange={e=>{setDirty(true);setOverlapPercent(Number(e.target.value));}} className="mt-1 w-full rounded border p-2 text-base"/></label>
-      <label className="block text-sm">Flugrichtung (°)<input type="number" min="0" max="359" step="1" value={options.direction} onChange={e=>setNumber('direction',e.target.value)} className="mt-1 w-full rounded border p-2 text-base"/></label>
+      <label className="col-span-2 flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={options.autoDirection===true} onChange={e=>{setDirty(true);setOptions(o=>({...o,autoDirection:e.target.checked}));}}/> Flugwinkel automatisch auf kürzeste geschätzte Zeit optimieren</label>
+      <label className="block text-sm">Flugrichtung (°)<input type="number" min="0" max="359" step="1" disabled={options.autoDirection===true} value={options.autoDirection===true?(result.plan?.direction??0):options.direction} onChange={e=>setNumber('direction',e.target.value)} className="mt-1 w-full rounded border p-2 text-base disabled:bg-slate-100"/></label>
+      {options.autoDirection===true&&<span className="self-end pb-2 text-xs text-indigo-800">{result.plan?.optimization?.anglesEvaluated??0} Winkel geprüft</span>}
       <label className="block text-sm">Randabstand (m)<input type="number" min="0" max="50" step="1" value={options.margin} onChange={e=>setNumber('margin',e.target.value)} className="mt-1 w-full rounded border p-2 text-base"/></label>
+      <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={options.smoothTurns===true} disabled={aircraft!=="M4T"} onChange={e=>{setDirty(true);setOptions(o=>({...o,smoothTurns:e.target.checked}));}}/> Kontinuierliche Kurvenwenden (M4T, Test)</label>
       <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={manualSpacing} onChange={e=>{setDirty(true);setManualSpacing(e.target.checked);}}/> Bahnabstand manuell</label>
       {manualSpacing&&<label className="col-span-2 text-sm">Bahnabstand (m)<input type="number" min="1.5" max="220" step="0.5" value={options.spacing} onChange={e=>setNumber('spacing',e.target.value)} className="mt-1 w-full rounded border p-2 text-base"/></label>}
      </div>
@@ -195,10 +202,11 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
     {coverage.error&&<p role="alert" className="rounded bg-rose-50 p-2 text-sm text-rose-800">{coverage.error}</p>}
     <div className="space-y-2 rounded-lg border border-gray-200 p-3">
      <h3 className="text-sm font-bold">Gelände und Rückkehr</h3>
-     <p className="text-xs text-gray-600">Startplatz: {terrain.startPoint?`${terrain.startPoint[1].toFixed(6)}, ${terrain.startPoint[0].toFixed(6)}`:'Auf Karte markieren'}</p>
+     <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-600">{options.autoStartAtFirst===true?'Start vorgeschlagen':'Start manuell'}: {effectiveStart?`${effectiveStart[1].toFixed(6)}, ${effectiveStart[0].toFixed(6)}`:'Startpunkt fehlt'}</p>
+     {options.autoStartAtFirst===false&&<button type="button" onClick={()=>{setDirty(true);setOptions(o=>({...o,autoStartAtFirst:true}));}} className="rounded-md border px-2.5 py-1.5 text-xs font-semibold">Ersten Suchwegpunkt vorschlagen</button>}</div>
      <label className="block text-sm font-semibold">Höhenmodus<select value={terrain.altitudeMode} onChange={e=>{setDirty(true);setTerrain(v=>({...v,altitudeMode:e.target.value as TerrainSettingsV31['altitudeMode']}));}} className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2.5 text-base"><option value="terrain">Geländeangepasst</option><option value="constant">Konstant zum Startplatz</option></select></label>
      <label className="block text-sm font-semibold">Rückkehrhöhe RTH (m)<input type="number" min="20" max="150" step="1" value={terrain.rthHeight} onChange={e=>{setDirty(true);setTerrain(v=>({...v,rthHeight:Number(e.target.value)}));}} className="mt-1 w-full rounded-lg border border-gray-300 p-2.5 text-base"/></label>
-     <button type="button" disabled={!terrain.startPoint||!result.plan||analysing||checking} onClick={()=>void analyzeTerrain()} className="w-full rounded-lg bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:bg-gray-400">{analysing?'Gelände wird geprüft ...':'Gelände und Gefahren prüfen'}</button>
+     <button type="button" disabled={!effectiveStart||!result.plan||analysing||checking} onClick={()=>void analyzeTerrain()} className="w-full rounded-lg bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:bg-gray-400">{analysing?'Gelände wird geprüft ...':'Gelände und Gefahren prüfen'}</button>
      {terrainReport&&<div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2 text-sm">
        <div><span className="block text-xs text-gray-500">Geländedaten</span><strong>{terrainReport.dataset==='dgm1'?'DGM1 · 1 m':'EU-DEM · 25 m'}</strong></div>
        <div><span className="block text-xs text-gray-500">Bodenabstand min.</span><strong>{minAgl?.toFixed(1)} m</strong></div>
@@ -221,7 +229,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
     {result.plan&&metrics&&<details className="rounded-lg border border-gray-200 p-2 text-sm">
       <summary className="cursor-pointer font-semibold">Strecke und Zeit im Detail</summary>
       <div className="mt-2 grid grid-cols-2 gap-2 text-xs"><div>Suchstrecke: {(metrics.searchM/1000).toFixed(2)} km</div><div>Verbindungsflüge: {(metrics.transfersM/1000).toFixed(2)} km</div><div>Anflug: {(metrics.approachM/1000).toFixed(2)} km</div><div>Rückflug: {(metrics.returnM/1000).toFixed(2)} km</div><div>{metrics.turnCount} Bahnwechsel</div><div>Wendeaufschlag: {metrics.turnMinutes.toFixed(1)} min</div></div>
-      <p className="mt-2 text-xs text-gray-500">*Schätzung inkl. An- und Rückweg ab markiertem Startplatz und pauschal 3 Sekunden je Bahnwechsel; ohne Start, Landung, Wind und Pausen.</p>
+      <p className="mt-2 text-xs text-gray-500">*Schätzung inkl. An- und Rückweg und pauschal 3 Sekunden je Bahnwechsel; ohne Start, Landung, Wind und Pausen. Die automatische Richtung prüft viele Winkel, garantiert aber kein globales Minimum.</p>
      </details>}
     {!locked&&<button type="button" onClick={()=>void download()} disabled={!result.plan||busy||publishing||checking||(terrain.altitudeMode==='terrain'&&!terrainReport)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-semibold disabled:opacity-50">{busy?'Export ...':`${aircraft}-Mission als KMZ herunterladen`}</button>}
     <button type="button" onClick={()=>void publishToPilot2()} disabled={!canPublish} className="w-full rounded-xl bg-blue-700 px-4 py-3.5 text-base font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-400">{publishing?'Speichert ...':mission?'Mission in DJI-Cloud ersetzen':'Mission in DJI-Cloud speichern'}</button>
@@ -231,7 +239,8 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
      <summary className="cursor-pointer text-sm font-semibold text-gray-700">Hinweise und Datenquellen</summary>
      <div className="mt-2 space-y-2">
       <p>Testplanung: Vor einem späteren Flug Route, Hindernisse, Luftraum, Kameraposition und RTH in DJI Pilot 2 prüfen. Höhenmodelle und OSM sind keine vollständige Hinderniserfassung.</p>
-      <p>Wärmebildabdeckung und Flugzeit sind Schätzwerte; Baumkronen und Wind fehlen im Geländemodell.</p>
+      <p>Wärmebildabdeckung und Flugzeit sind Schätzwerte; Baumkronen und Wind fehlen im Geländemodell. Die blauen Streifen zeigen die geometrische Querabdeckung bei senkrechter Kamera und modellierter Mindesthöhe, keine garantierte Rehkitz-Erkennung.</p>
+      <p>Der automatisch vorgeschlagene Startpunkt ist der erste Suchwegpunkt – nicht automatisch der tatsächliche Start- oder Home-Punkt der Drohne. Bei späteren Flügen muss er vor Gelände- und RTH-Berechnung auf den echten Startplatz gesetzt werden. Kurven können die Randabdeckung verkürzen; die WPML-Kurvenfahrt muss in Pilot 2 geprüft werden.</p>
       {terrainReport?.warnings.map((w,i)=><p key={i}>{w}</p>)}
       {hazards?.warnings.map((w,i)=><p key={'h'+i}>{w}</p>)}
       {result.plan?.warnings.map((w,i)=><p key={'p'+i}>{w}</p>)}

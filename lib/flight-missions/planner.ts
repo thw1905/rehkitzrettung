@@ -2,7 +2,14 @@
 // REHKITZ_FLUGMISSION_V1 – DJI-Flugplanung; keine Aenderung bestehender DJI-Bindings.
 // FLUGMISSION_PLAN_V1 – rein geometrische Vorplanung. Keine Freigabe fuer autonomen Flug.
 export type LonLat = [number, number];
-export type MissionOptions = { altitude: number; speed: number; spacing: number; direction: number; margin: number };
+export type MissionOptions = { altitude: number; speed: number; spacing: number; direction: number; margin: number;
+  /** Automatically choose the angle using a time estimate; manual direction otherwise. */
+  autoDirection?: boolean;
+  /** Treat first search waypoint as proposed start (not the physical DJI home point). */
+  autoStartAtFirst?: boolean;
+  /** Request gentle turns at intermediate waypoints in M4T WPML. */
+  smoothTurns?: boolean;
+};
 export type FlightLine = { start: LonLat; end: LonLat };
 export type FlightPlan = {
   waypoints: LonLat[];
@@ -12,6 +19,9 @@ export type FlightPlan = {
   searchMeters: number;
   estimatedMinutes: number;
   warnings: string[];
+  /** Resolved search direction in degrees, 0–179 for automatic. */
+  direction?:number;
+  optimization?:{anglesEvaluated:number;estimatedSeconds:number};
 };
 
 type XY = {x:number;y:number};
@@ -23,6 +33,8 @@ export function validateOptions(o: MissionOptions): MissionOptions {
   if (!finite(o.spacing) || o.spacing < 1.5 || o.spacing > 220) throw new Error("Bahnabstand muss zwischen 1,5 und 220 m liegen.");
   if (!finite(o.margin) || o.margin < 0 || o.margin > 50) throw new Error("Randabstand muss zwischen 0 und 50 m liegen.");
   if (!finite(o.direction) || o.direction < 0 || o.direction >= 360) throw new Error("Richtung muss zwischen 0 und 359 Grad liegen.");
+  for(const key of ["autoDirection","autoStartAtFirst","smoothTurns"] as const)
+    if(o[key]!==undefined && typeof o[key]!=="boolean")throw new Error("Ungültige Flugplan-Option: "+key);
   return o;
 }
 function parsePolygons(input: unknown): LonLat[][][] {
@@ -46,7 +58,7 @@ function parsePolygons(input: unknown): LonLat[][][] {
   });
 }
 const distance = (a: XY,b:XY) => Math.hypot(a.x-b.x,a.y-b.y);
-export function createFlightPlan(input: unknown, rawOptions: MissionOptions, startPoint?: LonLat | null): FlightPlan {
+function createFlightPlanAtAngle(input: unknown, rawOptions: MissionOptions, startPoint?: LonLat | null): FlightPlan {
   const opts = validateOptions(rawOptions);
   const polygons = parsePolygons(input);
   const all = polygons.flat(2);
@@ -116,18 +128,25 @@ export function createFlightPlan(input: unknown, rawOptions: MissionOptions, sta
     const waypointCoords=ordered.map(back);
     const startOk=startPoint && Array.isArray(startPoint) && startPoint.length===2 &&
       startPoint.every(v=>finite(v)) && Math.abs(startPoint[0])<=180 && Math.abs(startPoint[1])<=85;
-    const startXY=startOk?rotate(startPoint):null;
+    const startXY=startOk && !opts.autoStartAtFirst?rotate(startPoint):null;
     const approachMeters=startXY?distance(startXY,ordered[0]):0;
     const returnMeters=startXY?distance(ordered[ordered.length-1],startXY):0;
+    const homeReturn=startXY?returnMeters:distance(ordered[ordered.length-1],ordered[0]);
+    const allMeters=totalMeters+approachMeters+homeReturn;
+    // 3 seconds per transition is a planning assumption, not a DJI flight simulation.
+    const turns=Math.max(0,lines.length-1);
+    const estimateSec=allMeters/opts.speed+turns*3;
     return {waypoints:waypointCoords,lines,transfers,totalMeters,searchMeters,
-      estimatedMinutes:totalMeters/opts.speed/60,
-      costMeters:totalMeters+approachMeters+returnMeters};
+      estimatedMinutes:estimateSec/60,estimateSec,
+      costMeters:allMeters};
   }
   const hasStart=startPoint && Array.isArray(startPoint) && startPoint.length===2 &&
     startPoint.every(v=>finite(v)) && Math.abs(startPoint[0])<=180 && Math.abs(startPoint[1])<=85;
-  const candidates=hasStart?[candidate(false,false),candidate(false,true),candidate(true,false),candidate(true,true)]:[candidate(false,false)];
+  const useStart=hasStart && !opts.autoStartAtFirst;
+  const candidates=useStart?[candidate(false,false),candidate(false,true),candidate(true,false),candidate(true,true)]:
+    [candidate(false,false),candidate(false,true),candidate(true,false),candidate(true,true)];
   // Gleichstand: stabile erste Variante. Dadurch bleiben Ergebnisse reproduzierbar.
-  const best=candidates.reduce((a,b)=>b.costMeters<a.costMeters-0.01?b:a);
+  const best=candidates.reduce((a,b)=>b.estimateSec<a.estimateSec-0.001?b:a);
   const warnings = [
     "Geodaten sind kein Hindernis- oder Flugfreigabenachweis.",
     "Hoehenreferenz und Flugroute vor Flug in Pilot 2 pruefen.",
@@ -135,5 +154,33 @@ export function createFlightPlan(input: unknown, rawOptions: MissionOptions, sta
     "Kameraabdeckung ist ein geometrisches Modell.",
   ];
   if(polygons.length>1 || polygons.some(p=>p.length>1)) warnings.push("Die Fläche hat mehrere Teile oder Innenringe. Ueberflugstrecken unbedingt kontrollieren.");
-  return {waypoints:best.waypoints,lines:best.lines,transfers:best.transfers,totalMeters:best.totalMeters,searchMeters:best.searchMeters,estimatedMinutes:best.estimatedMinutes,warnings};
+  return {waypoints:best.waypoints,lines:best.lines,transfers:best.transfers,totalMeters:best.totalMeters,searchMeters:best.searchMeters,estimatedMinutes:best.estimatedMinutes,warnings,direction:opts.direction};
+}
+
+/** Search 0–179° using coarse directions plus refinements of the best three.
+ * All candidate plans cover the polygon using the same algorithm; only direction varies.
+ * This is the shortest estimated time among evaluated angles, not a global optimum.
+ */
+export function createFlightPlan(input:unknown,rawOptions:MissionOptions,startPoint?:LonLat|null):FlightPlan{
+ const opts=validateOptions(rawOptions);
+ if(!opts.autoDirection)return createFlightPlanAtAngle(input,opts,startPoint);
+ const scores:Array<{angle:number;plan:FlightPlan;seconds:number}>=[];
+ const seen=new Set<number>();
+ let firstError:unknown=null;
+ const evalAngle=(deg:number)=>{
+  const angle=((Math.round(deg)%180)+180)%180;
+  if(seen.has(angle))return;
+  seen.add(angle);
+  try{
+   const plan=createFlightPlanAtAngle(input,{...opts,direction:angle,autoDirection:false},startPoint);
+   const seconds=plan.estimatedMinutes*60;
+   if(Number.isFinite(seconds))scores.push({angle,plan,seconds});
+  }catch(e){if(!firstError)firstError=e;}
+ };
+ for(let a=0;a<180;a+=5)evalAngle(a);
+ const top=[...scores].sort((a,b)=>a.seconds-b.seconds).slice(0,4);
+ for(const item of top)for(let a=item.angle-4;a<=item.angle+4;a++)evalAngle(a);
+ if(scores.length===0)throw firstError??new Error('Keine passende Flugrichtung gefunden.');
+ const best=scores.sort((a,b)=>a.seconds-b.seconds||a.angle-b.angle)[0];
+ return {...best.plan,optimization:{anglesEvaluated:seen.size,estimatedSeconds:best.seconds}};
 }
