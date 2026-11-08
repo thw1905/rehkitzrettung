@@ -1,9 +1,13 @@
 // REHKITZ_DJI_V3_2 – OSM hazard hints for planning only, NEVER obstacle clearance.
 // OSM may be incomplete or out of date; overhead wires are not a height model.
 import type {FlightPlan,LonLat} from './planner';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {existsSync} from 'node:fs';
+import {join} from 'node:path';
 
 export type HazardV32={key:string;kind:'power'|'wind';label:string;distanceM:number;point:LonLat;osmUrl:string};
-export type HazardReportV32={checked:boolean;dataSource:'OpenStreetMap / Overpass';bufferM:300;found:HazardV32[];warnings:string[]};
+export type HazardReportV32={checked:boolean;dataSource:'OpenStreetMap / Overpass'|'OpenStreetMap / lokaler Index';bufferM:300;found:HazardV32[];warnings:string[]};
 const rad=Math.PI/180;
 function xy(p:LonLat,baseLat:number):[number,number]{return [p[0]*111320*Math.cos(baseLat*rad),p[1]*111132];}
 function nearestOnSegment(p:[number,number],a:[number,number],b:[number,number]){
@@ -61,7 +65,7 @@ const OVERPASS_ENDPOINTS=[
  'https://overpass-api.de/api/interpreter',
  'https://overpass.private.coffee/api/interpreter',
 ] as const;
-const OSM_WARNING='Nur OSM-Hinweise: nicht erfasste Leitungen, Baeume, Gebaeude und andere Hindernisse koennen fehlen.';
+const OSM_WARNING='© OpenStreetMap-Mitwirkende (ODbL), Geofabrik-Auszug. Nur OSM-Hinweise: nicht erfasste Leitungen, Baeume und andere Hindernisse koennen fehlen.';
 type StoredElements={expiresAt:number;elements:OSMItem[]};
 const successCache=new Map<string,StoredElements>();
 let providerCooldownUntil=0;
@@ -115,6 +119,24 @@ async function retrieveOSM(query:string,key:string):Promise<{elements:OSMItem[]|
  inFlight.set(key,task);
  try{return await task;}finally{inFlight.delete(key);}
 }
+// V3.3: Off-line SQLite index is preferred whenever it exists. Overpass is a fallback
+// before the first local import, not an indication of obstacle clearance.
+const execFilePromise=promisify(execFile);
+type LocalHazards={elements:OSMItem[];builtAt?:string;source?:string;count?:string};
+async function offlineLookup(bounds:{s:number;w:number;n:number;e:number}):Promise<LocalHazards|null>{
+ const base=process.env.DJI_GEO_DATA_DIR?.trim()||
+   (process.platform==='win32'?join(process.cwd(),'.local-dji-geodata'):'/var/lib/rehkitzrettung/dji-geodata');
+ if(!existsSync(join(base,'osm-hazards-ni.sqlite3')))return null;
+ const script=join(process.cwd(),'scripts','dji-osm-ni.py');
+ if(!existsSync(script))throw new Error('Lokaler OSM-Indexer fehlt: '+script);
+ const bbox=[bounds.s,bounds.w,bounds.n,bounds.e].map(n=>n.toFixed(7)).join(',');
+ const {stdout}=await execFilePromise('python3',[script,'query','--bbox',bbox],{
+  env:{...process.env,DJI_GEO_DATA_DIR:base},timeout:6500,maxBuffer:7*1024*1024,
+ });
+ const parsed=JSON.parse(stdout) as LocalHazards;
+ if(!parsed||!Array.isArray(parsed.elements)||parsed.elements.length>1200)throw new Error('Lokale OSM-Antwort unvollständig oder zu groß.');
+ return parsed;
+}
 export async function inspectHazards(plan:FlightPlan,start:LonLat):Promise<HazardReportV32>{
  const fail=(message:string):HazardReportV32=>({checked:false,dataSource:'OpenStreetMap / Overpass',bufferM:300,found:[],warnings:[message,'Die OSM-Daten sind weder vollstaendig noch ein Nachweis fuer Hindernisfreiheit.']});
  try{
@@ -126,8 +148,16 @@ export async function inspectHazards(plan:FlightPlan,start:LonLat):Promise<Hazar
   if((n-s)*(e-w)>0.14) return fail('Die Suchregion ist fuer die OSM-Gefahrenabfrage zu gross.');
   const bounds=`(${s.toFixed(6)},${w.toFixed(6)},${n.toFixed(6)},${e.toFixed(6)})`;
   const query=`[out:json][timeout:12];(way["power"~"^(line|minor_line|cable)$"]${bounds};node["power"="tower"]${bounds};node["generator:source"="wind"]${bounds};way["generator:source"="wind"]${bounds};node["man_made"="windmill"]${bounds};);out geom;`;
+  // A broken local dataset is an error; never silently switch to remote data.
+  const local=await offlineLookup({s,w,n,e});
+  if(local){
+   const warnings=[OSM_WARNING,'Lokaler OSM-Stand: '+(local.builtAt||'unbekannt')+'. Quelle: '+(local.source||'Geofabrik Niedersachsen')];
+   if(!local.builtAt||!Number.isFinite(Date.parse(local.builtAt))||Date.now()-Date.parse(local.builtAt)>30*24*3600*1000)
+    warnings.unshift('OSM-Gefahrendaten älter als 30 Tage oder Datum unbekannt. Index aktualisieren.');
+   return {checked:true,dataSource:'OpenStreetMap / lokaler Index',bufferM:300,found:analyzeOverpass(plan,start,local.elements),warnings};
+  }
   const result=await retrieveOSM(query,bounds);
-  if(!result.elements)return fail(result.error||'Die OSM-Gefahrenabfrage ist nicht erreichbar.');
-  return {checked:true,dataSource:'OpenStreetMap / Overpass',bufferM:300,found:analyzeOverpass(plan,start,result.elements),warnings:[OSM_WARNING]};
- }catch(err){return fail('Die OSM-Gefahrenabfrage ist fehlgeschlagen: '+(err instanceof Error?err.message:String(err)));}
+  if(!result.elements)return fail('Lokale OSM-Daten fehlen. '+(result.error||'Overpass ist nicht erreichbar.'));
+  return {checked:true,dataSource:'OpenStreetMap / Overpass',bufferM:300,found:analyzeOverpass(plan,start,result.elements),warnings:[OSM_WARNING,'Lokale OSM-Daten noch nicht importiert.']};
+ }catch(err){return fail('Die OSM-Gefahrenpruefung ist fehlgeschlagen: '+(err instanceof Error?err.message:String(err)));}
 }

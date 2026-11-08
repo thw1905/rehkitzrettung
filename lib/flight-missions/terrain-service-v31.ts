@@ -12,8 +12,11 @@ async function oneRequest(locations:LonLat[]):Promise<{source:TerrainReportV31['
   const url=new URL(configured);
   if(!(url.protocol==='https:'||(url.protocol==='http:'&&['127.0.0.1','localhost','::1'].includes(url.hostname))))
    throw new Error('DJI_DGM1_HEIGHT_URL darf nur HTTPS oder lokale HTTP-Adressen verwenden.');
-  const response=await fetch(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({locations}),cache:'no-store',signal:AbortSignal.timeout(15000)});
-  if(!response.ok)throw new Error(`DGM1-Höhendienst HTTP ${response.status}; keine automatische EU-DEM-Ausweichberechnung.`);
+  const response=await fetch(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({locations}),cache:'no-store',signal:AbortSignal.timeout(60000)});
+  if(!response.ok){
+   let detail='';try{const failure=await response.json() as {error?:string};detail=String(failure.error||'').slice(0,280);}catch{}
+   throw new Error(`DGM1-Höhendienst HTTP ${response.status}${detail?': '+detail:''}; keine automatische EU-DEM-Ausweichberechnung.`);
+  }
   const data=await response.json() as {dataset?:string;elevations?:unknown[]};
   if(data.dataset!=='dgm1'||!Array.isArray(data.elevations)||data.elevations.length!==locations.length||data.elevations.some(v=>typeof v!=='number'||!Number.isFinite(v)||v< -500||v>9000))
    throw new Error('DGM1-Höhendienst liefert unvollständige oder nicht bestätigte DGM1-Höhenwerte.');
