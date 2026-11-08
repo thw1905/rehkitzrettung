@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
           name: "Demo-Wiese",
           displayName: "TEST / ÜBUNG – Demo-Wiese",
           ownerId: owner.id,
-          notes: "Demo-Fläche zur Einweisung.",
+          notes: "Demo-Fläche in Seevetal-Maschen zur Einweisung. Kein realer Flug.",
           areaGeoJson: {
             type: "Feature",
             properties: {},
@@ -87,18 +87,18 @@ export async function POST(req: NextRequest) {
               type: "Polygon",
               coordinates: [
                 [
-                  [8.0, 52.0],
-                  [8.001, 52.0],
-                  [8.001, 52.001],
-                  [8.0, 52.001],
-                  [8.0, 52.0],
+                  [10.0343, 53.3769],
+                  [10.0353, 53.3769],
+                  [10.0353, 53.3779],
+                  [10.0343, 53.3779],
+                  [10.0343, 53.3769],
                 ],
               ],
             },
           },
-          locationLatitude: 52.0,
-          locationLongitude: 8.0,
-          locationNote: "Demo-Treffpunkt",
+          locationLatitude: 53.3774,
+          locationLongitude: 10.0348,
+          locationNote: "Demo-Startpunkt Seevetal-Maschen (nur Test)",
         },
       });
 
