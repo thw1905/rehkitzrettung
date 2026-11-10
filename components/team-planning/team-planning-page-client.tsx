@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import DroneAssignmentV36 from "@/components/team-planning/drone-assignment-v36";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
@@ -631,6 +632,7 @@ export default function TeamPlanningPageClient() {
                   </div>
 
                   <div className="mt-5 space-y-4">
+                    {team.operationDayTeamId && <DroneAssignmentV36 key={team.operationDayTeamId} teamId={team.operationDayTeamId}/>}
                     <div>
                       <label className="mb-2 block text-sm font-semibold text-gray-900">
                         Pilot

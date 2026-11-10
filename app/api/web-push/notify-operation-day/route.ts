@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOperationDayMeetingPoint } from "@/lib/operation-day-meeting-point";
 import { db } from "@/lib/db";
 import { requireAdminApi } from "@/lib/admin";
+import {prepareDay} from "@/lib/flight-missions/auto-prepare-v36";
 import { sendWebPushToUser } from "@/lib/web-push";
 import { sendMail } from "@/lib/mail";
 import { getRevierOwnerMailTemplate } from "@/lib/revier-owner-mail-template-store";
@@ -469,8 +470,12 @@ export async function POST(req: NextRequest) {
       operationDayId: operationDay.id,
     });
 
+    // Nur interne Entwuerfe vorbereiten, keine Cloud-KMZ automatisch ersetzen.
+    let djiPreparation:Awaited<ReturnType<typeof prepareDay>>|null=null;
+    try{djiPreparation=await prepareDay(operationDay.id);}catch(e){console.error("[DJI-V36] Tagesvorbereitung:",e);}
     return NextResponse.json({
       success: true,
+      djiPreparation,
       plannedUsers: plannedUserIds.size,
       notPlannedUsers: notPlannedUserIds.size,
       plannedPushes,

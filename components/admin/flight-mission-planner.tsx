@@ -10,6 +10,7 @@ import {type TerrainSettingsV31,type TerrainReportV31} from "@/lib/flight-missio
 import type {HazardReportV32} from "@/lib/flight-missions/hazards-v32";
 import FlightTerrainProfile from "@/components/admin/flight-terrain-profile-v31";
 import {routeMetrics} from "@/lib/flight-missions/route-metrics-v34";
+import {droneDefaults,type DroneV36} from "@/lib/flight-missions/profiles-v36";
 const FlightMissionMap=dynamic(()=>import("@/components/admin/flight-mission-map"),{ssr:false,loading:()=> <div className="flex h-[330px] items-center justify-center rounded-xl bg-gray-100 text-gray-700">Satellitenkarte wird geladen ...</div>});
 type Field={id:string;name:string;displayName:string|null;areaGeoJson:unknown};
 const initial:MissionOptions={altitude:70,speed:6,spacing:25,direction:0,margin:0,autoDirection:true,autoStartAtFirst:true,smoothTurns:true};
@@ -42,6 +43,12 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
  const [mission,setMission]=useState<ExistingMission|null>(null);
  const [dirty,setDirty]=useState(false);
  const [refreshMission,setRefreshMission]=useState(0);
+ const [preparedPlan,setPreparedPlan]=useState<{fieldId:string;plan:FlightPlan;report:TerrainReportV31|null}|null>(null);
+ const [staleMissionId,setStaleMissionId]=useState<string|null>(null);
+ const [teamDayId,setTeamDayId]=useState<string|null>(null);
+ const [teamDrone,setTeamDrone]=useState<DroneV36|null>(null);
+ const [changingDrone,setChangingDrone]=useState(false);
+ const [changeMessage,setChangeMessage]=useState("");
  const [loadedError,setLoadedError]=useState(false);
  useEffect(()=>{
   let active=true;
@@ -63,6 +70,29 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
      if(current?.settings){setOptions({...current.settings.options});setOverlapPercent(current.settings.overlapPercent);setManualSpacing(current.settings.manualSpacing);setTerrain(current.settings.terrain??defaultTerrain);}
      else{setOptions(initial);setOverlapPercent(20);setManualSpacing(false);setTerrain(defaultTerrain);}
      setDirty(false);
+     // Bei geaendertem Team oder Drohnentyp die vorhandene KMZ nicht als neue Planung anzeigen.
+     const prepared=data?.preparation;
+     const chosen:DroneV36|null=prepared?.assignment?.aircraft??null;
+     setTeamDayId(prepared?.assignment?.team?.id??null);
+     setTeamDrone(chosen);
+     setStaleMissionId(prepared?.stale&&current?.id?current.id:null);
+     setPreparedPlan(prepared?.draft?.plan ? {fieldId,plan:prepared.draft.plan,report:prepared.draft.terrainReport??null}:null);
+     if(orderId && chosen && (prepared?.stale || !current || current.aircraft!==chosen)){
+      const standard=droneDefaults(chosen);
+      setMission(null);setAircraft(chosen);setCamera("THERMAL");
+      // Gleicher Drohnentyp: bisherige manuelle Werte zur Pruefung erhalten.
+      if(current?.aircraft===chosen && current.settings){
+       setCamera(current.camera);setOptions(current.settings.options);setOverlapPercent(current.settings.overlapPercent);
+       setManualSpacing(current.settings.manualSpacing);setTerrain({...standard.terrain,...(current.settings.terrain??{}),startPoint:null});
+       setPreparedPlan(null);setDirty(true);
+       setChangeMessage("Teamwechsel: bisherige manuelle Flugparameter wurden zur Kontrolle geladen. Startplatz und Gelaende neu pruefen.");
+      }else{
+       setOptions(standard.options);setOverlapPercent(standard.overlapPercent);
+       setManualSpacing(false);setTerrain(standard.terrain);setDirty(!prepared?.draft?.plan);
+       if(current)setChangeMessage("Die alte Cloud-Mission ist ueberholt. Neues Drohnenprofil und Suchbahnen bitte pruefen.");
+      }
+     } else if(orderId && !chosen){setChangeMessage("Diesem Team muss zuerst eine Drohne zugewiesen werden.");}
+     else setChangeMessage("");
    }})
    .catch(e=>{if(!controller.signal.aborted){setLoadedError(true);setError(e instanceof Error?e.message:"Laden fehlgeschlagen.");}})
    .finally(()=>{if(!controller.signal.aborted)setChecking(false);});
@@ -109,6 +139,24 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
   finally{setAnalysing(false);}
  }
  const visible=useMemo(()=>fields.filter(f=>`${f.displayName||''} ${f.name}`.toLowerCase().includes(search.toLowerCase())).slice(0,400),[fields,search]);
+ async function chooseDrone(next:DroneV36){
+  if(changingDrone)return;
+  if(dirty&&!window.confirm("Drohnenwechsel: die noch nicht gespeicherten Flugparameter werden durch die Werte der neuen Drohne ersetzt. Fortfahren?"))return;
+  if(locked){
+   if(!teamDayId){setError("Tages-Team nicht vorhanden.");return;}
+   setChangingDrone(true);setError("");
+   try{
+    const res=await fetch("/api/flugmissionen/team-aircraft",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({operationDayTeamId:teamDayId,aircraft:next})});
+    const data=await res.json();if(!res.ok)throw new Error(data.error||"Drohnenwechsel fehlgeschlagen");
+    setRefreshMission(v=>v+1);
+   }catch(e){setError(e instanceof Error?e.message:"Drohnenwechsel fehlgeschlagen");}
+   finally{setChangingDrone(false);}
+  }else{
+   const standard=droneDefaults(next);
+   setDirty(true);setAircraft(next);setCamera("THERMAL");setOptions(standard.options);
+   setOverlapPercent(standard.overlapPercent);setManualSpacing(false);setTerrain(standard.terrain);
+  }
+ }
  const setNumber=(key:'altitude'|'speed'|'spacing'|'direction'|'margin',value:string)=>{setDirty(true);setOptions(o=>({...o,[key]:Number(value),...(key==='direction'?{autoDirection:false}:{})}));};
  async function publishToPilot2(){
   if(!field||!result.plan||publishing||checking||loadedError||loading)return;
@@ -135,7 +183,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
  }
  const metrics=useMemo(()=>result.plan?routeMetrics(result.plan,effectiveStart,effectiveOptions?.speed??options.speed):null,
   [result.plan,effectiveStart,effectiveOptions?.speed,options.speed]);
- const canPublish=Boolean(result.plan&&!publishing&&!busy&&!checking&&!loading&&!loadedError&&!analysing&&
+ const canPublish=Boolean((!locked||Boolean(teamDrone&&teamDrone===aircraft))&&result.plan&&!publishing&&!busy&&!checking&&!loading&&!loadedError&&!analysing&&
   !(terrain.altitudeMode==="terrain"&&!terrainReport)&&
   !(terrainReport&&terrain.altitudeMode==="terrain"&&terrain.rthHeight<terrainReport.recommendedRthM));
  return <div className="mx-auto max-w-[1560px] space-y-3 pb-16 text-gray-950 sm:space-y-4">
@@ -150,6 +198,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">Testplanung</span>
    </div>
   </header>
+  {locked&&changeMessage&&<p role="status" className="rounded-lg bg-amber-50 p-2 text-sm font-semibold text-amber-900">{changeMessage}</p>}
   {checking?<p className="rounded-lg bg-slate-50 p-2 text-sm text-gray-700">Vorhandene Mission wird geladen ...</p>:
    mission?<p className="rounded-lg border border-gray-200 bg-white p-2 text-sm text-gray-700">Cloud-Mission: <strong>{mission.name}</strong>{dirty?' · Änderungen noch nicht gespeichert':' · Gespeicherte Route'}{!mission.hasExactSettings&&' · Alte Mission: Parameter teilweise rekonstruiert'}</p>:
    field?<p className="text-xs text-gray-500">Für diese Fläche wird eine neue Mission angelegt.</p>:null}
@@ -180,7 +229,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
      </select>
     </div>}
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-     <label className="block text-sm font-semibold">Drohne<select value={aircraft} onChange={e=>{setDirty(true);setAircraft(e.target.value as 'M3T'|'M4T');}} className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2.5 text-base"><option value="M4T">DJI M4T</option><option value="M3T">DJI M3T</option></select></label>
+     <label className="block text-sm font-semibold">Drohne<select value={aircraft} disabled={changingDrone} onChange={e=>void chooseDrone(e.target.value as DroneV36)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2.5 text-base"><option value="M4T">DJI M4T</option><option value="M3T">DJI M3T</option></select></label>
      <label className="block text-sm font-semibold">Kamera<select value={camera} onChange={e=>{setDirty(true);setCamera(e.target.value as MissionCamera);}} className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2.5 text-base"><option value="THERMAL">Wärmebild</option><option value="RGB_WIDE">RGB-Weitwinkel</option></select></label>
      <label className="block text-sm font-semibold">Flughöhe (m)<input type="number" min="10" max="120" step="1" value={options.altitude} onChange={e=>setNumber('altitude',e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 p-2.5 text-base"/></label>
      <label className="block text-sm font-semibold">Geschwindigkeit (m/s)<input type="number" min="1" max="12" step="0.5" value={options.speed} onChange={e=>setNumber('speed',e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 p-2.5 text-base"/></label>

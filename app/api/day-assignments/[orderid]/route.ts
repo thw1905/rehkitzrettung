@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
 import { getCurrentUserWithTeams } from "@/lib/current-user";
+import {ensureChangedOrdersPrepared,refreshTeamRoadRoute} from "@/lib/flight-missions/auto-prepare-v36";
 
 export async function PATCH(
 
@@ -106,6 +107,14 @@ export async function PATCH(
 
       });
 
+      // DJI V3.6: Auftrag umverteilt - Flugvorbereitung und Teamrouten erneuern.
+      if(order.operationDayTeamId!==updated.operationDayTeamId){
+       try{
+        await ensureChangedOrdersPrepared(order.operationDayTeamId,updated.operationDayTeamId,orderid);
+        await refreshTeamRoadRoute(order.operationDayTeamId);
+        await refreshTeamRoadRoute(updated.operationDayTeamId);
+       }catch(e){console.error("[DJI-V36] Umplanung:",e);}
+      }
       return NextResponse.json({
 
         ...updated,
@@ -200,6 +209,14 @@ export async function PATCH(
 
     });
 
+    // DJI V3.6: Auftrag umverteilt - Flugvorbereitung und Teamrouten erneuern.
+    if(order.operationDayTeamId!==updated.operationDayTeamId){
+     try{
+      await ensureChangedOrdersPrepared(order.operationDayTeamId,updated.operationDayTeamId,orderid);
+      await refreshTeamRoadRoute(order.operationDayTeamId);
+      await refreshTeamRoadRoute(updated.operationDayTeamId);
+     }catch(e){console.error("[DJI-V36] Umplanung:",e);}
+    }
     return NextResponse.json({
 
       ...updated,

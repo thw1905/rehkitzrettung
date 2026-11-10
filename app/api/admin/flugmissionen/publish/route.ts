@@ -10,6 +10,8 @@ import {validateTerrainSettings,checkExportHeights} from "@/lib/flight-missions/
 import {analyzeTerrainForPlan} from "@/lib/flight-missions/terrain-service-v31";
 import { readWaylineKmz,publicOrigin,findWayline,configuredWorkspace } from "@/lib/flight-missions/cloud-store";
 import { flightNameFromField,orderFlightField,publishOrReplaceMission,readCurrentPlanning,StaleMissionError } from "@/lib/flight-missions/mission-v3";
+import {getOrderPreparation} from "@/lib/flight-missions/auto-prepare-v36";
+import {savePublishedPreparation} from "@/lib/flight-missions/team-aircraft-v36";
 export const runtime="nodejs";
 const NO_STORE={"Cache-Control":"no-store"};
 export async function POST(req:NextRequest){
@@ -32,6 +34,17 @@ export async function POST(req:NextRequest){
   const current=await readCurrentPlanning(field.id);
   // Optimistische Version: alter Client darf aktuelle Mission nicht ueberschreiben.
   if((current?.id||null)!==expectedMissionId)throw new StaleMissionError();
+  // V3.6: Das Teamprofil ist verbindlich; alte Cloud-Missionen bei Umverteilung sind gesperrt.
+  const assignment=body.orderId?await getOrderPreparation(body.orderId):null;
+  if(body.orderId){
+   if(!assignment?.assignment?.aircraft)return NextResponse.json({error:"Diesem Team ist noch keine Drohne zugeordnet."},{status:409});
+   if(assignment.assignment.order.status!=="OFFEN"||assignment.assignment.order.startTime)
+    return NextResponse.json({error:"Laufende/abgeschlossene Auftraege werden nicht neu veroeffentlicht."},{status:409});
+   if(body.aircraft!==assignment.assignment.aircraft)
+    return NextResponse.json({error:"Drohnenprofil wurde geaendert. Flugplanung neu laden."},{status:409});
+   if(body.reuseExisting===true && (assignment.stale||current?.aircraft!==assignment.assignment.aircraft || (assignment.draft?.publishedMissionId&&current?.id!==assignment.draft.publishedMissionId)))
+    return NextResponse.json({error:"Diese Cloud-Mission ist nach Team-/Drohnenwechsel ueberholt. Neu berechnen und bestaetigen."},{status:409});
+  }
   const reuse=body?.reuseExisting===true;
   let aircraft:"M3T"|"M4T";let camera:MissionCamera;
   let settings: {aircraft:"M3T"|"M4T";camera:MissionCamera;options:MissionOptions;overlapPercent:number;manualSpacing:boolean;terrain?:import("@/lib/flight-missions/terrain-v31").TerrainSettingsV31}|null=null;
@@ -67,6 +80,10 @@ export async function POST(req:NextRequest){
    fileFactory=()=>makeMissionKmz(plan!,options,name,aircraft,{waypointHeights,rthHeight:terrain.rthHeight});
   }
   const entry=await publishOrReplaceMission({fieldId:field.id,name,aircraft,camera,fileFactory,expectedMissionId,editorId:user.id,settings,plan});
+  if(body.orderId&&assignment?.signature){
+   try{await savePublishedPreparation(body.orderId,entry.id,assignment.signature);}
+   catch(e){console.error('[DJI-V36] Freigabemarker konnte nicht gespeichert werden:',e);}
+  }
   console.info("[DJI-V3] Cloud-Mission aktualisiert",field.id,"Mission",entry.id,"Vorgaenger",expectedMissionId||"keiner");
   return NextResponse.json({success:true,mission:{id:entry.id,name:entry.name,waypoints:plan?.waypoints.length||current?.plan?.waypoints.length||0},message:"Aktuelle Mission gespeichert. Die Fernsteuerung muss die neue Cloud-Version herunterladen."},{headers:NO_STORE});
  }catch(e){
