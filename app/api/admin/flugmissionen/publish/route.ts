@@ -57,6 +57,7 @@ export async function POST(req:NextRequest){
      startPoint:null,altitudeMode:"constant",rthHeight:Math.min(150,Math.max(options.altitude+20,50))
    });
    plan=createFlightPlan(field.areaGeoJson,options,terrain.startPoint);
+   if(plan.coverageComplete!==true)throw new Error("Kameraabdeckung unvollständig; Cloud-Speichern gesperrt.");
    if(plan.waypoints.length>500||plan.estimatedMinutes>80)throw new Error("Testlimit: hoechstens 500 Wegpunkte und 80 Minuten.");
    const report=terrain.altitudeMode==="terrain"?await analyzeTerrainForPlan(plan,terrain.startPoint!,options.altitude):null;
    const waypointHeights=checkExportHeights(plan,terrain.altitudeMode,report,terrain.rthHeight,options.altitude);

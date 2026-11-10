@@ -29,6 +29,7 @@ export async function POST(req:NextRequest){
   const options=validateOptions(optionsForCamera(body.options,body.aircraft,camera,body.overlapPercent,manualSpacing));
   const terrain=validateTerrainSettings(body.terrain??{startPoint:null,altitudeMode:"constant",rthHeight:Math.min(150,Math.max(options.altitude+20,50))});
   const plan=createFlightPlan(field.areaGeoJson,options,terrain.startPoint);
+  if(plan.coverageComplete!==true)throw new Error("Kameraabdeckung unvollständig; KMZ-Export gesperrt.");
   const report=terrain.altitudeMode==="terrain"?await analyzeTerrainForPlan(plan,terrain.startPoint!,options.altitude):null;
   const heights=checkExportHeights(plan,terrain.altitudeMode,report,terrain.rthHeight,options.altitude);
   const blob=await makeMissionKmz(plan,options,field.displayName||field.name,body.aircraft,{waypointHeights:heights,rthHeight:terrain.rthHeight});

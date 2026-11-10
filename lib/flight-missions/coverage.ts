@@ -26,5 +26,5 @@ export function cameraCoverage(aircraft: AircraftModel, camera: MissionCamera, a
 export function optionsForCamera(o: MissionOptions, aircraft: AircraftModel, camera: MissionCamera, overlapPercent: number, manualSpacing: boolean): MissionOptions {
  const coverage=cameraCoverage(aircraft,camera,o.altitude,overlapPercent);
  if(typeof manualSpacing!=="boolean")throw new Error("Manueller Bahnabstand muss eindeutig gewählt sein.");
- return {...o,spacing:manualSpacing?o.spacing:coverage.suggestedSpacingM};
+ return {...o,spacing:manualSpacing?o.spacing:coverage.suggestedSpacingM,coverageWidthM:coverage.theoreticalWidthM};
 }
