@@ -2345,7 +2345,6 @@ setTimeout(() => setScanSuccessMessage(null), 2200);
           onClose={() => setWildLocationPrompt(null)}
         />
       )}
-      <a href="/sicherungsorte" className="fixed bottom-3 right-3 z-[80] rounded-xl bg-green-700 px-4 py-3 text-sm font-semibold text-white shadow-xl">Wild-Sicherungsorte teilen</a>
       <QrScannerModal
   open={qrScannerOrderId !== null}
   onClose={() => setQrScannerOrderId(null)}

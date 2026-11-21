@@ -26,6 +26,12 @@ export type FlightPlan = {
   optimization?:{anglesEvaluated:number;estimatedSeconds:number};
   /** Every polygon point is inside a nominal straight-line footprint in this flat-ground model. */
   coverageComplete?: boolean;
+  /** Rechenmodell: Überstand der äußeren Kamera-Bänder quer zu den Flugbahnen. */
+  lateralOverhangM?: number;
+  /** Maximal angestrebter, nicht garantiert erreichbarer Querüberstand. */
+  overhangTargetM?: number;
+  /** Tatsächlich verwendeter, einheitlicher Abstand der Suchbahn-Mittellinien. */
+  laneSpacingM?: number;
 };
 
 type XY = {x:number;y:number};
@@ -96,18 +102,36 @@ function createFlightPlanAtAngle(input: unknown, rawOptions: MissionOptions, sta
   const half=Math.max(0.1,width/2-clearance);
   const span=maxY-minY;
   // Jede Höhe der gesamten Fläche muss in mindestens einem Kamera-Band liegen.
-  const ys:number[]=[];
-  const begin=minY+Math.min(span/2,opts.spacing/2);
   if(span<1e-5)throw new Error("Fläche hat keine messbare Breite.");
-  for(let y=begin,n=0;y<=maxY+1e-7;y+=opts.spacing,n++){
-   if(n>1000)throw new Error("Zu viele Flugbahnen.");
-   ys.push(y);
-  }
-  if(maxY-ys[ys.length-1]>half){
-   const last=Math.max(ys[ys.length-1]+0.01,maxY-Math.min(opts.spacing/2,half));
-   if(last>maxY+1e-5)throw new Error("Abdeckung am nördlichen Flächenrand unvollständig.");
-   ys.push(last);
-  }
+  // Die eingestellte Überlappung ist ein MINDESTWERT: Der Abstand zweier
+  // Suchbahnen darf opts.spacing nicht übersteigen. Die äußersten Bahnen
+  // brauchen jedoch nicht genau auf der Feldkante zu liegen, weil die Kamera
+  // jeweils half Meter nach links und rechts abdeckt.
+  //
+  // Anzahl aus der gesamten Kamerabreite ermitteln und ALLE Bahnen mittig
+  // und gleichmäßig verteilen. Früher konnte ein zusätzlicher Randstreifen
+  // zu einer praktisch deckungsgleichen letzten Bahn (0,01 m Abstand) führen.
+  const usableCameraWidth=2*half;
+  const rowCount=span<=usableCameraWidth+1e-7
+   ? 1
+   : 1+Math.ceil((span-usableCameraWidth)/opts.spacing-1e-10);
+  if(rowCount>1000)throw new Error("Zu viele Flugbahnen.");
+  // V3.8.1: 10 % der Kamerabildbreite sind der gewünschte maximale
+  // QUERüberstand. Die tatsächliche Kamera-Ansicht wird weiterhin unverändert
+  // dargestellt; schräge Ecken können größere Überstände verursachen.
+  // Mindestens 65 % des ursprünglich zulässigen Bahnabstands behalten wir
+  // bei, damit ein 2. Streifen nicht wenige Zentimeter daneben entsteht.
+  // Lässt sich 10 % nicht einhalten, hat vollständige Abdeckung Vorrang.
+  const overhangTargetM=width*0.1;
+  const minimumUsefulSpacing=opts.spacing*0.65;
+  const targetSpacing=rowCount===1?0:
+   (span-width+2*overhangTargetM)/(rowCount-1);
+  const usedSpacing=rowCount===1?0:Math.min(opts.spacing,Math.max(minimumUsefulSpacing,targetSpacing));
+  const firstY=(minY+maxY-(rowCount-1)*usedSpacing)/2;
+  const ys=Array.from({length:rowCount},(_,i)=>firstY+i*usedSpacing);
+  if(ys[0]-half>minY+1e-5||ys[ys.length-1]+half<maxY-1e-5)
+   throw new Error("Die gleichmäßigen Suchbahnen decken den Flächenrand nicht vollständig ab.");
+  const lateralOverhangM=Math.max(0,(width+(rowCount-1)*usedSpacing-span)/2);
   // In einem schmalen Streifen kann die y-Projektion der Außenkontur weiter
   // reichen als ihr Schnitt mit der Mittelachse. Um alle Ecken abzudecken,
   // ermitteln wir die extremen x-Werte jeder Polygonkante im ganzen Band.
@@ -204,7 +228,7 @@ function createFlightPlanAtAngle(input: unknown, rawOptions: MissionOptions, sta
     "Kameraabdeckung ist ein geometrisches Modell.",
   ];
   if(polygons.length>1 || polygons.some(p=>p.length>1)) warnings.push("Die Fläche hat mehrere Teile oder Innenringe. Ueberflugstrecken unbedingt kontrollieren.");
-  return {waypoints:best.waypoints,lines:best.lines,transfers:best.transfers,totalMeters:best.totalMeters,searchMeters:best.searchMeters,estimatedMinutes:best.estimatedMinutes,warnings,direction:opts.direction,coverageComplete:true};
+  return {waypoints:best.waypoints,lines:best.lines,transfers:best.transfers,totalMeters:best.totalMeters,searchMeters:best.searchMeters,estimatedMinutes:best.estimatedMinutes,warnings,direction:opts.direction,coverageComplete:true,lateralOverhangM,overhangTargetM,laneSpacingM:usedSpacing};
 }
 
 /** Search 0–179° using coarse directions plus refinements of the best three.

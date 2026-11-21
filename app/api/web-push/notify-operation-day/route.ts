@@ -378,6 +378,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (operationDay.isTest) return NextResponse.json({error:"TEST-Einsatztage versenden keine produktiven Benachrichtigungen oder Revierpächter-Mails."},{status:403});
+
     const meetingText = operationDay.meetingTime
       ? `Treffzeit: ${operationDay.meetingTime} Uhr.`
       : "";

@@ -32,10 +32,10 @@ export function wildSiteRole(user: AuthUser | null | undefined): boolean {
 
 export async function allowedOrder(user: AuthUser, orderId: string): Promise<boolean> {
   if (!wildSiteRole(user) || !orderId) return false;
-  if (user.isAdmin) return !!(await db.order.findUnique({ where: { id: orderId }, select: { id: true } }));
+  if (user.isAdmin) return !!(await db.order.findFirst({ where: { id: orderId, isDemo: false }, select: { id: true } }));
   const team = await db.operationDayTeam.findFirst({
     where: {
-      orders: { some: { id: orderId } },
+      orders: { some: { id: orderId, isDemo: false } },
       OR: [{ pilotId: user.id }, { members: { some: { userId: user.id } } }],
     },
     select: { id: true },
@@ -51,6 +51,6 @@ export async function accessibleOrderIds(user: AuthUser): Promise<string[]> {
   });
   if (!teams.length) return [];
   return (await db.order.findMany({
-    where: { operationDayTeamId: { in: teams.map(t => t.id) } }, select: { id: true },
+    where: { operationDayTeamId: { in: teams.map(t => t.id) }, isDemo: false }, select: { id: true },
   })).map(x => x.id);
 }

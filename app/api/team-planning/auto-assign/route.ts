@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { assertValidOperationDate } from "@/lib/test-mode";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 import { buildTeamsByDistance } from "@/lib/team-clustering";
 import { assignOrdersToTeams } from "@/lib/order-assignment";
@@ -32,9 +33,11 @@ async function getOrCreateOperationDay(date: Date) {
   });
 
   if (existing) {
+    await assertValidOperationDate(date);
     return existing;
   }
 
+  await assertValidOperationDate(date);
   try {
     return await db.operationDay.create({
       data: {

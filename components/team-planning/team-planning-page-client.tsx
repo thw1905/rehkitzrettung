@@ -46,6 +46,7 @@ type TeamPlanningResponse = {
     id: string;
     date: string;
     status: string;
+    isTest?: boolean;
     note: string;
   };
   pilots: AvailableUser[];
@@ -163,6 +164,7 @@ export default function TeamPlanningPageClient() {
 
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [operationDayId, setOperationDayId] = useState<string | null>(null);
+  const [isTestDay,setIsTestDay]=useState(false);
   const [pilots, setPilots] = useState<AvailableUser[]>([]);
   const [searchers, setSearchers] = useState<AvailableUser[]>([]);
   const [assignments, setAssignments] = useState<EditableAssignment[]>([]);
@@ -178,7 +180,7 @@ export default function TeamPlanningPageClient() {
     router.replace(`/team-planning?date=${date}`);
   }
 
-  async function loadPlanning(date: string) {
+  async function loadPlanning(date: string, preserveDrafts = false) {
     setLoading(true);
 
     try {
@@ -194,25 +196,32 @@ export default function TeamPlanningPageClient() {
       }
 
       setOperationDayId(data.operationDay.id);
+      setIsTestDay(data.operationDay.isTest === true);
       setPilots(Array.isArray(data.pilots) ? data.pilots : []);
       setSearchers(Array.isArray(data.searchers) ? data.searchers : []);
-      setAssignments(
-        (Array.isArray(data.assignments) ? data.assignments : []).map(
-          (item) => ({
+      setAssignments((current) =>
+        (Array.isArray(data.assignments) ? data.assignments : []).map((item) => {
+          const draft = preserveDrafts
+            ? current.find((previous) => previous.teamId === item.teamId)
+            : undefined;
+          return {
             ...item,
-            editedPilotId: item.pilot?.id || "",
-            editedSearcherIds: item.searchers.map((s) => s.id),
-            editedNote: item.note || "",
-          })
-        )
+            editedPilotId: draft?.editedPilotId ?? item.pilot?.id ?? "",
+            editedSearcherIds: draft?.editedSearcherIds ?? item.searchers.map((s) => s.id),
+            editedNote: draft?.editedNote ?? item.note ?? "",
+          };
+        })
       );
     } catch (error: any) {
       console.error("Fehler beim Laden der Teamplanung:", error);
       alert(error?.message || "Teamplanung konnte nicht geladen werden.");
-      setOperationDayId(null);
-      setPilots([]);
-      setSearchers([]);
-      setAssignments([]);
+      if (!preserveDrafts) {
+        setOperationDayId(null);
+        setIsTestDay(false);
+        setPilots([]);
+        setSearchers([]);
+        setAssignments([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -340,11 +349,6 @@ export default function TeamPlanningPageClient() {
 
     if (!team.editedPilotId) {
       alert("Bitte einen Pilot auswählen.");
-      return;
-    }
-
-    if (team.editedSearcherIds.length < 1) {
-      alert("Bitte mindestens einen Sucher auswählen.");
       return;
     }
 
@@ -620,7 +624,7 @@ export default function TeamPlanningPageClient() {
                         {team.teamName}
                       </h2>
                       <p className="mt-1 text-sm text-gray-600">
-                        Tagesbesetzung für {selectedDate}
+                        {isTestDay ? "TEST · " : ""}Tagesbesetzung für {selectedDate}
                       </p>
                     </div>
 
@@ -632,7 +636,7 @@ export default function TeamPlanningPageClient() {
                   </div>
 
                   <div className="mt-5 space-y-4">
-                    {team.operationDayTeamId && <DroneAssignmentV36 key={team.operationDayTeamId} teamId={team.operationDayTeamId}/>}
+                    <DroneAssignmentV36 key={team.teamId} teamId={team.operationDayTeamId} teamSlotId={team.teamId} operationDayId={operationDayId || ""} onSaved={()=>void loadPlanning(selectedDate, true)}/>
                     <div>
                       <label className="mb-2 block text-sm font-semibold text-gray-900">
                         Pilot
@@ -658,7 +662,7 @@ export default function TeamPlanningPageClient() {
 
                     <div>
                       <label className="mb-2 block text-sm font-semibold text-gray-900">
-                        Sucher auswählen (1 bis 6)
+                        Sucher auswählen (optional, maximal 6)
                       </label>
 
                       {availableSearchers.length === 0 ? (

@@ -2,7 +2,7 @@
 import { NextRequest,NextResponse } from "next/server";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 import { db } from "@/lib/db";
-import { orderFlightField, readCurrentPlanning } from "@/lib/flight-missions/mission-v3";
+import { orderFlightField, readCurrentPlanning, missionContextForOrder } from "@/lib/flight-missions/mission-v3";
 import {getOrderPreparation} from "@/lib/flight-missions/auto-prepare-v36";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -18,7 +18,11 @@ export async function GET(req:NextRequest){
   const field=orderId ? await orderFlightField(user,orderId) :
    user.isAdmin && fieldId && fieldId.length<=100 ? await db.field.findUnique({where:{id:fieldId},select:{id:true,name:true,displayName:true,areaGeoJson:true}}):null;
   if(!field)return NextResponse.json({error:"Keine Berechtigung fuer diese Auftragsflaeche oder Flaeche existiert nicht."},{status:403});
-  const mission=await readCurrentPlanning(field.id);
+  const linkedOrder=orderId?await db.order.findUnique({where:{id:orderId},select:{
+   isDemo:true,operationDayId:true,operationDay:{select:{isTest:true,date:true}},
+   operationDayTeam:{select:{operationDayId:true,operationDay:{select:{isTest:true,date:true}}}}
+  }}):null;
+  const mission=await readCurrentPlanning(missionContextForOrder(field.id,linkedOrder).fieldId);
    const preparation=orderId?await getOrderPreparation(orderId):null;
   return NextResponse.json({field,mission,preparation},{headers:{"Cache-Control":"no-store"}});
  }catch(e){console.error("DJI-Flugplanung laden:",e);return NextResponse.json({error:"Flugplanung konnte nicht geladen werden."},{status:500});}

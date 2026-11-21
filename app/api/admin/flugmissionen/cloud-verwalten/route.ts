@@ -1,7 +1,8 @@
 // REHKITZ_DJI_V3_ONE_PER_FIELD: Adminliste mit dauerhaftem Loeschen ohne Archivierung.
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
-import { deleteWaylinePermanently, configuredWorkspace, listWaylines, publicOrigin } from "@/lib/flight-missions/cloud-store";
+import { deleteWaylinePermanently, configuredWorkspace, listWaylines } from "@/lib/flight-missions/cloud-store";
+import { isAllowedFlightMutationOrigin } from "@/lib/flight-missions/request-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,8 +26,7 @@ export async function DELETE(req:NextRequest){
  try{
   if(!(await isAdmin()))return NextResponse.json({error:"Keine Berechtigung."},{status:403,headers:noStore});
   // Schutz vor fremden Websites bei cookie-basierter Admin-Anmeldung.
-  const origin=req.headers.get("origin");
-  if(!origin || origin!==publicOrigin(req.url))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403,headers:noStore});
+  if(!isAllowedFlightMutationOrigin(req))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403,headers:noStore});
   const body:unknown=await req.json();
   const id=(body && typeof body==="object" && "id" in body) ? (body as {id?:unknown}).id : undefined;
   if(typeof id!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)){

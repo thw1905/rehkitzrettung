@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { area, booleanIntersects, featureCollection, intersect } from "@turf/turf";
 import { db } from "@/lib/db";
+import {inSeason} from "@/lib/test-mode";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 
 const MIN_OVERLAP_SQM = 500;
@@ -206,6 +207,18 @@ export async function POST(
       body?.contactOwnerId && String(body.contactOwnerId).trim()
         ? String(body.contactOwnerId).trim()
         : null;
+    const fieldIds: string[] = Array.isArray(body?.fieldIds)
+      ? Array.from(new Set<string>((body.fieldIds as unknown[]).filter((value): value is string =>
+          typeof value === "string" && value.trim().length > 0
+        ).map((value) => value.trim())))
+      : [];
+
+    if (fieldIds.length === 0) {
+      return NextResponse.json(
+        { error: "Bitte mindestens eine Fläche für die Auftragserstellung auswählen." },
+        { status: 400 }
+      );
+    }
 
     const mowingRequest = await db.mowingRequest.findUnique({
       where: {
@@ -244,6 +257,23 @@ export async function POST(
       );
     }
 
+    if (!new Set(["OFFEN", "IN_BEARBEITUNG"]).has(mowingRequest.status)) {
+      return NextResponse.json(
+        { error: "Aus dieser abgeschlossenen oder abgelehnten Anfrage können keine Aufträge erzeugt werden." },
+        { status: 409 }
+      );
+    }
+
+    const availableFieldIds = new Set(mowingRequest.fields.map((item) => item.fieldId));
+    if (fieldIds.some((fieldId) => !availableFieldIds.has(fieldId))) {
+      return NextResponse.json(
+        { error: "Mindestens eine ausgewählte Fläche gehört nicht zu dieser Mähanfrage." },
+        { status: 400 }
+      );
+    }
+
+    const selectedFields = mowingRequest.fields.filter((item) => fieldIds.includes(item.fieldId));
+
     if (contactOwnerId) {
       const contactOwner = await db.owner.findUnique({
         where: {
@@ -266,9 +296,7 @@ export async function POST(
       where: {
         ownerId: mowingRequest.ownerId,
         mowingDate: parseDateOnlyToUtc(mowingRequest.mowingDate),
-        fieldId: {
-          in: mowingRequest.fields.map((item) => item.fieldId),
-        },
+        fieldId: { in: fieldIds },
       },
       select: {
         id: true,
@@ -281,7 +309,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Für mindestens eine Fläche dieser Anfrage existiert bereits ein Auftrag mit demselben Landwirt und Mähdatum.",
+            "Für mindestens eine ausgewählte Fläche existiert bereits ein Auftrag mit demselben Landwirt und Mähdatum.",
           existingOrders,
         },
         { status: 409 }
@@ -293,22 +321,47 @@ export async function POST(
       { revierId: string; overlapSqm: number; overlapPercent: number }[]
     >();
 
-    for (const requestField of mowingRequest.fields) {
+    for (const requestField of selectedFields) {
       const matches = await findMatchingReviere(requestField.field.areaGeoJson);
       revierMatchesByFieldId.set(requestField.fieldId, matches);
     }
 
     const createdOrders = await db.$transaction(async (tx) => {
+      const currentRequest = await tx.mowingRequest.findUnique({
+        where: { id: mowingRequest.id },
+        select: { status: true, fields: { select: { fieldId: true } } },
+      });
+      if (!currentRequest || !["OFFEN", "IN_BEARBEITUNG"].includes(currentRequest.status)) {
+        throw new Error("Die Mähanfrage wurde zwischenzeitlich geändert. Bitte die Seite neu laden.");
+      }
+      const currentFieldIds = new Set(currentRequest.fields.map((item) => item.fieldId));
+      if (fieldIds.some((fieldId) => !currentFieldIds.has(fieldId))) {
+        throw new Error("Die Flächenauswahl wurde inzwischen geändert. Bitte die Seite neu laden.");
+      }
+      const duplicate = await tx.order.findFirst({
+        where: {
+          ownerId: mowingRequest.ownerId,
+          mowingDate: parseDateOnlyToUtc(mowingRequest.mowingDate),
+          fieldId: { in: fieldIds },
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new Error("Für mindestens eine ausgewählte Fläche besteht bereits ein Auftrag. Bitte die Seite aktualisieren.");
+      }
+      const proposedDate=parseDateOnlyToUtc(mowingRequest.mowingDate);
+      if(!inSeason(proposedDate))throw new Error("Landwirt-Anfragen werden außerhalb der Saison nicht in TEST-Aufträge übernommen.");
       const operationDay = await getOrCreateOperationDay(
         tx,
         mowingRequest.mowingDate
       );
 
+      if(operationDay.isTest)throw new Error("Produktive Landwirt-Anfragen dürfen nicht auf TEST-Einsatztage übernommen werden.");
       const created: any[] = [];
       const orderNote = buildOrderNote(mowingRequest);
       const mowingDate = parseDateOnlyToUtc(mowingRequest.mowingDate);
 
-      for (const requestField of mowingRequest.fields) {
+      for (const requestField of selectedFields) {
         const { year, sequence, orderCode } = await getNextOrderNumberParts(tx);
         const matchingReviere =
           revierMatchesByFieldId.get(requestField.fieldId) || [];
@@ -349,12 +402,23 @@ export async function POST(
         created.push(order);
       }
 
+      const orderedFields = await tx.order.findMany({
+        where: {
+          ownerId: mowingRequest.ownerId,
+          mowingDate,
+          fieldId: { in: [...currentFieldIds] },
+        },
+        select: { fieldId: true },
+      });
+      const orderedFieldIds = new Set(orderedFields.map((order) => order.fieldId));
+      const allFieldsOrdered = [...currentFieldIds].every((fieldId) => orderedFieldIds.has(fieldId));
+
       await tx.mowingRequest.update({
         where: {
           id: mowingRequest.id,
         },
         data: {
-          status: "ERLEDIGT",
+          status: allFieldsOrdered ? "ERLEDIGT" : currentRequest.status,
         },
       });
 

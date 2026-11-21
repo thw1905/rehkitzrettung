@@ -2,7 +2,7 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { getCurrentUserWithTeams } from '@/lib/current-user';
 import { db } from '@/lib/db';
-import { publicOrigin } from '@/lib/flight-missions/cloud-store';
+import { isAllowedFlightMutationOrigin } from '@/lib/flight-missions/request-origin';
 import { readTeamDrone,writeTeamDrone } from '@/lib/flight-missions/team-aircraft-v36';
 import {prepareDay} from '@/lib/flight-missions/auto-prepare-v36';
 export const runtime='nodejs';export const dynamic='force-dynamic';
@@ -22,15 +22,26 @@ export async function GET(req:NextRequest){
 export async function POST(req:NextRequest){
  try{
   const user=await getCurrentUserWithTeams();if(!user)return NextResponse.json({error:'Nicht angemeldet'},{status:401});
-  const origin=req.headers.get('origin');if(!origin||origin!==publicOrigin(req.url))return NextResponse.json({error:'Ungueltiger Ursprung'},{status:403});
+  if(!isAllowedFlightMutationOrigin(req))return NextResponse.json({error:'Ungueltiger Ursprung'},{status:403});
   const body=await req.json();
-  if(typeof body?.operationDayTeamId!=='string'||!['M3T','M4T'].includes(body.aircraft))return NextResponse.json({error:'Team und Drohne angeben'},{status:400});
-  const team=await authorized(body.operationDayTeamId,user);if(!team)return NextResponse.json({error:'Keine Berechtigung'},{status:403});
+  if(!['M3T','M4T'].includes(body.aircraft))return NextResponse.json({error:'Drohne angeben'},{status:400});
+  let selectedId=typeof body?.operationDayTeamId==='string'?body.operationDayTeamId:'';
+  if(!selectedId && user.isAdmin && typeof body.operationDayId==='string' && typeof body.teamSlotId==='string'){
+   const [day,slot]=await Promise.all([
+     db.operationDay.findUnique({where:{id:body.operationDayId},select:{id:true}}),
+     db.team.findUnique({where:{id:body.teamSlotId},select:{id:true,isActive:true}}),
+   ]);
+   if(!day||!slot?.isActive)return NextResponse.json({error:'Team oder Einsatztag nicht gefunden'},{status:404});
+   const row=await db.operationDayTeam.upsert({where:{operationDayId_teamId:{operationDayId:day.id,teamId:slot.id}},
+       update:{},create:{operationDayId:day.id,teamId:slot.id,pilotId:null},select:{id:true}});
+   selectedId=row.id;
+  }
+  const team=await authorized(selectedId,user);if(!team)return NextResponse.json({error:'Keine Berechtigung'},{status:403});
   const before=await readTeamDrone(team.id);
-  if(before && before.aircraft===body.aircraft)return NextResponse.json({success:true,aircraft:before.aircraft,unchanged:true},{headers:NOSTORE});
+  if(before && before.aircraft===body.aircraft)return NextResponse.json({success:true,operationDayTeamId:team.id,aircraft:before.aircraft,unchanged:true},{headers:NOSTORE});
   const change=await writeTeamDrone(team.id,body.aircraft,user.id);
   // Ganzer Einsatztag: keine abgeschlossenen/laufenden Missionen überschreiben.
   const result=await prepareDay(team.operationDayId);
-  return NextResponse.json({success:true,aircraft:change.aircraft,preparation:result,message:'Offene Flugvorbereitungen aktualisiert. Cloud-Missionen unveraendert.'},{headers:NOSTORE});
+  return NextResponse.json({success:true,operationDayTeamId:team.id,aircraft:change.aircraft,preparation:result,message:'Offene Flugvorbereitungen aktualisiert. Cloud-Missionen unveraendert.'},{headers:NOSTORE});
  }catch(e){console.error('Drohnenwechsel V3.6:',e);return NextResponse.json({error:e instanceof Error?e.message:'Drohnenwechsel fehlgeschlagen'},{status:500});}
 }

@@ -9,7 +9,7 @@ import {optionsForCamera,type MissionCamera} from "@/lib/flight-missions/coverag
 import {analyzeTerrainForPlan} from "@/lib/flight-missions/terrain-service-v31";
 import {inspectHazards} from "@/lib/flight-missions/hazards-v32";
 import {validLonLat} from "@/lib/flight-missions/terrain-v31";
-import {publicOrigin} from "@/lib/flight-missions/cloud-store";
+import {isAllowedFlightMutationOrigin} from "@/lib/flight-missions/request-origin";
 export const runtime="nodejs";
 const NO_STORE={"Cache-Control":"no-store"};
 export async function POST(req:NextRequest){
@@ -17,8 +17,7 @@ export async function POST(req:NextRequest){
   const user=await getCurrentUserWithTeams();
   if(!user)return NextResponse.json({error:"Nicht angemeldet."},{status:401,headers:NO_STORE});
   if(!user.isApproved)return NextResponse.json({error:"Nicht freigegeben."},{status:403,headers:NO_STORE});
-  const origin=req.headers.get("origin");
-  if(!origin||origin!==publicOrigin(req.url))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403,headers:NO_STORE});
+  if(!isAllowedFlightMutationOrigin(req))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403,headers:NO_STORE});
   const body=await req.json();
   if(typeof body.fieldId!=="string"||!body.fieldId||body.fieldId.length>100)return NextResponse.json({error:"Flaeche fehlt."},{status:400});
   if(!validLonLat(body.startPoint))return NextResponse.json({error:"Startpunkt auf der Karte markieren."},{status:400});

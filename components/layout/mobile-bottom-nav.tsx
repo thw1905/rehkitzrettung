@@ -26,19 +26,6 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
   const isAdmin = Boolean(user?.isAdmin);
   const [openMenu, setOpenMenu] = useState<MenuKey | null>(null);
   const [managementGroupOpen, setManagementGroupOpen] = useState<string | null>(null);
-  const [canOpenGpsTest, setCanOpenGpsTest] = useState(false);
-  const [creatingDemoOrder, setCreatingDemoOrder] = useState(false);
-  const [deletingDemoOrders, setDeletingDemoOrders] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!isAdmin) { setCanOpenGpsTest(false); return; }
-    void fetch("/api/admin/gps-test/access", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => { if (!cancelled) setCanOpenGpsTest(json?.allowed === true); })
-      .catch(() => { if (!cancelled) setCanOpenGpsTest(false); });
-    return () => { cancelled = true; };
-  }, [isAdmin]);
 
   useEffect(() => { setOpenMenu(null); setManagementGroupOpen(null); }, [pathname]);
 
@@ -67,7 +54,7 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     };
   }, [openMenu]);
 
-  const sections = getNavSections({ canOpenGpsTest });
+  const sections = getNavSections();
   const menuSections: Record<MenuKey, NavSection[]> = {
     personal: sections.personal,
     management: isAdmin ? sections.management : [],
@@ -89,44 +76,6 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
     && (isAdmin || !isPath("/my-orders"));
   const managementActive = sections.management.some(section => section.items.some(item => isPath(item.href))) || isPath("/management");
   const operationsActive = sections.operations.some(section => section.items.some(item => isPath(item.href))) || isPath("/operations");
-
-  async function handleCreateDemoOrder() {
-    if (!isAdmin || creatingDemoOrder || deletingDemoOrders) return;
-    const pin = window.prompt("PIN für Demo-Auftrag eingeben:");
-    if (!pin) return;
-    setCreatingDemoOrder(true);
-    try {
-      const response = await fetch("/api/demo-order", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) { window.alert(result?.error || "Demo-Auftrag konnte nicht erstellt werden."); return; }
-      setOpenMenu(null);
-      window.alert("Demo-Auftrag erfolgreich erstellt.");
-      window.location.href = "/orders";
-    } catch (error) {
-      console.error("Demo-Auftrag Fehler:", error);
-      window.alert("Demo-Auftrag konnte nicht erstellt werden.");
-    } finally { setCreatingDemoOrder(false); }
-  }
-
-  async function handleDeleteDemoOrders() {
-    if (!isAdmin || creatingDemoOrder || deletingDemoOrders) return;
-    if (!window.confirm("Wirklich alle Demo-Aufträge löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.")) return;
-    setDeletingDemoOrders(true);
-    try {
-      const response = await fetch("/api/cleanup-demo-orders", { method: "POST" });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) { window.alert(result?.error || "Demo-Aufträge konnten nicht gelöscht werden."); return; }
-      setOpenMenu(null);
-      window.alert(`Demo-Aufträge gelöscht: ${result.deleted ?? 0}`);
-      window.location.reload();
-    } catch (error) {
-      console.error("Demo-Aufträge löschen Fehler:", error);
-      window.alert("Demo-Aufträge konnten nicht gelöscht werden.");
-    } finally { setDeletingDemoOrders(false); }
-  }
 
   const toggle = (key: MenuKey) => {
     setManagementGroupOpen(null);
@@ -193,16 +142,6 @@ export default function MobileBottomNav({ user }: MobileBottomNavProps) {
                               <span aria-hidden="true" className="text-lg leading-none">›</span>
                             </Link>
                           ))}
-                          {isAdmin && section.title === "System / Werkzeuge" && (
-                            <div className="space-y-2 border-t border-gray-200 pt-2">
-                              <button type="button" onClick={() => void handleCreateDemoOrder()} disabled={creatingDemoOrder || deletingDemoOrders} className="block w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-left text-sm font-semibold text-amber-950 disabled:opacity-50">
-                                {creatingDemoOrder ? "Erstelle Demo-Auftrag ..." : "Demo-Auftrag erstellen (PIN)"}
-                              </button>
-                              <button type="button" onClick={() => void handleDeleteDemoOrders()} disabled={deletingDemoOrders || creatingDemoOrder} className="block w-full rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-left text-sm font-semibold text-red-900 disabled:opacity-50">
-                                {deletingDemoOrders ? "Lösche Demo-Aufträge ..." : "Demo-Aufträge löschen"}
-                              </button>
-                            </div>
-                          )}
                         </div>
                       )}
                     </section>

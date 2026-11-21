@@ -83,6 +83,7 @@ function buildSeasonDays(year: number) {
 
 export default function AvailabilityPageClient({ days = 92 }: Props) {
   const [drafts, setDrafts] = useState<Record<string, DayDraft>>({});
+  const [testDays,setTestDays]=useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
 
@@ -106,6 +107,9 @@ export default function AvailabilityPageClient({ days = 92 }: Props) {
           cache: "no-store",
         });
         const data = await res.json();
+        const testRes=await fetch("/api/test-days",{cache:"no-store"});
+        const testJson=await testRes.json();
+        const extraDays:string[]=testRes.ok&&Array.isArray(testJson.days)?testJson.days.map((d:{date:string})=>d.date):[];
 
         if (!res.ok) {
           throw new Error(
@@ -122,7 +126,7 @@ export default function AvailabilityPageClient({ days = 92 }: Props) {
         }
 
         const nextDrafts: Record<string, DayDraft> = {};
-        for (const date of buildSeasonDays(seasonYear)) {
+        for (const date of [...new Set([...buildSeasonDays(seasonYear),...extraDays])]) {
           const found = byDate.get(date);
           nextDrafts[date] = {
             status: found?.status ?? "OFFEN",
@@ -135,6 +139,7 @@ export default function AvailabilityPageClient({ days = 92 }: Props) {
         revisionRef.current = {};
         savedRevisionRef.current = {};
         setDrafts(nextDrafts);
+        setTestDays(extraDays);
         setSaveStates({});
       } catch (error: unknown) {
         if (!active) return;
@@ -246,14 +251,14 @@ export default function AvailabilityPageClient({ days = 92 }: Props) {
 
   const displayDays = useMemo(
     () =>
-      buildSeasonDays(seasonYear).map((date) => ({
+      [...new Set([...buildSeasonDays(seasonYear),...testDays])].sort().map((date) => ({
         date,
         draft: drafts[date] ?? {
           status: "OFFEN" as AvailabilityStatus,
           note: "",
         },
       })),
-    [drafts, seasonYear]
+    [drafts, seasonYear, testDays]
   );
 
   if (loading) {
@@ -276,7 +281,7 @@ export default function AvailabilityPageClient({ days = 92 }: Props) {
           {displayDays.map(({ date, draft }) => (
             <div key={date} className="rounded-2xl bg-white p-3 shadow">
               <div className="text-base font-bold text-black">
-                {formatShortDate(date)}
+                {testDays.includes(date) ? "TEST · " : ""}{formatShortDate(date)}
               </div>
 
               <div className="mt-1 flex flex-wrap gap-2">

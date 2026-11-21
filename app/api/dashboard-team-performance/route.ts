@@ -38,6 +38,7 @@ export async function GET() {
           lt: end,
         },
         status: OrderStatus.ERLEDIGT,
+        isDemo: false,
       },
       orderBy: [
         { executedTeamName: "asc" },

@@ -46,12 +46,10 @@ export async function GET(_req: NextRequest) {
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     });
 
+    const testDays = await db.operationDay.findMany({where:{isTest:true},select:{date:true},take:180});
     const availabilities = await db.availability.findMany({
       where: {
-        date: {
-          gte: start,
-          lt: end,
-        },
+        OR:[{date:{gte:start,lt:end}},{date:{in:testDays.map(x=>x.date)}}],
       },
       include: {
         user: {
@@ -71,6 +69,7 @@ export async function GET(_req: NextRequest) {
       string,
       {
         date: string;
+        isTest?: boolean;
         zugesagt: number;
         abgesagt: number;
         vielleicht: number;
@@ -102,6 +101,8 @@ export async function GET(_req: NextRequest) {
         entries: [],
       };
     }
+
+    for(const extra of testDays){const key=dateKey(extra.date);if(!grouped[key])grouped[key]={date:key,isTest:true,zugesagt:0,abgesagt:0,vielleicht:0,offen:0,entries:[]};}
 
     const byDateUser = new Map<string, (typeof availabilities)[number]>();
 

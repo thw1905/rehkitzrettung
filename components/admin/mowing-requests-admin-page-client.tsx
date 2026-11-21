@@ -47,6 +47,7 @@ type MowingRequest = {
   updatedAt: string;
   owner: Owner;
   fields: MowingRequestFieldItem[];
+  alreadyOrderedFieldIds?: string[];
   totalAreaHa?: number;
 };
 
@@ -140,7 +141,10 @@ export default function MowingRequestsAdminPageClient() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creatingOrdersId, setCreatingOrdersId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openRequestId, setOpenRequestId] = useState<string | null>(null);
+  const [selectedFieldIdsByRequestId, setSelectedFieldIdsByRequestId] =
+    useState<Record<string, string[]>>({});
 
   const [contactIsLandwirtByRequestId, setContactIsLandwirtByRequestId] =
     useState<Record<string, boolean>>({});
@@ -204,6 +208,20 @@ export default function MowingRequestsAdminPageClient() {
           : []
       );
       setSummary(requestsJson.summary || null);
+
+      setSelectedFieldIdsByRequestId((prev) => {
+        const next: Record<string, string[]> = {};
+        for (const request of nextRequests) {
+          const alreadyOrdered = new Set(request.alreadyOrderedFieldIds || []);
+          const availableIds = request.fields
+            .map((item) => item.fieldId)
+            .filter((fieldId) => !alreadyOrdered.has(fieldId));
+          next[request.id] = prev[request.id]
+            ? prev[request.id].filter((fieldId) => availableIds.includes(fieldId))
+            : availableIds;
+        }
+        return next;
+      });
 
       setContactIsLandwirtByRequestId((prev) => {
         const next = { ...prev };
@@ -371,6 +389,14 @@ export default function MowingRequestsAdminPageClient() {
   }
 
   async function createOrdersFromRequest(request: MowingRequest) {
+    const fieldIds = selectedFieldIdsByRequestId[request.id] || [];
+    const alreadyOrdered = new Set(request.alreadyOrderedFieldIds || []);
+    const allowed = new Set(request.fields.map((item) => item.fieldId));
+    if (fieldIds.length === 0 || fieldIds.some((id) => alreadyOrdered.has(id) || !allowed.has(id))) {
+      alert("Bitte mindestens eine noch nicht übernommene Fläche auswählen.");
+      return;
+    }
+
     const contactIsLandwirt =
       contactIsLandwirtByRequestId[request.id] !== false;
 
@@ -389,14 +415,16 @@ export default function MowingRequestsAdminPageClient() {
       ? owners.find((owner) => owner.id === contactOwnerId)
       : null;
 
+    const selectedAreaHa = request.fields.reduce((sum, item) =>
+      sum + (fieldIds.includes(item.fieldId) ? Number(item.field.areaHa || 0) : 0), 0);
     const confirmed = window.confirm(
-      `Aus dieser Mähanfrage ${request.fields.length} Auftrag/Aufträge erzeugen?\n\nLandwirt: ${getOwnerName(
+      `Aus dieser Mähanfrage ${fieldIds.length} Auftrag/Aufträge erzeugen?\n\nLandwirt: ${getOwnerName(
         request.owner
       )}\nAnsprechpartner: ${
         contactOwner ? getOwnerName(contactOwner) : getOwnerName(request.owner)
       }\nMähdatum: ${formatDate(
         request.mowingDate
-      )}\nGesamtfläche: ${formatHa(request.totalAreaHa)} ha`
+      )}\nAusgewählte Fläche: ${formatHa(selectedAreaHa)} ha`
     );
 
     if (!confirmed) return;
@@ -413,6 +441,7 @@ export default function MowingRequestsAdminPageClient() {
           },
           body: JSON.stringify({
             contactOwnerId: contactIsLandwirt ? null : contactOwnerId,
+            fieldIds,
           }),
         }
       );
@@ -430,6 +459,42 @@ export default function MowingRequestsAdminPageClient() {
       alert(error?.message || "Aufträge konnten nicht erzeugt werden.");
     } finally {
       setCreatingOrdersId(null);
+    }
+  }
+
+  function toggleRequestField(requestId: string, fieldId: string) {
+    setSelectedFieldIdsByRequestId((prev) => {
+      const oldSelection = prev[requestId] || [];
+      return {
+        ...prev,
+        [requestId]: oldSelection.includes(fieldId)
+          ? oldSelection.filter((id) => id !== fieldId)
+          : [...oldSelection, fieldId],
+      };
+    });
+  }
+
+  async function deleteOpenRequest(request: MowingRequest) {
+    if (request.status !== "OFFEN" || deletingId || creatingOrdersId) return;
+    const confirmed = window.confirm(
+      `Offene Mähanfrage wirklich löschen?\n\nLandwirt: ${getOwnerName(request.owner)}` +
+      `\nMähdatum: ${formatDate(request.mowingDate)}\nFlächen: ${request.fields.length}` +
+      "\n\nDie Mähanfrage wird einschließlich ihrer Flächenzuordnung gelöscht."
+    );
+    if (!confirmed) return;
+    setDeletingId(request.id);
+    try {
+      const res = await fetch(`/api/admin/mowing-requests/${request.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Mähanfrage konnte nicht gelöscht werden.");
+      await loadRequests();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Mähanfrage konnte nicht gelöscht werden.");
+      await loadRequests();
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -770,8 +835,13 @@ export default function MowingRequestsAdminPageClient() {
             {filteredRequests.map((request) => {
               const isOpen = openRequestId === request.id;
               const isCreatingOrders = creatingOrdersId === request.id;
+              const isDeleting = deletingId === request.id;
+              const alreadyOrdered = new Set(request.alreadyOrderedFieldIds || []);
+              const remainingFields = request.fields.filter((item) => !alreadyOrdered.has(item.fieldId));
+              const selectedFieldIds = selectedFieldIdsByRequestId[request.id] || [];
               const canCreateOrders =
-                request.status !== "ERLEDIGT" && request.fields.length > 0;
+                (request.status === "OFFEN" || request.status === "IN_BEARBEITUNG") &&
+                remainingFields.length > 0 && selectedFieldIds.length > 0;
               const contactIsLandwirt =
                 contactIsLandwirtByRequestId[request.id] !== false;
               const selectedContactOwnerId =
@@ -865,10 +935,38 @@ export default function MowingRequestsAdminPageClient() {
                             </div>
                           ) : null}
 
-                          <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                          <div className="rounded-2xl border border-gray-200">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-3">
+                              <div>
+                                <div className="font-bold text-gray-900">Flächen für Aufträge auswählen</div>
+                                <div className="text-xs text-gray-600">
+                                  {selectedFieldIds.length} ausgewählt · {remainingFields.length} noch ohne Auftrag
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <button type="button"
+                                  disabled={remainingFields.length === 0 || isCreatingOrders || isDeleting}
+                                  onClick={() => setSelectedFieldIdsByRequestId((prev) => ({
+                                    ...prev, [request.id]: remainingFields.map((item) => item.fieldId),
+                                  }))}
+                                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-900 disabled:opacity-50">
+                                  Alle übrigen
+                                </button>
+                                <button type="button"
+                                  disabled={selectedFieldIds.length === 0 || isCreatingOrders || isDeleting}
+                                  onClick={() => setSelectedFieldIdsByRequestId((prev) => ({
+                                    ...prev, [request.id]: [],
+                                  }))}
+                                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-900 disabled:opacity-50">
+                                  Auswahl aufheben
+                                </button>
+                              </div>
+                            </div>
+                            <div className="overflow-x-auto">
                             <table className="w-full min-w-[620px] text-left text-sm">
                               <thead>
                                 <tr className="border-b bg-gray-50">
+                                  <th className="px-3 py-2">Auftrag</th>
                                   <th className="px-3 py-2">Fläche</th>
                                   <th className="px-3 py-2 text-right">ha</th>
                                   <th className="px-3 py-2">
@@ -882,8 +980,22 @@ export default function MowingRequestsAdminPageClient() {
                                     key={item.id}
                                     className="border-b last:border-b-0"
                                   >
+                                    <td className="px-3 py-2">
+                                      <input type="checkbox"
+                                        aria-label={`Auftrag für ${getFieldLabel(item.field)} erzeugen`}
+                                        checked={selectedFieldIds.includes(item.fieldId)}
+                                        disabled={alreadyOrdered.has(item.fieldId) || isCreatingOrders || isDeleting ||
+                                          !["OFFEN", "IN_BEARBEITUNG"].includes(request.status)}
+                                        onChange={() => toggleRequestField(request.id, item.fieldId)}
+                                      />
+                                    </td>
                                     <td className="px-3 py-2 font-semibold text-gray-900">
                                       {getFieldLabel(item.field)}
+                                      {alreadyOrdered.has(item.fieldId) && (
+                                        <span className="ml-2 inline-block rounded-full bg-green-100 px-2 py-1 text-xs text-green-900">
+                                          Auftrag vorhanden
+                                        </span>
+                                      )}
                                     </td>
                                     <td className="px-3 py-2 text-right">
                                       {formatHa(item.field.areaHa)} ha
@@ -894,6 +1006,7 @@ export default function MowingRequestsAdminPageClient() {
                                   </tr>
                                 ))}
                                 <tr className="bg-gray-50 font-bold">
+                                  <td className="px-3 py-2" />
                                   <td className="px-3 py-2">Gesamt</td>
                                   <td className="px-3 py-2 text-right">
                                     {formatHa(request.totalAreaHa)} ha
@@ -902,6 +1015,7 @@ export default function MowingRequestsAdminPageClient() {
                                 </tr>
                               </tbody>
                             </table>
+                            </div>
                           </div>
                         </div>
 
@@ -977,7 +1091,7 @@ export default function MowingRequestsAdminPageClient() {
                               onChange={(event) =>
                                 updateStatus(request.id, event.target.value)
                               }
-                              disabled={savingId === request.id || isCreatingOrders}
+                              disabled={savingId === request.id || isCreatingOrders || isDeleting}
                               className="w-full rounded-xl border border-gray-300 px-3 py-3"
                             >
                               <option value="OFFEN">OFFEN</option>
@@ -995,14 +1109,30 @@ export default function MowingRequestsAdminPageClient() {
                             disabled={
                               !canCreateOrders ||
                               isCreatingOrders ||
+                              isDeleting ||
                               savingId === request.id
                             }
                             className="w-full rounded-xl bg-black px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                           >
                             {isCreatingOrders
                               ? "Erzeuge Aufträge..."
-                              : "Aufträge erzeugen"}
+                              : `${selectedFieldIds.length} Auftrag/Aufträge erzeugen`}
                           </button>
+
+                          {request.status === "OFFEN" && alreadyOrdered.size === 0 && (
+                            <button type="button" onClick={() => deleteOpenRequest(request)}
+                              disabled={isDeleting || isCreatingOrders || savingId === request.id}
+                              className="w-full rounded-xl border border-red-300 bg-white px-4 py-3 text-sm font-bold text-red-800 hover:bg-red-50 disabled:opacity-50">
+                              {isDeleting ? "Lösche Anfrage ..." : "Offene Mähanfrage löschen"}
+                            </button>
+                          )}
+
+                          {request.status === "OFFEN" && alreadyOrdered.size > 0 && (
+                            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                              Für einige Flächen bestehen bereits Aufträge. Die Anfrage kann daher nicht mehr gelöscht werden.
+                              Weitere Flächen kannst du einzeln übernehmen.
+                            </p>
+                          )}
 
                           {request.status === "ERLEDIGT" ? (
                             <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-xs text-green-900">

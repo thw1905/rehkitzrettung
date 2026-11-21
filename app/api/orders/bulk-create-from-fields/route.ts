@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { area, booleanIntersects, featureCollection, intersect } from "@turf/turf";
 import { db } from "@/lib/db";
+import { assertValidOperationDate } from "@/lib/test-mode";
 import { requireAdminApi } from "@/lib/admin";
 
 const MIN_OVERLAP_SQM = 500;
@@ -28,8 +29,9 @@ async function getOrCreateOperationDay(date: Date) {
     where: { date },
   });
 
-  if (existing) return existing;
+  if (existing) { await assertValidOperationDate(date); return existing; }
 
+  await assertValidOperationDate(date);
   return db.operationDay.create({
     data: {
       date,
@@ -38,12 +40,12 @@ async function getOrCreateOperationDay(date: Date) {
   });
 }
 
-async function getNextOrderNumberParts() {
+async function getNextOrderNumberParts(isDemo = false) {
   const now = new Date();
   const year = now.getFullYear();
 
   const lastOrder = await db.order.findFirst({
-    where: { orderYear: year },
+    where: { orderYear: year, isDemo },
     orderBy: { orderSequence: "desc" },
     select: { orderSequence: true },
   });
@@ -53,7 +55,7 @@ async function getNextOrderNumberParts() {
   return {
     year,
     sequence: nextSequence,
-    orderCode: `${year}-${String(nextSequence).padStart(3, "0")}`,
+    orderCode: `${isDemo ? "TEST-" : ""}${year}-${String(nextSequence).padStart(3, "0")}`,
   };
 }
 
@@ -251,7 +253,7 @@ export async function POST(req: NextRequest) {
 
     for (const field of fields) {
       const matchingReviere = await findMatchingReviere(field.areaGeoJson);
-      const { year, sequence, orderCode } = await getNextOrderNumberParts();
+      const { year, sequence, orderCode } = await getNextOrderNumberParts(operationDay.isTest === true);
 
       const order = await db.order.create({
         data: {
@@ -266,6 +268,7 @@ export async function POST(req: NextRequest) {
 
           mowingDate,
           operationDayId: operationDay.id,
+          isDemo: operationDay.isTest === true,
           status: "OFFEN",
           notes,
 

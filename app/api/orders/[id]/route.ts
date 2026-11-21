@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import area from "@turf/area";
 import { OrderStatus, PinpointStatus } from "@prisma/client";
 import { db } from "@/lib/db";
+import { assertValidOperationDate } from "@/lib/test-mode";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 import { haversineDistanceKm } from "@/lib/geo";
 
@@ -43,9 +44,11 @@ async function getOrCreateOperationDayFromMowingDate(mowingDate: Date | null) {
   });
 
   if (existing) {
+    await assertValidOperationDate(normalizedDate);
     return existing;
   }
 
+  await assertValidOperationDate(normalizedDate);
   return db.operationDay.create({
     data: {
       date: normalizedDate,
@@ -434,6 +437,9 @@ export async function PATCH(
           mowingDate
         );
 
+        if (Boolean(operationDay?.isTest) !== Boolean(existingOrder.isDemo)) {
+          return NextResponse.json({error:"TEST-Aufträge dürfen nicht in produktive Einsätze verschoben werden und umgekehrt."},{status:409});
+        }
         data.operationDayId = operationDay?.id || null;
         data.operationDayTeamId = null;
         data.isManualTeamAssignment = false;
@@ -459,6 +465,8 @@ export async function PATCH(
             );
           }
 
+          const targetDay=await db.operationDay.findUnique({where:{id:selectedOperationDayTeam.operationDayId},select:{isTest:true}});
+          if(Boolean(targetDay?.isTest)!==Boolean(existingOrder.isDemo)) return NextResponse.json({error:"TEST-Auftrag und produktives Team dürfen nicht vermischt werden."},{status:409});
           data.operationDayTeamId = selectedOperationDayTeam.id;
           data.operationDayId = selectedOperationDayTeam.operationDayId;
           data.isManualTeamAssignment = true;

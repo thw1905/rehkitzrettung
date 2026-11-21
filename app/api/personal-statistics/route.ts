@@ -137,6 +137,7 @@ export async function GET() {
     const allCompletedOrders = await db.order.findMany({
       where: {
         status: "ERLEDIGT",
+        isDemo: false,
       },
       include: {
         field: true,

@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import {assertValidOperationDate} from "@/lib/test-mode";
 import { requireAdminApi } from "@/lib/admin";
 
 function parseDateOnlyToUtc(dateString: string) {
@@ -47,6 +48,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Datum fehlt." }, { status: 400 });
     }
     const date = parseDateOnlyToUtc(dateString);
+    await assertValidOperationDate(date);
 
     const operationDay = await db.operationDay.upsert({
       where: { date },

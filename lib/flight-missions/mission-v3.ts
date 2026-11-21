@@ -57,6 +57,26 @@ export function flightNameFromField(field: {name: string;displayName: string|nul
   if (!digits) return flightFallbackName(field);
   return "FL" + digits.padStart(4,"0");
 }
+
+type OrderMissionContext = {
+ isDemo:boolean;
+ operationDayId:string|null;
+ operationDay:{isTest:boolean;date:Date}|null;
+ operationDayTeam:{operationDayId:string;operationDay:{isTest:boolean;date:Date}}|null;
+};
+/** Ein Testflug wird pro Einsatztag isoliert, nie nur am FL-Feld erkannt. */
+export function missionContextForOrder(fieldId:string,order:OrderMissionContext|null){
+ const testDay=order?.operationDay?.isTest&&order.operationDayId
+  ?{id:order.operationDayId,date:order.operationDay.date}
+  :order?.operationDayTeam?.operationDay.isTest
+   ?{id:order.operationDayTeam.operationDayId,date:order.operationDayTeam.operationDay.date}
+   :null;
+ return {
+  fieldId:testDay?`TESTDAY-${testDay.id}-${fieldId}`:order?.isDemo?`TEST-${fieldId}`:fieldId,
+  testOperationDayId:testDay?.id,
+  dateKey:testDay?.date.toISOString().slice(0,10).replace(/-/g,'')||null,
+ };
+}
 export async function orderFlightField(user: AuthorizedUser|null, orderId: string) {
   if (!user?.isApproved || !orderId || orderId.length > 120) return null;
   const order = await db.order.findUnique({
@@ -131,6 +151,7 @@ export class StaleMissionError extends Error {constructor(){super("Die Mission w
 export async function publishOrReplaceMission(args:{
  fieldId:string;name:string;aircraft:"M3T"|"M4T";camera:MissionCamera;fileFactory:()=>Promise<Uint8Array>;
  expectedMissionId:string|null;editorId:string;settings:SavedSettings|null;plan:FlightPlan|null;
+ testOperationDayId?:string;
 }) {
  // Vorbereitung vor dem Indexwechsel: ein Fehler laesst die bisherige Mission unangetastet.
  const file=await args.fileFactory();
@@ -140,7 +161,8 @@ export async function publishOrReplaceMission(args:{
  try{
   return await replaceWaylineForField({
    name:args.name,fieldId:args.fieldId,aircraft:args.aircraft,
-   camera:args.camera,workspaceId:configuredWorkspace()
+   camera:args.camera,workspaceId:configuredWorkspace(),
+   ...(args.testOperationDayId?{testOperationDayId:args.testOperationDayId}:{})
   },file,args.expectedMissionId,planningJson);
  }catch(e){if(e instanceof WaylineConflictError)throw new StaleMissionError();throw e;}
 }

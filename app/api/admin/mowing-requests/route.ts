@@ -141,8 +141,20 @@ function normalizeFieldOption(field: any) {
   };
 }
 
-function buildSummary(requests: any[]) {
-  const normalizedRequests = requests.map(normalizeMowingRequest);
+function buildSummary(requests: any[], existingOrders: { ownerId: string; mowingDate: Date | null; fieldId: string }[] = []) {
+  const alreadyOrdered = new Set(existingOrders.flatMap((order) =>
+    order.mowingDate
+      ? [`${order.ownerId}:${order.mowingDate.getTime()}:${order.fieldId}`]
+      : []
+  ));
+  const normalizedRequests = requests.map((request) => ({
+    ...normalizeMowingRequest(request),
+    alreadyOrderedFieldIds: request.fields
+      .filter((item: { fieldId: string }) => alreadyOrdered.has(
+        `${request.ownerId}:${request.mowingDate.getTime()}:${item.fieldId}`
+      ))
+      .map((item: { fieldId: string }) => item.fieldId),
+  }));
 
   const totalFields = normalizedRequests.reduce(
     (sum, request) => sum + request.fields.length,
@@ -287,8 +299,19 @@ export async function GET(req: NextRequest) {
       loadFieldOptions(),
     ]);
 
+    const existingOrders = requests.length > 0 ? await db.order.findMany({
+      where: {
+        OR: requests.map((request) => ({
+          ownerId: request.ownerId,
+          mowingDate: request.mowingDate,
+          fieldId: { in: request.fields.map((item) => item.fieldId) },
+        })),
+      },
+      select: { ownerId: true, mowingDate: true, fieldId: true },
+    }) : [];
+
     return NextResponse.json({
-      ...buildSummary(requests),
+      ...buildSummary(requests, existingOrders),
       fieldOptions,
     });
   } catch (error: any) {

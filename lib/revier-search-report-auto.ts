@@ -81,11 +81,11 @@ export async function maybeSendRevierReportAfterOrderCompleted(orderId: string):
   const completed = await db.order.findUnique({
     where: { id: orderId },
     include: {
-      operationDay: { select: { date: true } },
+      operationDay: { select: { date: true, isTest: true } },
       reviere: { select: { revierId: true } },
     },
   });
-  if (!completed || completed.isDemo || completed.status !== "ERLEDIGT") return;
+  if (!completed || completed.isDemo || completed.operationDay?.isTest || completed.status !== "ERLEDIGT") return;
   const date = completed.operationDay?.date ?? completed.mowingDate;
   const key = dayKey(date);
   if (!date || !key) return;
@@ -118,7 +118,7 @@ async function sendRevierReportIfComplete(revierId: string, day: string, start: 
         ],
       },
       include: {
-        operationDay: { select: { date: true } },
+        operationDay: { select: { date: true, isTest: true } },
         field: { select: { name: true, displayName: true } },
         reviere: { select: { revierId: true, overlapSqm: true } },
         pinpoints: {

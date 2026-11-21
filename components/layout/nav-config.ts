@@ -63,10 +63,10 @@ const managementSections: NavSection[] = [
     { href: "/admin/flugmissionen", label: "Flugmissionen planen" },
   ] },
   { title: "System / Werkzeuge", color: SLATE, items: [
+    { href: "/admin/test-days", label: "TEST-Einsatztage" },
     { href: "/admin/help", label: "Anleitung bearbeiten" },
     { href: "/admin/email-test", label: "E-Mail-Test" },
     { href: "/admin/db-check", label: "DB-Check" },
-    { href: "/admin/gps-test", label: "GPS-Testmodus (PIN)" },
   ] },
 ];
 const operationsSections: NavSection[] = [
@@ -85,9 +85,6 @@ const operationsSections: NavSection[] = [
     { href: "/admin/field-import", label: "KML-Import" },
   ] },
 ];
-export function getNavSections(options: { canOpenGpsTest?: boolean } = {}): Navigation {
-  const canOpenGpsTest = options.canOpenGpsTest === true;
-  return { personal: personalSections, management: managementSections.map(section => ({
-    ...section, items: section.items.filter(item => item.href !== "/admin/gps-test" || canOpenGpsTest),
-  })), operations: operationsSections };
+export function getNavSections(): Navigation {
+  return { personal: personalSections, management: managementSections, operations: operationsSections };
 }

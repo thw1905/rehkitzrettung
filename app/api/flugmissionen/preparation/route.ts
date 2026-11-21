@@ -2,7 +2,7 @@
 import {NextRequest,NextResponse} from 'next/server';
 import {getCurrentUserWithTeams} from '@/lib/current-user';
 import {db} from '@/lib/db';
-import {publicOrigin} from '@/lib/flight-missions/cloud-store';
+import {isAllowedFlightMutationOrigin} from '@/lib/flight-missions/request-origin';
 import {getOrderPreparation,prepareOrder,prepareDay} from '@/lib/flight-missions/auto-prepare-v36';
 export const runtime='nodejs';export const dynamic='force-dynamic';
 export async function GET(req:NextRequest){
@@ -15,7 +15,7 @@ export async function GET(req:NextRequest){
 export async function POST(req:NextRequest){
  try{
  const user=await getCurrentUserWithTeams();if(!user?.isApproved)return NextResponse.json({error:'Keine Berechtigung'},{status:403});
- const origin=req.headers.get('origin');if(!origin||origin!==publicOrigin(req.url))return NextResponse.json({error:'Ungueltiger Ursprung'},{status:403});
+ if(!isAllowedFlightMutationOrigin(req))return NextResponse.json({error:'Ungueltiger Ursprung'},{status:403});
  const body=await req.json();
  if(typeof body?.operationDayId==='string'&&user.isAdmin){
   const day=await db.operationDay.findUnique({where:{id:body.operationDayId},select:{id:true}});if(!day)return NextResponse.json({error:'Einsatztag unbekannt'},{status:404});

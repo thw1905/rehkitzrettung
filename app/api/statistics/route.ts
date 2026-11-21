@@ -321,6 +321,7 @@ export async function GET(req: NextRequest) {
       : defaultToExclusive;
 
     const orderWhere: any = {
+      isDemo: false,
       status: "ERLEDIGT",
       executionDate: {
         gte: from,
@@ -351,11 +352,13 @@ export async function GET(req: NextRequest) {
 
     const operationDayTeamWhere: any = {
       operationDay: {
+        isTest: false,
         date: {
           gte: from,
           lt: toExclusive,
         },
       },
+      orders: { some: { isDemo: false } },
       actualStartTime: {
         not: null,
       },

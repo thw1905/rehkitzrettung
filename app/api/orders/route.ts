@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { area, booleanIntersects, featureCollection, intersect } from "@turf/turf";
 import { db } from "@/lib/db";
+import { assertValidOperationDate } from "@/lib/test-mode";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 
 const MIN_OVERLAP_SQM = 500;
@@ -42,9 +43,11 @@ async function getOrCreateOperationDayFromMowingDate(mowingDate: Date | null) {
   });
 
   if (existing) {
+    await assertValidOperationDate(normalizedDate);
     return existing;
   }
 
+  await assertValidOperationDate(normalizedDate);
   return db.operationDay.create({
     data: {
       date: normalizedDate,
@@ -53,12 +56,12 @@ async function getOrCreateOperationDayFromMowingDate(mowingDate: Date | null) {
   });
 }
 
-async function getNextOrderNumberParts() {
+async function getNextOrderNumberParts(isDemo = false) {
   const now = new Date();
   const year = now.getFullYear();
 
   const lastOrder = await db.order.findFirst({
-    where: { orderYear: year },
+    where: { orderYear: year, isDemo },
     orderBy: { orderSequence: "desc" },
     select: { orderSequence: true },
   });
@@ -68,7 +71,7 @@ async function getNextOrderNumberParts() {
   return {
     year,
     sequence: nextSequence,
-    orderCode: `${year}-${String(nextSequence).padStart(3, "0")}`,
+    orderCode: `${isDemo ? "TEST-" : ""}${year}-${String(nextSequence).padStart(3, "0")}`,
   };
 }
 
@@ -375,10 +378,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { year, sequence, orderCode } = await getNextOrderNumberParts();
-
     const mowingDate = body.mowingDate ? new Date(body.mowingDate) : null;
     const operationDay = await getOrCreateOperationDayFromMowingDate(mowingDate);
+    if(body.operationDayTeamId){
+      const selected=await db.operationDayTeam.findUnique({where:{id:String(body.operationDayTeamId)},select:{operationDayId:true}});
+      if(!selected || selected.operationDayId!==operationDay?.id)return NextResponse.json({error:'Team muss zum Datum des Auftrags gehören.'},{status:400});
+    }
+    const { year, sequence, orderCode } = await getNextOrderNumberParts(operationDay?.isTest === true);
 
     const matchingReviere = await findMatchingReviere(field.areaGeoJson);
 
@@ -403,6 +409,7 @@ export async function POST(req: NextRequest) {
         contactOwnerId,
         fieldId: String(body.fieldId),
         operationDayId: operationDay?.id || null,
+        isDemo: operationDay?.isTest === true,
         operationDayTeamId: body.operationDayTeamId || null,
 
         reviere: {

@@ -46,3 +46,13 @@ export async function savePublishedPreparation(orderId:string,missionId:string,s
  const old=await readOrderPreparation(orderId);if(!old||old.signature!==signature)return;
  await saveOrderPreparation({...old,publishedMissionId:missionId,publishedSignature:signature});
 }
+
+/** Nur tagebezogene Entwuerfe, keine Drohnen-/Akkustammdaten. */
+export async function deleteTestPreparationFiles(teamIds:string[],orderIds:string[]):Promise<void>{
+ for(const teamId of teamIds){
+  await fs.rm(path.join(dir(),'team-'+safeId(teamId)+'.json'),{force:true});
+ }
+ for(const orderId of orderIds){
+  await fs.rm(path.join(dir(),'order-'+safeId(orderId)+'.json'),{force:true});
+ }
+}

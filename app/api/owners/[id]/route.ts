@@ -93,11 +93,13 @@ export async function DELETE(
       db.order.count({
         where: {
           ownerId: id,
+          isDemo: false,
         },
       }),
       db.order.count({
         where: {
           contactOwnerId: id,
+          isDemo: false,
         },
       }),
       db.mowingRequest.count({

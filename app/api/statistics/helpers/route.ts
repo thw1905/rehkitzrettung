@@ -112,9 +112,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const dateKeys = buildDateKeys(from, toExclusive);
+    const allDateKeys = buildDateKeys(from, toExclusive);
 
-    const [users, availabilities, operationDayTeams] = await Promise.all([
+    const testDays = await db.operationDay.findMany({where:{isTest:true},select:{date:true}});
+    const testDates=new Set(testDays.map(d=>d.date.toISOString().slice(0,10)));
+    const dateKeys=allDateKeys.filter(d=>!testDates.has(d));
+    const [users, availabilitiesRaw, operationDayTeams] = await Promise.all([
       db.user.findMany({
         where: {
           isApproved: true,
@@ -152,7 +155,9 @@ export async function GET(req: NextRequest) {
 
       db.operationDayTeam.findMany({
         where: {
+          orders: {some:{isDemo:false}},
           operationDay: {
+            isTest: false,
             date: {
               gte: from,
               lt: toExclusive,
@@ -238,6 +243,7 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
+    const availabilities=availabilitiesRaw.filter(a=>!testDates.has(a.date.toISOString().slice(0,10)));
     const availabilityMap = new Map<string, (typeof availabilities)[number]>();
 
     for (const item of availabilities) {

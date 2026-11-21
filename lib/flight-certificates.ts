@@ -75,11 +75,21 @@ export async function getFlightDayGroups(day: string) {
   const tomorrow = new Date(dayDate.getTime() + 86_400_000);
   const orders = await db.order.findMany({
     where: {
-      isDemo: false,
-      OR: [
-        { operationDay: { is: { date: { gte: dayDate, lt: tomorrow } } } },
-        { mowingDate: { gte: dayDate, lt: tomorrow } },
-      ],
+    isDemo: false,
+AND: [
+  {
+    OR: [
+      { operationDayId: null },
+      { operationDay: { is: { isTest: false } } },
+    ],
+  },
+  {
+    OR: [
+      { operationDay: { is: { date: { gte: dayDate, lt: tomorrow } } } },
+      { mowingDate: { gte: dayDate, lt: tomorrow } },
+    ],
+  },
+],
     },
     include: {
       owner: true,
@@ -282,6 +292,8 @@ async function sendCertificateMail(to: string, payload: FlightCertificateData, b
 // gesendet, weil nach SMTP-Annahme ein Prozessabbruch einen unklaren Status
 // hinterlassen kann. Admin muss einen bewussten erneuten Versand auslösen.
 export async function sendFlightCertificate(ownerId: string, day: string, manual=false, force=false) {
+  const operationDay=await db.operationDay.findUnique({where:{date:parseFlightDate(day)},select:{isTest:true}});
+  if(operationDay?.isTest) throw new Error("Für TEST-Einsatztage werden keine produktiven Befliegungsnachweise erstellt oder versendet.");
   const date = parseFlightDate(day);
   const existing = await db.flightCertificateDispatch.findUnique({where:{ownerId_date:{ownerId,date}}});
   if (existing?.status === "SENT") return {status:"SENT",alreadySent:true};

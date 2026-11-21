@@ -58,6 +58,7 @@ model Availability {
 }
 
 model OperationDay {
+  isTest      Boolean            @default(false)
   id          String             @id @default(cuid())
   date        DateTime           @unique
   status      OperationDayStatus @default(PLANUNG)

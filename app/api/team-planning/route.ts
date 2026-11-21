@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
+import {assertValidOperationDate} from "@/lib/test-mode";
 
 type AvailabilityStatus = "OFFEN" | "ZUGESAGT" | "ABGESAGT" | "VIELLEICHT";
 
@@ -36,9 +37,11 @@ async function getOrCreateOperationDay(date: Date) {
   });
 
   if (existing) {
+    await assertValidOperationDate(date);
     return existing;
   }
 
+  await assertValidOperationDate(date);
   try {
     return await db.operationDay.create({
       data: {
@@ -277,6 +280,7 @@ export async function GET(req: NextRequest) {
         id: operationDay.id,
         date: toDateKeyUtc(operationDay.date),
         status: operationDay.status,
+        isTest: operationDay.isTest,
         note: operationDay.note || "",
       },
       pilots,
@@ -329,13 +333,6 @@ export async function PUT(req: NextRequest) {
 
     if (!body.pilotId) {
       return NextResponse.json({ error: "Pilot fehlt." }, { status: 400 });
-    }
-
-    if (searcherIds.length < 1) {
-      return NextResponse.json(
-        { error: "Bitte mindestens einen Sucher auswählen." },
-        { status: 400 }
-      );
     }
 
     if (searcherIds.length > 6) {

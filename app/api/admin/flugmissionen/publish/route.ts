@@ -8,8 +8,9 @@ import { optionsForCamera,type MissionCamera } from "@/lib/flight-missions/cover
 import { makeMissionKmz } from "@/lib/flight-missions/wpml";
 import {validateTerrainSettings,checkExportHeights} from "@/lib/flight-missions/terrain-v31";
 import {analyzeTerrainForPlan} from "@/lib/flight-missions/terrain-service-v31";
-import { readWaylineKmz,publicOrigin,findWayline,configuredWorkspace } from "@/lib/flight-missions/cloud-store";
-import { flightNameFromField,orderFlightField,publishOrReplaceMission,readCurrentPlanning,StaleMissionError } from "@/lib/flight-missions/mission-v3";
+import { readWaylineKmz,findWayline,configuredWorkspace } from "@/lib/flight-missions/cloud-store";
+import { isAllowedFlightMutationOrigin } from "@/lib/flight-missions/request-origin";
+import { flightNameFromField,orderFlightField,publishOrReplaceMission,readCurrentPlanning,missionContextForOrder,StaleMissionError } from "@/lib/flight-missions/mission-v3";
 import {getOrderPreparation} from "@/lib/flight-missions/auto-prepare-v36";
 import {savePublishedPreparation} from "@/lib/flight-missions/team-aircraft-v36";
 export const runtime="nodejs";
@@ -19,8 +20,7 @@ export async function POST(req:NextRequest){
   const user=await getCurrentUserWithTeams();
   if(!user)return NextResponse.json({error:"Nicht angemeldet."},{status:401,headers:NO_STORE});
   if(!user.isApproved)return NextResponse.json({error:"Nicht freigegeben."},{status:403,headers:NO_STORE});
-  const origin=req.headers.get("origin");
-  if(!origin || origin!==publicOrigin(req.url))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403,headers:NO_STORE});
+  if(!isAllowedFlightMutationOrigin(req))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403,headers:NO_STORE});
   const body=await req.json();
   const fieldId=body?.fieldId;
   if(typeof fieldId!=="string"||!fieldId||fieldId.length>100)return NextResponse.json({error:"FL-Flaeche fehlt."},{status:400});
@@ -31,7 +31,13 @@ export async function POST(req:NextRequest){
   if(!field || field.id!==fieldId)return NextResponse.json({error:"Keine Berechtigung fuer diese Auftragsflaeche."},{status:403});
   const expectedMissionId=body?.expectedMissionId;
   if(expectedMissionId!==null && (typeof expectedMissionId!=="string"||!/^[a-f0-9-]{36}$/i.test(expectedMissionId)))return NextResponse.json({error:"Missionsversion fehlt. Seite neu laden."},{status:400});
-  const current=await readCurrentPlanning(field.id);
+  const linkedOrder=body.orderId?await db.order.findUnique({where:{id:body.orderId},select:{
+   isDemo:true,operationDayId:true,operationDay:{select:{isTest:true,date:true}},
+   operationDayTeam:{select:{operationDayId:true,operationDay:{select:{isTest:true,date:true}}}}
+  }}):null;
+  const missionContext=missionContextForOrder(field.id,linkedOrder);
+  const effectiveFieldId=missionContext.fieldId;
+  const current=await readCurrentPlanning(effectiveFieldId);
   // Optimistische Version: alter Client darf aktuelle Mission nicht ueberschreiben.
   if((current?.id||null)!==expectedMissionId)throw new StaleMissionError();
   // V3.6: Das Teamprofil ist verbindlich; alte Cloud-Missionen bei Umverteilung sind gesperrt.
@@ -50,11 +56,12 @@ export async function POST(req:NextRequest){
   let settings: {aircraft:"M3T"|"M4T";camera:MissionCamera;options:MissionOptions;overlapPercent:number;manualSpacing:boolean;terrain?:import("@/lib/flight-missions/terrain-v31").TerrainSettingsV31}|null=null;
   let plan: ReturnType<typeof createFlightPlan>|null=null;
   let fileFactory:()=>Promise<Uint8Array>;
-  const name=flightNameFromField(field);
+  const name=(missionContext.testOperationDayId?`TEST-${missionContext.dateKey}-`:
+   linkedOrder?.isDemo?"TEST-":"")+flightNameFromField(field);
   if(reuse){
    if(!current||!expectedMissionId)return NextResponse.json({error:"Keine vorhandene Mission zum erneuten Hochladen."},{status:400});
    const old=await findWayline(current.id,configuredWorkspace());
-   if(!old || old.fieldId!==field.id)return NextResponse.json({error:"Vorhandene Mission nicht gefunden."},{status:404});
+   if(!old || old.fieldId!==effectiveFieldId)return NextResponse.json({error:"Vorhandene Mission nicht gefunden."},{status:404});
    aircraft=old.aircraft;camera=old.camera;
    settings=current.hasExactSettings?current.settings:null;
    plan=current.hasExactSettings?current.plan:null;
@@ -79,7 +86,8 @@ export async function POST(req:NextRequest){
    // Persistente Planungsparameter; keine Versionshistorie und keine Archivkopie.
    fileFactory=()=>makeMissionKmz(plan!,options,name,aircraft,{waypointHeights,rthHeight:terrain.rthHeight});
   }
-  const entry=await publishOrReplaceMission({fieldId:field.id,name,aircraft,camera,fileFactory,expectedMissionId,editorId:user.id,settings,plan});
+  const entry=await publishOrReplaceMission({fieldId:effectiveFieldId,name,aircraft,camera,fileFactory,expectedMissionId,editorId:user.id,settings,plan,
+   ...(missionContext.testOperationDayId?{testOperationDayId:missionContext.testOperationDayId}:{})});
   if(body.orderId&&assignment?.signature){
    try{await savePublishedPreparation(body.orderId,entry.id,assignment.signature);}
    catch(e){console.error('[DJI-V36] Freigabemarker konnte nicht gespeichert werden:',e);}

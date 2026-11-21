@@ -7,6 +7,8 @@ export type StoredMission = {
   id:string; name:string; fieldId:string; aircraft:"M3T"|"M4T";
   camera:"THERMAL"|"RGB_WIDE"; size:number; sign:string;
   createdAt:number; workspaceId:string;
+  // Ab V3.7.5: eindeutige Provenienz; niemals per Feldname auf TEST schliessen.
+  testOperationDayId?:string;
 };
 function baseDir(){return process.env.DJI_WAYLINE_STORAGE_DIR || path.join(process.cwd(),".data","dji-waylines");}
 function validId(id:string){return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);}
@@ -46,6 +48,12 @@ export async function archiveCloudWayline(id:string,workspaceId?:string):Promise
 
 export async function listWaylines(workspaceId?:string){const [all,hidden]=await Promise.all([listRaw(),archivedWaylineIds()]);return all.filter(x=>!hidden.has(x.id)&&(!workspaceId||!x.workspaceId||x.workspaceId===workspaceId)).sort((a,b)=>b.createdAt-a.createdAt);}
 export async function findWayline(id:string,workspaceId?:string){if(!validId(id))return null;return (await listWaylines(workspaceId)).find(x=>x.id===id)||null;}
+/** Einschliesslich archivierter Eintraege; eine normale Feld-Mission bleibt immer erhalten. */
+export async function listTestWaylinesForDays(dayIds:string[]):Promise<StoredMission[]>{
+ const ids=new Set(dayIds);
+ if(!ids.size)return [];
+ return (await listRaw()).filter(m=>typeof m.testOperationDayId==='string'&&ids.has(m.testOperationDayId));
+}
 export async function storeWayline(meta:Omit<StoredMission,"id"|"size"|"sign"|"createdAt">,file:Uint8Array){
  if(file.byteLength<500||file.byteLength>6_000_000)throw new Error("KMZ-Groesse ausserhalb des Testlimits.");
  await fs.mkdir(baseDir(),{recursive:true,mode:0o700});
@@ -94,10 +102,15 @@ async function withWaylineWriteLock<T>(fn:()=>Promise<T>):Promise<T>{
 }
 function sameWorkspace(m:StoredMission,ws:string){return !ws||!m.workspaceId||m.workspaceId===ws;}
 async function cleanupWayline(id:string){
- if(!validId(id))return;
+ if(!validId(id))return [];
+ const failed:string[]=[];
  for(const file of [path.join(baseDir(),id+".kmz"),path.join(baseDir(),".planung",id+".json"),path.join(archiveDir(),id+".json")]){
-  try{await fs.rm(file,{force:true});}catch(e){console.error("[DJI-V3] Veraltete Datei konnte nicht geloescht werden",id,path.basename(file),e);}
+  try{await fs.rm(file,{force:true});}catch(e){
+   failed.push(path.basename(file));
+   console.error("[DJI-V3] Veraltete Datei konnte nicht geloescht werden",id,path.basename(file),e);
+  }
  }
+ return failed;
 }
 export async function replaceWaylineForField(
  meta:Omit<StoredMission,"id"|"size"|"sign"|"createdAt">,
@@ -154,5 +167,25 @@ export async function deleteWaylinePermanently(id:string,workspaceId:string):Pro
   }catch(e){await fs.rm(tmp,{force:true});throw e;}
   await cleanupWayline(id);
   return true;
+ });
+}
+
+/** Löscht ausschliesslich Cloud-Eintraege mit nachweisbarer TEST-Tag-Kennung. */
+export async function deleteTestWaylinesForDays(dayIds:string[]):Promise<number>{
+ const ids=new Set(dayIds);
+ if(!ids.size)return 0;
+ return withWaylineWriteLock(async()=>{
+  const all=await listRaw();
+  const removed=all.filter(m=>typeof m.testOperationDayId==='string'&&ids.has(m.testOperationDayId));
+  if(!removed.length)return 0;
+  const tmp=indexPath()+'.'+randomUUID()+'.tmp';
+  try{
+   await fs.writeFile(tmp,JSON.stringify(all.filter(m=>!removed.some(x=>x.id===m.id)),null,2),{flag:'wx',mode:0o600});
+   await fs.rename(tmp,indexPath());
+  }catch(e){await fs.rm(tmp,{force:true});throw e;}
+  const failed:string[]=[];
+  for(const m of removed)failed.push(...await cleanupWayline(m.id));
+  if(failed.length)throw new Error('Einzelne DJI-Dateien konnten nicht gelöscht werden: '+failed.join(', '));
+  return removed.length;
  });
 }

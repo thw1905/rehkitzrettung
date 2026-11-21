@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { assertValidOperationDate } from "@/lib/test-mode";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
 
 function parseDateOnlyToUtc(dateString: string) {
@@ -17,6 +18,7 @@ function parseDateOnlyToUtc(dateString: string) {
 }
 
 async function getOrCreateOperationDay(date: Date) {
+  await assertValidOperationDate(date);
   try {
     return await db.operationDay.create({
       data: {

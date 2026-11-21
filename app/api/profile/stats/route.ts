@@ -37,6 +37,7 @@ export async function GET() {
     const completedOrders = await db.order.findMany({
       where: {
         status: "ERLEDIGT",
+        isDemo: false,
       },
       select: {
         id: true,

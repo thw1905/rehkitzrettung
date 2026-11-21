@@ -14,6 +14,7 @@ type Entry = {
 
 type DayOverview = {
   date: string;
+  isTest?: boolean;
   zugesagt: number;
   abgesagt: number;
   vielleicht: number;
@@ -215,7 +216,6 @@ export default function AvailabilityAdminPageClient({ days = 21 }: Props) {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("HEUTE_MORGEN");
   const [selectedDate, setSelectedDate] = useState("");
   const [search, setSearch] = useState("");
-
   async function loadOverview() {
     setLoading(true);
 
@@ -437,7 +437,7 @@ export default function AvailabilityAdminPageClient({ days = 21 }: Props) {
                   >
                     <div className="min-w-0">
                       <div className="text-lg font-semibold capitalize text-gray-900">
-                        {formatDayLabel(day.date)}
+                        {day.isTest ? "TEST · " : ""}{formatDayLabel(day.date)}
                       </div>
 
                       <div className="mt-2 flex flex-wrap gap-2">

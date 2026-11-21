@@ -165,6 +165,8 @@ export async function PATCH(
 
     }
 
+    if(Boolean(order.isDemo)!==Boolean(order.operationDay?.isTest)) return NextResponse.json({error:"TEST-/Echt-Auftrag stimmt nicht mit Einsatztag überein."},{status:409});
+
     const updated = await db.order.update({
 
       where: { id: orderid },

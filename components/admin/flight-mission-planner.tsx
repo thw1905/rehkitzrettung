@@ -204,7 +204,7 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
    field?<p className="text-xs text-gray-500">Für diese Fläche wird eine neue Mission angelegt.</p>:null}
   {result.plan&&metrics&&<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
     <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Suchbahnen</div><div className="font-bold">{result.plan.lines.length}</div></div>
-    <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Bahnabstand</div><div className="font-bold">{effectiveOptions?.spacing.toFixed(1)} m</div></div>
+    <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Bahnabstand</div><div className="font-bold">{result.plan.laneSpacingM===0?'1 Bahn':((result.plan.laneSpacingM??effectiveOptions?.spacing??0).toFixed(1)+' m')}</div>{result.plan.laneSpacingM!==undefined&&result.plan.laneSpacingM>0&&effectiveOptions&&result.plan.laneSpacingM<effectiveOptions.spacing-0.1&&<div className="text-[11px] text-gray-600">Max. {effectiveOptions.spacing.toFixed(1)} m</div>}</div>
     <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Gesamtstrecke*</div><div className="font-bold">{(metrics.totalM/1000).toFixed(2)} km</div></div>
     <div className="rounded-xl border border-gray-200 bg-white p-3"><div className="text-xs text-gray-500">Flugzeit ca.*</div><div className="font-bold">{metrics.flightMinutes.toFixed(1)} min</div>{options.autoDirection===true&&<div className="text-[11px] text-indigo-700">Winkel {result.plan.direction}° optimiert</div>}</div>
    </div>}
@@ -216,6 +216,12 @@ export default function FlightMissionPlanner({orderId}:{orderId?:string}){
     </div>
     {field?<FlightMissionMap key={field.id} area={field.areaGeoJson} plan={result.plan} startPoint={effectiveStart} coverageWidthM={minCoverage?.theoreticalWidthM??coverage.info?.theoreticalWidthM} hazards={hazards?.found||[]} onStartPointChange={p=>{setDirty(true);setOptions(v=>({...v,autoStartAtFirst:false}));setTerrain(v=>({...v,startPoint:p}));}}/>:
      <p className="p-4 text-sm text-gray-700">{loading?'Flaechen werden geladen ...':'Bitte Fläche auswählen.'}</p>}
+    {result.plan?.lateralOverhangM!==undefined&&result.plan.overhangTargetM!==undefined&&
+     <p className={'px-1 text-xs '+(result.plan.lateralOverhangM>result.plan.overhangTargetM+0.05?'text-amber-800':'text-gray-600')}>
+      Kamera-Querüberstand rechnerisch: {result.plan.lateralOverhangM.toFixed(1)} m · Ziel: {result.plan.overhangTargetM.toFixed(1)} m (10 %).
+      {result.plan.lateralOverhangM>result.plan.overhangTargetM+0.05?' Vollständige Abdeckung hat Vorrang.':''}
+      {' '}An schrägen Feldseiten kann der sichtbare Überstand größer sein.
+     </p>}
     {result.reason&&<p role="alert" className="rounded-lg bg-rose-50 p-2 text-sm font-medium text-rose-900">{result.reason}</p>}
    </section>
    <section className="order-last min-w-0 space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4 xl:order-first">

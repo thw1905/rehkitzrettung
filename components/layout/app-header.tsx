@@ -47,30 +47,9 @@ export default function AppHeader({ user }: AppHeaderProps) {
 
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
-  const [creatingDemoOrder, setCreatingDemoOrder] = useState(false);
   const [personalMenuOpen, setPersonalMenuOpen] = useState(false);
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const [operationsMenuOpen, setOperationsMenuOpen] = useState(false);
-  // Der Server entscheidet, ob die GPS-Test-PIN-Abfrage fuer diesen Admin
-  // verfuegbar ist. Die Test-API verlangt zusaetzlich eine gueltige PIN-Freigabe.
-  const [canOpenGpsTest, setCanOpenGpsTest] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!isAdmin) {
-      setCanOpenGpsTest(false);
-      return;
-    }
-    void fetch("/api/admin/gps-test/access", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data) => {
-        if (!cancelled) setCanOpenGpsTest(data?.allowed === true);
-      })
-      .catch(() => {
-        if (!cancelled) setCanOpenGpsTest(false);
-      });
-    return () => { cancelled = true; };
-  }, [isAdmin]);
 
   const closeAllMenus = () => {
     setPersonalMenuOpen(false);
@@ -93,64 +72,6 @@ export default function AppHeader({ user }: AppHeaderProps) {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
-
-  async function handleCreateDemoOrder() {
-    const pin = window.prompt("PIN für Demo-Auftrag eingeben:");
-
-    if (!pin) return;
-
-    try {
-      setCreatingDemoOrder(true);
-
-      const response = await fetch("/api/demo-order", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ pin }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        alert(result?.error || "Demo-Auftrag konnte nicht erstellt werden.");
-        return;
-      }
-
-      alert("Demo-Auftrag erfolgreich erstellt.");
-      window.location.href = "/orders";
-    } catch (error) {
-      console.error("Demo-Auftrag Fehler:", error);
-      alert("Demo-Auftrag konnte nicht erstellt werden.");
-    } finally {
-      setCreatingDemoOrder(false);
-    }
-  }
-
-  async function handleDeleteDemoOrders() {
-    const confirmed = window.confirm("Alle Demo-Aufträge löschen?");
-
-    if (!confirmed) return;
-
-    try {
-      const res = await fetch("/api/cleanup-demo-orders", {
-        method: "POST",
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        alert(data?.error || "Demo-Aufträge konnten nicht gelöscht werden.");
-        return;
-      }
-
-      alert(`Demo-Aufträge gelöscht: ${data.deleted}`);
-      window.location.reload();
-    } catch (error) {
-      console.error("Demo löschen Fehler:", error);
-      alert("Demo-Aufträge konnten nicht gelöscht werden.");
-    }
-  }
 
   useEffect(() => {
     if (!isAdmin) {
@@ -223,7 +144,7 @@ export default function AppHeader({ user }: AppHeaderProps) {
     `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Unbekannt";
 
   // REHKITZ_WILD_DIALOG_MENUE_V2 – Sicherungsorte fuer alle Rollen im persoenlichen Menue.
-  const sharedNavigation = getNavSections({ canOpenGpsTest });
+  const sharedNavigation = getNavSections();
 
   const personalNavSections = sharedNavigation.personal;
 
@@ -439,25 +360,6 @@ export default function AppHeader({ user }: AppHeaderProps) {
                             })}
                           </div>
 
-                          {section.title === "System / Werkzeuge" && (
-                            <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
-                              <button
-                                type="button"
-                                onClick={() => void handleCreateDemoOrder()}
-                                disabled={creatingDemoOrder}
-                                className="block w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:opacity-60"
-                              >
-                                {creatingDemoOrder ? "Erstelle Demo-Auftrag ..." : "🟡 Demo-Auftrag erstellen (PIN)"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleDeleteDemoOrders()}
-                                className="block w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-semibold text-red-900 hover:bg-red-100"
-                              >
-                                🗑️ Demo-Aufträge löschen
-                              </button>
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>

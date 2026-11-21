@@ -9,14 +9,14 @@ import { makeMissionKmz } from "@/lib/flight-missions/wpml";
 import { optionsForCamera, type MissionCamera } from "@/lib/flight-missions/coverage";
 import {validateTerrainSettings,checkExportHeights} from "@/lib/flight-missions/terrain-v31";
 import {analyzeTerrainForPlan} from "@/lib/flight-missions/terrain-service-v31";
-import {publicOrigin} from "@/lib/flight-missions/cloud-store";
+import {isAllowedFlightMutationOrigin} from "@/lib/flight-missions/request-origin";
 export const runtime="nodejs";
 export async function POST(req:NextRequest){
  try{
   const user=await getCurrentUserWithTeams();
   if(!user) return NextResponse.json({error:"Nicht angemeldet."},{status:401});
   if(!user.isApproved||!user.isAdmin) return NextResponse.json({error:"Nur Admins duerfen Flugmissionen exportieren."},{status:403});
-  if(req.headers.get("origin")!==publicOrigin(req.url))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403});
+  if(!isAllowedFlightMutationOrigin(req))return NextResponse.json({error:"Ungueltiger Anfrage-Ursprung."},{status:403});
   const body=await req.json();
   if(typeof body?.fieldId!=="string" || body.fieldId.length>100) return NextResponse.json({error:"Flaeche fehlt."},{status:400});
   // M4T noch nicht freigeschaltet: DJI-spezifische Geraetekennungen muessen mit Pilot2-Export verifiziert werden.

@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import {inSeason} from "@/lib/test-mode";
 import { authorizeGpsTestApi } from "@/lib/gps-test-access";
 
 // Kennzeichnungen verhindern, dass ein GPS-Test versehentlich normale
@@ -163,7 +164,7 @@ export async function POST(req: NextRequest) {
         where: { id: demoOrderId, isDemo: true },
         select: { id: true, ownerId: true, fieldId: true, title: true, orderCode: true },
       }),
-      db.operationDay.findUnique({ where: { date }, select: { id: true, status: true } }),
+      db.operationDay.findUnique({ where: { date }, select: { id: true, status: true, isTest: true } }),
       db.operationDayTeam.findMany({
         where: {
           operationDay: { date },
@@ -199,6 +200,8 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       );
     }
+
+    if(!inSeason(date) && !day?.isTest) return NextResponse.json({error:"Zuerst TEST-Einsatztag mit Admin-PIN freischalten."},{status:403});
 
     const result = await db.$transaction(async (tx) => {
       // Eigener Testtag nur falls noch keiner existiert. Echte Einsatztage werden nicht verändert.

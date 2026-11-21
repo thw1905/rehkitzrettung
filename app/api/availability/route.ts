@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUserWithTeams } from "@/lib/current-user";
+import { inSeason } from "@/lib/test-mode";
 
 function parseDateOnlyToUtc(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number);
@@ -46,13 +47,11 @@ export async function GET(_req: NextRequest) {
     const start = new Date(Date.UTC(year, 4, 1, 0, 0, 0, 0)); // 01.05.
     const end = new Date(Date.UTC(year, 7, 1, 0, 0, 0, 0)); // bis 31.07. inklusive
 
+    const testDays = await db.operationDay.findMany({where:{isTest:true},select:{date:true},take:180});
     const rawAvailabilities = await db.availability.findMany({
       where: {
         userId: currentUser.id,
-        date: {
-          gte: start,
-          lt: end,
-        },
+        OR: [{date:{gte:start,lt:end}},{date:{in:testDays.map(x=>x.date)}}],
       },
       orderBy: [
         { date: "asc" },
@@ -115,6 +114,9 @@ export async function PUT(req: NextRequest) {
     }
 
     const date = parseDateOnlyToUtc(body.date);
+    if(!inSeason(date)){const day=await db.operationDay.findUnique({where:{date},select:{isTest:true}});
+      if(!day?.isTest)return NextResponse.json({error:"Zusätzliche Tage sind nur nach Admin-PIN-Freigabe verfügbar."},{status:403});
+    }
 
     const startOfDay = new Date(date);
     const endOfDay = new Date(date);
